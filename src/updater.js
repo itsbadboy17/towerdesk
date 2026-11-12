@@ -158,16 +158,16 @@ function pending() {
 function rmrf(p) { try { fs.rmSync(p, { recursive: true, force: true }); } catch (e) { /* ignore */ } }
 
 // Validate an already-extracted update folder and stage it. `srcDir` must contain the new app
-// (a package.json at its root, or in a single nested folder like GitHub's zipball). Returns the
+// (see the accepted layouts below). Returns the
 // staged descriptor. No network — used directly by tests and by stage() after download/extract.
 function stageFromDir(srcDir) {
-  let root = srcDir;
-  if (!fs.existsSync(path.join(root, 'package.json'))) {
-    const entries = fs.readdirSync(srcDir, { withFileTypes: true }).filter((e) => e.isDirectory());
-    const nested = entries.find((e) => fs.existsSync(path.join(srcDir, e.name, 'package.json')));
-    if (!nested) throw new Error('Update bundle has no package.json.');
-    root = path.join(srcDir, nested.name);
-  }
+  // Accepted layouts: the app at the root, in one nested folder (GitHub's zipball), or under
+  // app\ as in the portable build (app\ or TowerDesk\app\). Only the app is staged from a
+  // portable bundle; its node\ runtime and launchers are left alone.
+  const dirs = fs.readdirSync(srcDir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(srcDir, e.name));
+  const candidates = [srcDir, path.join(srcDir, 'app')].concat(dirs, dirs.map((d) => path.join(d, 'app')));
+  const root = candidates.find((d) => fs.existsSync(path.join(d, 'package.json')));
+  if (!root) throw new Error('Update bundle has no package.json.');
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   if (pkg.name !== 'towerdesk') throw new Error('Update bundle is not TowerDesk (' + pkg.name + ').');
 

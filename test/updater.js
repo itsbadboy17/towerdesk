@@ -90,6 +90,19 @@ let threw = false;
 try { upd.stageFromDir(bad); } catch (e) { threw = true; }
 ok('rejects foreign bundle', threw);
 
+// The portable build's layout (TowerDesk\app\... beside node\ and launchers) stages the app only.
+const portable = fs.mkdtempSync(path.join(os.tmpdir(), 'towerdesk-portable-'));
+const pApp = path.join(portable, 'TowerDesk', 'app');
+fs.mkdirSync(pApp, { recursive: true });
+fs.mkdirSync(path.join(portable, 'TowerDesk', 'node'));
+fs.writeFileSync(path.join(portable, 'TowerDesk', 'node', 'node.exe'), 'x');
+fs.writeFileSync(path.join(portable, 'TowerDesk', 'TowerDesk.cmd'), 'x');
+fs.writeFileSync(path.join(pApp, 'package.json'), JSON.stringify({ name: 'towerdesk', version: '8.8.8' }));
+fs.writeFileSync(path.join(pApp, 'server.js'), '// portable server');
+ok('portable layout stages', upd.stageFromDir(portable).version === '8.8.8');
+ok('portable stages app files', fs.readFileSync(path.join(upd.STAGED_DIR, 'server.js'), 'utf8') === '// portable server');
+ok('portable skips runtime + launcher', !fs.existsSync(path.join(upd.STAGED_DIR, 'node')) && !fs.existsSync(path.join(upd.STAGED_DIR, 'TowerDesk.cmd')));
+
 // clearStaged removes the staged tree + marker.
 upd.clearStaged();
 ok('clearStaged', upd.pending() === null && !fs.existsSync(upd.STAGED_DIR));

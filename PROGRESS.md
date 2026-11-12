@@ -43,3 +43,4 @@
 - Clearer 401/404 messages (404 without a token hints that the repo may be private).
 - No dependency added. test/updater.js: 12 new assertions. npm test + QA 655/655 pass.
 - Version bumped to 0.1.1 (first build with the updater token field); portable zip rebuilt.
+- 0.1.2: updater's stageFromDir also accepts the portable zip layout (app\ or TowerDesk\app\), staging only the app; so the portable zip can be attached to a release as the update bundle. 3 new assertions; verified by extracting the real built zip and staging it.
