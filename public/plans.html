@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plans - TowerDesk ISP Dashboard</title>
+    <link rel="stylesheet" href="/app.css">
+    <script src="/app.js"></script>
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="brand">Tower<span class="mark">Desk</span></div>
+        <nav aria-label="Main">
+        <div class="nav-section">
+            <h4>Network</h4>
+            <ul>
+                <li><a href="/"><span class="nav-icon" aria-hidden="true">🏠</span>Overview</a></li>
+                <li><a href="/monitoring"><span class="nav-icon" aria-hidden="true">📡</span>Monitoring</a></li>
+                <li><a href="/map"><span class="nav-icon" aria-hidden="true">🗺️</span>Tower Map</a></li>
+                <li><a href="/alerts"><span class="nav-icon" aria-hidden="true">🚨</span>Alerts</a></li>
+                <li><a href="/remote"><span class="nav-icon" aria-hidden="true">🖥️</span>Remote Actions</a></li>
+                <li><a href="/add-device"><span class="nav-icon" aria-hidden="true">➕</span>Add Device</a></li>
+            </ul>
+        </div>
+        <div class="nav-section">
+            <h4>Customers</h4>
+            <ul>
+                <li><a href="/sas"><span class="nav-icon" aria-hidden="true">👥</span>SAS<span class="nav-count">200</span></a></li>
+                <li><a href="/plans"><span class="nav-icon" aria-hidden="true">📋</span>Plans</a></li>
+                <li><a href="/vouchers"><span class="nav-icon" aria-hidden="true">🎫</span>Vouchers</a></li>
+                <li><a href="/billing"><span class="nav-icon" aria-hidden="true">💳</span>Billing</a></li>
+                <li><a href="/invoices"><span class="nav-icon" aria-hidden="true">🧾</span>Invoices</a></li>
+                <li><a href="/tickets"><span class="nav-icon" aria-hidden="true">🛠️</span>Tickets</a></li>
+            </ul>
+        </div>
+        </nav>
+        <div class="user-card">
+            <div class="user-info">
+                <div class="avatar-sm">AD</div>
+                <div>
+                    <div class="user-name">Admin User</div>
+                    <div class="user-role">Super Admin</div>
+                </div>
+            </div>
+            <div class="user-stats">
+                <div class="stat"><div class="stat-val">2</div><div class="stat-label">Towers</div></div>
+                <div class="stat"><div class="stat-val">200</div><div class="stat-label">SAS</div></div>
+                <div class="stat"><div class="stat-val">12</div><div class="stat-label">Devices</div></div>
+            </div>
+            <div class="user-actions">
+                <button class="nav-link-btn"><span class="nav-icon">⚙️</span>Settings</button>
+                <button class="nav-link-btn"><span class="nav-icon">🚪</span>Sign Out</button>
+            </div>
+        </div>
+        <div class="upgrade-card">
+            <h5>Upgrade Infrastructure</h5>
+            <p>Unlock unlimited towers, real-time sync & advanced analytics.</p>
+            <button class="upgrade-btn">Upgrade Premium</button>
+            <p style="font-size:0.7rem; opacity:0.7; margin-top:8px;">Cluster Status: Optimal</p>
+        </div>
+    </aside>
+
+    <!-- Topbar -->
+    <header class="topbar">
+        <div class="right">
+            <a class="icon-btn" href="/alerts" aria-label="Alerts" title="Alerts">🔔</a>
+            <div class="avatar">TD</div>
+        </div>
+    </header>
+
+    <main class="main">
+        <header class="content-header">
+            <h1>Subscription Plans</h1>
+            <div class="controls">
+                <button class="export-btn">📥 Export Logs</button>
+            </div>
+        </header>
+
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Total Plans</h3></div>
+                <div class="kpi-value">3</div>
+                <div class="kpi-change badge-up">▲ Active</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Subscribers</h3></div>
+                <div class="kpi-value">200</div>
+                <div class="kpi-change badge-up">▲ On plans</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Avg Revenue</h3></div>
+                <div class="kpi-value">$85</div>
+                <div class="kpi-change badge-up">▲ Per user</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Churn</h3></div>
+                <div class="kpi-value">2.1%</div>
+                <div class="kpi-change badge-down">▼ Monthly</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h3>Available Plans</h3><span class="card-actions">Subscription tiers</span></div>
+            <div class="card-body">
+                <div class="plan-grid">
+                    <div class="plan-card">
+                        <div class="plan-name">Basic</div>
+                        <div class="plan-price">$29<span>/mo</span></div>
+                        <div class="plan-desc">Perfect for light users</div>
+                        <ul class="plan-features">
+                            <li>50 Mbps speed</li>
+                            <li>200 GB data</li>
+                            <li>1 device</li>
+                            <li>Standard support</li>
+                        </ul>
+                        <button class="plan-btn">Choose Plan</button>
+                    </div>
+                    <div class="plan-card featured">
+                        <div class="plan-name">Standard</div>
+                        <div class="plan-price">$59<span>/mo</span></div>
+                        <div class="plan-desc">Best for families</div>
+                        <ul class="plan-features">
+                            <li>150 Mbps speed</li>
+                            <li>500 GB data</li>
+                            <li>3 devices</li>
+                            <li>Priority support</li>
+                        </ul>
+                        <button class="plan-btn">Choose Plan</button>
+                    </div>
+                    <div class="plan-card">
+                        <div class="plan-name">Premium</div>
+                        <div class="plan-price">$99<span>/mo</span></div>
+                        <div class="plan-desc">For power users</div>
+                        <ul class="plan-features">
+                            <li>500 Mbps speed</li>
+                            <li>Unlimited data</li>
+                            <li>5 devices</li>
+                            <li>24/7 support</li>
+                        </ul>
+                        <button class="plan-btn">Choose Plan</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</body>
+</html>

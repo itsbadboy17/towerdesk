@@ -1,0 +1,35 @@
+{
+  "name": "towerdesk",
+  "version": "0.1.0",
+  "description": "A portable ISP dashboard for small networks",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "set-password": "node scripts/set-password.js",
+    "test": "node test/test.js && node test/devices.js && node test/subscribers.js && node test/history.js && node test/updater.js",
+    "test:e2e": "node test/e2e.js",
+    "build:portable": "powershell -ExecutionPolicy Bypass -File scripts/make-portable.ps1 -Zip",
+    "test:qa": "playwright test tests/qa",
+    "test:qa:ui": "playwright test tests/qa --headed"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@playwright/test": "^1.64.1",
+    "playwright": "^1.64.1"
+  },
+  "keywords": [
+    "isp",
+    "dashboard",
+    "monitoring"
+  ],
+  "author": "TowerDesk Team",
+  "license": "MIT",
+  "dependencies": {
+    "crypto-js": "^4.2.0",
+    "express": "^4.18.2",
+    "express-handlebars": "^4.0.0",
+    "net-snmp": "^3.20.0",
+    "ssh2": "^1.16.0",
+    "uuid": "^9.0.0"
+  }
+}

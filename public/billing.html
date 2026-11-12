@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Billing - TowerDesk ISP Dashboard</title>
+    <link rel="stylesheet" href="/app.css">
+    <script src="/app.js"></script>
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="brand">Tower<span class="mark">Desk</span></div>
+        <nav aria-label="Main">
+        <div class="nav-section">
+            <h4>Network</h4>
+            <ul>
+                <li><a href="/"><span class="nav-icon" aria-hidden="true">🏠</span>Overview</a></li>
+                <li><a href="/monitoring"><span class="nav-icon" aria-hidden="true">📡</span>Monitoring</a></li>
+                <li><a href="/map"><span class="nav-icon" aria-hidden="true">🗺️</span>Tower Map</a></li>
+                <li><a href="/alerts"><span class="nav-icon" aria-hidden="true">🚨</span>Alerts</a></li>
+                <li><a href="/remote"><span class="nav-icon" aria-hidden="true">🖥️</span>Remote Actions</a></li>
+                <li><a href="/add-device"><span class="nav-icon" aria-hidden="true">➕</span>Add Device</a></li>
+            </ul>
+        </div>
+        <div class="nav-section">
+            <h4>Customers</h4>
+            <ul>
+                <li><a href="/sas"><span class="nav-icon" aria-hidden="true">👥</span>SAS<span class="nav-count">200</span></a></li>
+                <li><a href="/plans"><span class="nav-icon" aria-hidden="true">📋</span>Plans</a></li>
+                <li><a href="/vouchers"><span class="nav-icon" aria-hidden="true">🎫</span>Vouchers</a></li>
+                <li><a href="/billing"><span class="nav-icon" aria-hidden="true">💳</span>Billing</a></li>
+                <li><a href="/invoices"><span class="nav-icon" aria-hidden="true">🧾</span>Invoices</a></li>
+                <li><a href="/tickets"><span class="nav-icon" aria-hidden="true">🛠️</span>Tickets</a></li>
+            </ul>
+        </div>
+        </nav>
+        <div class="user-card">
+            <div class="user-info">
+                <div class="avatar-sm">AD</div>
+                <div>
+                    <div class="user-name">Admin User</div>
+                    <div class="user-role">Super Admin</div>
+                </div>
+            </div>
+            <div class="user-stats">
+                <div class="stat"><div class="stat-val">2</div><div class="stat-label">Towers</div></div>
+                <div class="stat"><div class="stat-val">200</div><div class="stat-label">SAS</div></div>
+                <div class="stat"><div class="stat-val">12</div><div class="stat-label">Devices</div></div>
+            </div>
+            <div class="user-actions">
+                <button class="nav-link-btn"><span class="nav-icon">⚙️</span>Settings</button>
+                <button class="nav-link-btn"><span class="nav-icon">🚪</span>Sign Out</button>
+            </div>
+        </div>
+        <div class="upgrade-card">
+            <h5>Upgrade Infrastructure</h5>
+            <p>Unlock unlimited towers, real-time sync & advanced analytics.</p>
+            <button class="upgrade-btn">Upgrade Premium</button>
+            <p style="font-size:0.7rem; opacity:0.7; margin-top:8px;">Cluster Status: Optimal</p>
+        </div>
+    </aside>
+
+    <!-- Topbar -->
+    <header class="topbar">
+        <div class="right">
+            <a class="icon-btn" href="/alerts" aria-label="Alerts" title="Alerts">🔔</a>
+            <div class="avatar">TD</div>
+        </div>
+    </header>
+
+    <main class="main">
+        <header class="content-header">
+            <h1>Billing</h1>
+            <div class="controls">
+                <button class="export-btn">📥 Export Logs</button>
+            </div>
+        </header>
+
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Total Revenue</h3></div>
+                <div class="kpi-value">$12,450</div>
+                <div class="kpi-change badge-up">▲ +12%</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Paid</h3></div>
+                <div class="kpi-value">$10,200</div>
+                <div class="kpi-change badge-up">▲ 82%</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Pending</h3></div>
+                <div class="kpi-value">$1,850</div>
+                <div class="kpi-change badge-down">▼ 15%</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Overdue</h3></div>
+                <div class="kpi-value">$400</div>
+                <div class="kpi-change badge-down">▼ 3%</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h3>Recent Invoices</h3><span class="card-actions">Billing history</span></div>
+            <div class="card-body">
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Invoice ID</th>
+                                <th>Subscriber</th>
+                                <th>Plan</th>
+                                <th>Amount</th>
+                                <th>Due Date</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><span class="mono">INV-001</span></td><td>John Doe</td><td>Basic</td><td>$49.99</td><td>2026-11-05</td><td><span class="status-badge healthy">● Paid</span></td></tr>
+                            <tr><td><span class="mono">INV-002</span></td><td>Jane Smith</td><td>Standard</td><td>$89.99</td><td>2026-11-03</td><td><span class="status-badge warning">● Pending</span></td></tr>
+                            <tr><td><span class="mono">INV-003</span></td><td>Robert Johnson</td><td>Premium</td><td>$149.99</td><td>2026-11-01</td><td><span class="status-badge critical">● Overdue</span></td></tr>
+                            <tr><td><span class="mono">INV-004</span></td><td>Emily Davis</td><td>Basic</td><td>$49.99</td><td>2026-11-07</td><td><span class="status-badge healthy">● Paid</span></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+</body>
+</html>

@@ -1,0 +1,99 @@
+{
+  "generated": "2026-11-01T15:43:16.210Z",
+  "totalRoutes": 15,
+  "totalIssues": 0,
+  "pageErrors": [],
+  "failedResources": [],
+  "results": [
+    {
+      "route": "/",
+      "name": "dashboard",
+      "screenshot": "G:\\New folder (7)\\towerdesk\\test\\screenshots\\dashboard.png",
+      "issues": []
+    },
+    {
+      "route": "/sas",
+      "name": "sas",
+      "screenshot": "G:\\New folder (7)\\towerdesk\\test\\screenshots\\sas.png",
+      "issues": []
+    },
+    {
+      "route": "/monitoring",
+      "name": "monitoring",
+      "screenshot": "G:\\New folder (7)\\towerdesk\\test\\screenshots\\monitoring.png",
+      "issues": []
+    },
+    {
+      "route": "/billing",
+      "name": "billing",
+      "screenshot": "G:\\New folder (7)\\towerdesk\\test\\screenshots\\billing.png",
+      "issues": []
+    },
+    {
+      "route": "/vouchers",
+      "name": "vouchers",
+      "screenshot": "G:\\New folder (7)\\towerdesk\\test\\screenshots\\vouchers.png",
+      "issues": []
+    },
+    {
+      "route": "/alerts",
+      "name": "alerts",
+      "screenshot": "G:\\New folder (7)\\towerdesk\\test\\screenshots\\alerts.png",
+      "issues": []
+    },
+    {
+      "route": "/reports",
+      "name": "reports",
+      "screenshot": "G:\\New folder (7)\\towerdesk\\test\\screenshots\\reports.png",
+      "issues": []
+    },
+    {
+      "route": "/tickets",
+      "name": "tickets",
+      "screenshot": "G:\\New folder (7)\\towerdesk\\test\\screenshots\\tickets.png",
+      "issues": []
+    },
+    {
+      "route": "/technicians",
+      "name": "technicians",
+      "screenshot": "G:\\New folder (7)\\towerdesk\\test\\screenshots\\technicians.png",
+      "issues": []
+    },
+    {
+      "route": "/notifications",
+      "name": "notifications",
+      "screenshot": "G:\\New folder (7)\\towerdesk\\test\\screenshots\\notifications.png",
+      "issues": []
+    },
+    {
+      "route": "/add-device",
+      "name": "add-device",
+      "screenshot": "G:\\New folder (7)\\towerdesk\\test\\screenshots\\add-device.png",
+      "issues": []
+    },
+    {
+      "route": "/invoices",
+      "name": "invoices",
+      "screenshot": "G:\\New folder (7)\\towerdesk\\test\\screenshots\\invoices.png",
+      "issues": []
+    },
+    {
+      "route": "/map",
+      "name": "map",
+      "screenshot": "G:\\New folder (7)\\towerdesk\\test\\screenshots\\map.png",
+      "issues": []
+    },
+    {
+      "route": "/plans",
+      "name": "plans",
+      "screenshot": "G:\\New folder (7)\\towerdesk\\test\\screenshots\\plans.png",
+      "issues": []
+    },
+    {
+      "route": "/remote",
+      "name": "remote",
+      "screenshot": "G:\\New folder (7)\\towerdesk\\test\\screenshots\\remote.png",
+      "issues": []
+    }
+  ]
+}

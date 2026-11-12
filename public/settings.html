@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - TowerDesk ISP Dashboard</title>
+    <link rel="stylesheet" href="/app.css">
+    <script src="/app.js"></script>
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="brand">Tower<span class="mark">Desk</span></div>
+        <nav aria-label="Main">
+        <div class="nav-section">
+            <h4>Network</h4>
+            <ul>
+                <li><a href="/"><span class="nav-icon" aria-hidden="true">🏠</span>Overview</a></li>
+                <li><a href="/monitoring"><span class="nav-icon" aria-hidden="true">📡</span>Monitoring</a></li>
+                <li><a href="/map"><span class="nav-icon" aria-hidden="true">🗺️</span>Tower Map</a></li>
+                <li><a href="/alerts"><span class="nav-icon" aria-hidden="true">🚨</span>Alerts</a></li>
+                <li><a href="/remote"><span class="nav-icon" aria-hidden="true">🖥️</span>Remote Actions</a></li>
+                <li><a href="/add-device"><span class="nav-icon" aria-hidden="true">➕</span>Add Device</a></li>
+            </ul>
+        </div>
+        <div class="nav-section">
+            <h4>Customers</h4>
+            <ul>
+                <li><a href="/sas"><span class="nav-icon" aria-hidden="true">👥</span>SAS<span class="nav-count">200</span></a></li>
+                <li><a href="/plans"><span class="nav-icon" aria-hidden="true">📋</span>Plans</a></li>
+                <li><a href="/vouchers"><span class="nav-icon" aria-hidden="true">🎫</span>Vouchers</a></li>
+                <li><a href="/billing"><span class="nav-icon" aria-hidden="true">💳</span>Billing</a></li>
+                <li><a href="/invoices"><span class="nav-icon" aria-hidden="true">🧾</span>Invoices</a></li>
+                <li><a href="/tickets"><span class="nav-icon" aria-hidden="true">🛠️</span>Tickets</a></li>
+            </ul>
+        </div>
+        </nav>
+        <div class="user-card">
+            <div class="user-info">
+                <div class="avatar-sm">AD</div>
+                <div>
+                    <div class="user-name">Admin User</div>
+                    <div class="user-role">Super Admin</div>
+                </div>
+            </div>
+            <div class="user-actions">
+                <a class="nav-link-btn" href="/settings"><span class="nav-icon" aria-hidden="true">⚙️</span>Settings</a>
+                <button class="nav-link-btn" type="button"><span class="nav-icon" aria-hidden="true">🚪</span>Sign Out</button>
+            </div>
+        </div>
+    </aside>
+
+    <header class="topbar">
+        <div class="left">
+            <div class="org-select">cards.admin.cr ▾</div>
+            <div class="plan-select">HRINS ▾</div>
+        </div>
+        <div class="right">
+            <a class="icon-btn" href="/alerts" aria-label="Alerts" title="Alerts">🔔</a>
+            <div class="avatar">TD</div>
+        </div>
+    </header>
+
+    <main class="main">
+        <header class="content-header">
+            <h1>Settings</h1>
+            <div class="controls">
+                <span class="live-pill ok"><span class="live-dot"></span><span>Offline-ready</span></span>
+            </div>
+        </header>
+
+        <div class="source-banner" id="staged-banner" hidden></div>
+
+        <div class="card">
+            <div class="card-header"><h3>Software updates</h3><span class="card-actions" id="version-tag">Version —</span></div>
+            <div class="card-body">
+                <p class="muted" style="margin-top:0">TowerDesk can update itself from your GitHub repository. Nothing is downloaded until you check — the app stays fully offline otherwise.</p>
+                <form id="update-form" class="detail-edit" autocomplete="off">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="up-repo">GitHub repository</label>
+                            <input type="text" id="up-repo" placeholder="owner/name" autocomplete="off">
+                        </div>
+                        <div class="form-group">
+                            <label for="up-channel">Channel</label>
+                            <select id="up-channel">
+                                <option value="release">Stable releases</option>
+                                <option value="prerelease">Pre-releases (early)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group" style="flex:1 1 100%">
+                            <label for="up-manifest">…or a release manifest URL (optional)</label>
+                            <input type="text" id="up-manifest" placeholder="https://example.com/towerdesk/latest.json" autocomplete="off">
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn-secondary" id="up-save">Save source</button>
+                        <button type="button" class="btn-primary" id="up-check">Check for updates</button>
+                        <span id="up-msg" class="muted"></span>
+                    </div>
+                </form>
+
+                <div id="up-result" class="update-result" hidden></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h3>About this install</h3><span class="card-actions">Portable &amp; offline</span></div>
+            <div class="card-body">
+                <div class="stat-grid">
+                    <div class="stat-tile"><div class="k">Version</div><div class="v" id="about-version">—</div></div>
+                    <div class="stat-tile"><div class="k">Self-update</div><div class="v" id="about-selfupdate">—</div></div>
+                    <div class="stat-tile"><div class="k">Data</div><div class="v">Local only</div></div>
+                    <div class="stat-tile"><div class="k">Internet</div><div class="v">Not required</div></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        (function () {
+            var $ = function (id) { return document.getElementById(id); };
+            var latestDownloadUrl = '';
+
+            function esc(v) {
+                return String(v === undefined || v === null ? '' : v).replace(/[&<>"']/g, function (c) {
+                    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+                });
+            }
+            function api(method, url, body) {
+                return fetch(url, {
+                    method: method,
+                    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+                    body: body ? JSON.stringify(body) : undefined
+                }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); });
+            }
+
+            function showStaged(staged) {
+                var el = $('staged-banner');
+                if (!staged) { el.hidden = true; return; }
+                el.hidden = false; el.className = 'source-banner';
+                el.innerHTML = '<strong>Update ' + esc(staged.version) + ' is ready.</strong> Restart TowerDesk to finish installing it. ' +
+                    '<button type="button" class="link-btn" id="cancel-staged">Cancel</button>';
+                $('cancel-staged').addEventListener('click', function () {
+                    api('POST', '/api/update/cancel').then(loadStatus);
+                });
+            }
+
+            function loadStatus() {
+                return api('GET', '/api/update/status').then(function (r) {
+                    var s = r.body;
+                    $('version-tag').textContent = 'Version ' + s.current;
+                    $('about-version').textContent = s.current;
+                    $('about-selfupdate').textContent = s.canSelfUpdate ? 'Supported' : 'Manual only';
+                    $('up-repo').value = s.config.repo || '';
+                    $('up-manifest').value = s.config.manifestUrl || '';
+                    $('up-channel').value = s.config.channel || 'release';
+                    showStaged(s.staged);
+                });
+            }
+
+            $('update-form').addEventListener('submit', function (ev) {
+                ev.preventDefault();
+                $('up-msg').textContent = 'Saving…';
+                api('POST', '/api/update/config', {
+                    repo: $('up-repo').value.trim(),
+                    manifestUrl: $('up-manifest').value.trim(),
+                    channel: $('up-channel').value
+                }).then(function () { $('up-msg').textContent = 'Source saved ✓'; });
+            });
+
+            $('up-check').addEventListener('click', function () {
+                var res = $('up-result');
+                $('up-msg').textContent = 'Checking…';
+                res.hidden = true;
+                // Save the source first so the check uses the current fields.
+                api('POST', '/api/update/config', {
+                    repo: $('up-repo').value.trim(),
+                    manifestUrl: $('up-manifest').value.trim(),
+                    channel: $('up-channel').value
+                }).then(function () {
+                    return api('POST', '/api/update/check');
+                }).then(function (r) {
+                    $('up-msg').textContent = '';
+                    res.hidden = false;
+                    if (r.body.error) {
+                        res.className = 'update-result warn';
+                        res.innerHTML = '<strong>Could not check.</strong> ' + esc(r.body.error);
+                        return;
+                    }
+                    var d = r.body;
+                    if (d.available) {
+                        latestDownloadUrl = d.downloadUrl || '';
+                        res.className = 'update-result ok';
+                        res.innerHTML = '<strong>Update available: ' + esc(d.latest) + '</strong> (you have ' + esc(d.current) + ')' +
+                            (d.notes ? '<pre class="update-notes">' + esc(d.notes) + '</pre>' : '') +
+                            '<div class="form-actions"><button type="button" class="btn-primary" id="up-install"' + (latestDownloadUrl ? '' : ' disabled') + '>Download &amp; install</button>' +
+                            (d.htmlUrl ? '<a class="btn-secondary" href="' + esc(d.htmlUrl) + '" target="_blank" rel="noopener">Release notes</a>' : '') + '</div>';
+                        if (latestDownloadUrl) $('up-install').addEventListener('click', install);
+                    } else {
+                        res.className = 'update-result';
+                        res.innerHTML = '<strong>You are up to date.</strong> Version ' + esc(d.current) + ' is the latest.';
+                    }
+                });
+            });
+
+            function install() {
+                var btn = $('up-install'); btn.disabled = true; btn.textContent = 'Downloading…';
+                api('POST', '/api/update/install', { downloadUrl: latestDownloadUrl }).then(function (r) {
+                    if (r.body.error) { btn.disabled = false; btn.textContent = 'Download & install'; $('up-msg').textContent = 'Install failed: ' + r.body.error; return; }
+                    $('up-result').hidden = true;
+                    loadStatus();
+                });
+            }
+
+            loadStatus();
+        })();
+    </script>
+</body>
+</html>

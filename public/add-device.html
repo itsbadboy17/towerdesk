@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add Device - TowerDesk ISP Dashboard</title>
+    <link rel="stylesheet" href="/app.css">
+    <script src="/app.js"></script>
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="brand">Tower<span class="mark">Desk</span></div>
+        <nav aria-label="Main">
+        <div class="nav-section">
+            <h4>Network</h4>
+            <ul>
+                <li><a href="/"><span class="nav-icon" aria-hidden="true">🏠</span>Overview</a></li>
+                <li><a href="/monitoring"><span class="nav-icon" aria-hidden="true">📡</span>Monitoring</a></li>
+                <li><a href="/map"><span class="nav-icon" aria-hidden="true">🗺️</span>Tower Map</a></li>
+                <li><a href="/alerts"><span class="nav-icon" aria-hidden="true">🚨</span>Alerts</a></li>
+                <li><a href="/remote"><span class="nav-icon" aria-hidden="true">🖥️</span>Remote Actions</a></li>
+                <li><a href="/add-device"><span class="nav-icon" aria-hidden="true">➕</span>Add Device</a></li>
+            </ul>
+        </div>
+        <div class="nav-section">
+            <h4>Customers</h4>
+            <ul>
+                <li><a href="/sas"><span class="nav-icon" aria-hidden="true">👥</span>SAS<span class="nav-count">200</span></a></li>
+                <li><a href="/plans"><span class="nav-icon" aria-hidden="true">📋</span>Plans</a></li>
+                <li><a href="/vouchers"><span class="nav-icon" aria-hidden="true">🎫</span>Vouchers</a></li>
+                <li><a href="/billing"><span class="nav-icon" aria-hidden="true">💳</span>Billing</a></li>
+                <li><a href="/invoices"><span class="nav-icon" aria-hidden="true">🧾</span>Invoices</a></li>
+                <li><a href="/tickets"><span class="nav-icon" aria-hidden="true">🛠️</span>Tickets</a></li>
+            </ul>
+        </div>
+        </nav>
+        <div class="user-card">
+            <div class="user-info">
+                <div class="avatar-sm">AD</div>
+                <div>
+                    <div class="user-name">Admin User</div>
+                    <div class="user-role">Super Admin</div>
+                </div>
+            </div>
+            <div class="user-stats">
+                <div class="stat"><div class="stat-val">2</div><div class="stat-label">Towers</div></div>
+                <div class="stat"><div class="stat-val">200</div><div class="stat-label">SAS</div></div>
+                <div class="stat"><div class="stat-val">12</div><div class="stat-label">Devices</div></div>
+            </div>
+            <div class="user-actions">
+                <button class="nav-link-btn"><span class="nav-icon">⚙️</span>Settings</button>
+                <button class="nav-link-btn"><span class="nav-icon">🚪</span>Sign Out</button>
+            </div>
+        </div>
+        <div class="upgrade-card">
+            <h5>Upgrade Infrastructure</h5>
+            <p>Unlock unlimited towers, real-time sync & advanced analytics.</p>
+            <button class="upgrade-btn">Upgrade Premium</button>
+            <p style="font-size:0.7rem; opacity:0.7; margin-top:8px;">Cluster Status: Optimal</p>
+        </div>
+    </aside>
+
+    <!-- Topbar -->
+    <header class="topbar">
+        <div class="right">
+            <a class="icon-btn" href="/alerts" aria-label="Alerts" title="Alerts">🔔</a>
+            <div class="avatar">TD</div>
+        </div>
+    </header>
+
+    <main class="main">
+        <header class="content-header">
+            <h1>Add Device</h1>
+            <div class="controls"></div>
+        </header>
+
+        <div class="device-layout">
+            <div class="card">
+                <div class="card-header"><h3>Register New Device</h3><span class="card-actions">Read-only connection</span></div>
+                <div class="card-body">
+                    <form id="device-form" autocomplete="off">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="device-ip">IP Address</label>
+                                <div class="input-with-btn">
+                                    <input type="text" id="device-ip" placeholder="192.168.0.1" required>
+                                    <button type="button" class="btn-secondary" id="detect-btn">🔍 Auto-detect</button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="device-name">Device Name</label>
+                                <input type="text" id="device-name" placeholder="e.g. Tower North Router" required>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="device-type">Device Type</label>
+                                <select id="device-type" required>
+                                    <option value="">Select type</option>
+                                    <option value="mikrotik">MikroTik Router</option>
+                                    <option value="cisco">Cisco Router</option>
+                                    <option value="ubnt">Ubiquiti</option>
+                                    <option value="mimosa">Mimosa</option>
+                                    <option value="tplink">TP-Link Router</option>
+                                    <option value="onu">ONU (Fiber GPON/EPON)</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="device-location">Location</label>
+                                <input type="text" id="device-location" placeholder="e.g. Building A, Roof">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="device-method">Connect Using</label>
+                                <select id="device-method">
+                                    <option value="ping">Ping only (no login)</option>
+                                    <option value="mikrotik">MikroTik API</option>
+                                    <option value="mikrotik-ssl">MikroTik API-SSL</option>
+                                    <option value="ssh">SSH</option>
+                                    <option value="telnet">Telnet</option>
+                                    <option value="snmp">SNMP v2c</option>
+                                    <option value="snmp1">SNMP v1</option>
+                                    <option value="tplink">TP-Link router login</option>
+                                    <option value="airos">Ubiquiti airOS login</option>
+                                    <option value="mimosa">Mimosa login</option>
+                                    <option value="http">Web UI (HTTP)</option>
+                                    <option value="https">Web UI (HTTPS)</option>
+                                </select>
+                            </div>
+                            <div class="form-group" data-for="port">
+                                <label for="device-port">Port</label>
+                                <input type="number" id="device-port" min="1" max="65535" placeholder="default">
+                            </div>
+                        </div>
+                        <div class="form-row" data-for="login">
+                            <div class="form-group">
+                                <label for="device-username">Username</label>
+                                <input type="text" id="device-username" autocomplete="off" placeholder="admin">
+                            </div>
+                            <div class="form-group">
+                                <label for="device-password">Password</label>
+                                <input type="password" id="device-password" autocomplete="new-password">
+                            </div>
+                        </div>
+                        <div class="form-row" data-for="community">
+                            <div class="form-group">
+                                <label for="device-community">SNMP Community</label>
+                                <input type="password" id="device-community" autocomplete="off" placeholder="public">
+                            </div>
+                        </div>
+                        <p class="form-hint" id="method-hint"></p>
+                        <div class="form-actions">
+                            <button type="button" class="btn-secondary" id="test-btn">🔌 Test Connection</button>
+                            <button type="submit" class="btn-primary" id="save-btn">Add Device</button>
+                            <button type="reset" class="btn-secondary" id="cancel-btn">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card result-card">
+                <div class="card-header"><h3>Connection Result</h3></div>
+                <div class="card-body">
+                    <div id="device-result" class="result-panel" aria-live="polite">
+                        <p class="muted">Enter an IP and press <strong>Auto-detect</strong> to find the vendor and the best way to connect, or pick a method and press <strong>Test Connection</strong>.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" id="vault-card">
+            <div class="card-header"><h3>Saved Logins</h3><span class="card-actions">Tried automatically when you add a device</span></div>
+            <div class="card-body">
+                <p class="form-hint">Save the few logins and SNMP communities you use across your gear once. When you add or scan devices, TowerDesk tries them for you and picks the one that works — no need to choose a method or type a password per device. Stored encrypted; never shown again after saving.</p>
+                <form id="vault-form" autocomplete="off">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="vault-kind">Type</label>
+                            <select id="vault-kind">
+                                <option value="login">Username &amp; password</option>
+                                <option value="community">SNMP community</option>
+                            </select>
+                        </div>
+                        <div class="form-group" data-vault="username">
+                            <label for="vault-username">Username</label>
+                            <input type="text" id="vault-username" autocomplete="off" placeholder="admin">
+                        </div>
+                        <div class="form-group" data-vault="password">
+                            <label for="vault-password">Password</label>
+                            <input type="password" id="vault-password" autocomplete="new-password">
+                        </div>
+                        <div class="form-group" data-vault="community" hidden>
+                            <label for="vault-community">Community</label>
+                            <input type="password" id="vault-community" autocomplete="off" placeholder="public">
+                        </div>
+                        <div class="form-group">
+                            <label for="vault-label">Label (optional)</label>
+                            <input type="text" id="vault-label" maxlength="60" placeholder="e.g. Main admin">
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn-secondary" id="vault-add-btn">➕ Save login</button>
+                    </div>
+                </form>
+                <div id="vault-list" class="vault-list" aria-live="polite"></div>
+            </div>
+        </div>
+
+        <div class="card" id="scan-card">
+            <div class="card-header"><h3>Scan a Network</h3><span class="card-actions">Finds every device in a range · read-only, never logs in</span></div>
+            <div class="card-body">
+                <form id="scan-form" autocomplete="off">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="scan-range">IP Range</label>
+                            <div class="input-with-btn">
+                                <input type="text" id="scan-range" placeholder="192.168.1.0/24 or 10.0.0.1-50">
+                                <button type="submit" class="btn-primary" id="scan-btn">📡 Scan</button>
+                                <button type="button" class="btn-secondary" id="scan-stop-btn" hidden>Stop</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="scan-community">SNMP Community (optional)</label>
+                            <input type="password" id="scan-community" autocomplete="off" placeholder="public">
+                        </div>
+                    </div>
+                    <p class="form-hint">Private ranges only, up to 256 addresses (a /24). Connect your VPN first if the tower network is remote. SNMP shows the most detail (name, model), so enable it on the devices if you can.</p>
+                </form>
+                <div id="scan-status" class="scan-status" aria-live="polite" hidden>
+                    <progress id="scan-progress" max="1" value="0" aria-label="Scan progress"></progress>
+                    <span id="scan-status-text"></span>
+                </div>
+                <div id="scan-results" hidden>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr><th><input type="checkbox" id="scan-all" aria-label="Select all found devices"></th><th>IP</th><th>Name</th><th>Type</th><th>Connect Using</th><th>Found</th></tr>
+                            </thead>
+                            <tbody id="scan-list"></tbody>
+                        </table>
+                    </div>
+                    <label class="scan-vault-toggle"><input type="checkbox" id="scan-use-vault" checked> Try my <strong>Saved Logins</strong> &amp; SNMP communities on each device</label>
+                    <details class="scan-override">
+                        <summary>Or type one login for all selected</summary>
+                        <div class="form-row scan-login">
+                            <div class="form-group">
+                                <label for="scan-username">Username</label>
+                                <input type="text" id="scan-username" autocomplete="off" placeholder="admin">
+                            </div>
+                            <div class="form-group">
+                                <label for="scan-password">Password</label>
+                                <input type="password" id="scan-password" autocomplete="new-password">
+                            </div>
+                        </div>
+                    </details>
+                    <p class="form-hint">Whatever matches is saved encrypted with each device. Leave both empty to add with status checks only and set logins later.</p>
+                    <div class="form-actions">
+                        <button type="button" class="btn-primary" id="scan-add-btn">➕ Add Selected</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h3>My Devices</h3><span class="card-actions"><button type="button" class="btn-secondary btn-sm" id="autoconnect-btn" title="Try your saved logins & SNMP communities on every device that isn't connected yet">🔧 Fix unconnected</button> · Live status every 10 s · <a href="/monitoring">open Monitoring</a></span></div>
+            <div class="card-body">
+                <div id="bulk-bar" class="bulk-bar" hidden>
+                    <span id="bulk-count" class="bulk-count"></span>
+                    <label class="bulk-field">Monitor via
+                        <select id="bulk-method"></select>
+                    </label>
+                    <input type="password" id="bulk-community" class="bulk-community" autocomplete="off" placeholder="SNMP community (optional)" hidden>
+                    <button type="button" class="btn-primary btn-sm" id="bulk-apply">Apply to selected</button>
+                    <button type="button" class="btn-secondary btn-sm" id="bulk-check">Check</button>
+                    <button type="button" class="btn-secondary btn-sm" id="bulk-delete">Delete</button>
+                    <span id="bulk-status" class="muted"></span>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th class="col-check"><input type="checkbox" id="dev-all" aria-label="Select all devices"></th><th>Name</th><th>Type</th><th>IP</th><th>Method</th><th>Status</th><th>Last Result</th><th>Actions</th></tr>
+                        </thead>
+                        <tbody id="device-list">
+                            <tr><td colspan="8" class="muted">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/add-device.js"></script>
+</body>
+</html>

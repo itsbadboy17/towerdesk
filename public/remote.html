@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Remote Access - TowerDesk ISP Dashboard</title>
+    <link rel="stylesheet" href="/app.css">
+    <script src="/app.js"></script>
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="brand">Tower<span class="mark">Desk</span></div>
+        <nav aria-label="Main">
+        <div class="nav-section">
+            <h4>Network</h4>
+            <ul>
+                <li><a href="/"><span class="nav-icon" aria-hidden="true">🏠</span>Overview</a></li>
+                <li><a href="/monitoring"><span class="nav-icon" aria-hidden="true">📡</span>Monitoring</a></li>
+                <li><a href="/map"><span class="nav-icon" aria-hidden="true">🗺️</span>Tower Map</a></li>
+                <li><a href="/alerts"><span class="nav-icon" aria-hidden="true">🚨</span>Alerts</a></li>
+                <li><a href="/remote"><span class="nav-icon" aria-hidden="true">🖥️</span>Remote Actions</a></li>
+                <li><a href="/add-device"><span class="nav-icon" aria-hidden="true">➕</span>Add Device</a></li>
+            </ul>
+        </div>
+        <div class="nav-section">
+            <h4>Customers</h4>
+            <ul>
+                <li><a href="/sas"><span class="nav-icon" aria-hidden="true">👥</span>SAS<span class="nav-count">200</span></a></li>
+                <li><a href="/plans"><span class="nav-icon" aria-hidden="true">📋</span>Plans</a></li>
+                <li><a href="/vouchers"><span class="nav-icon" aria-hidden="true">🎫</span>Vouchers</a></li>
+                <li><a href="/billing"><span class="nav-icon" aria-hidden="true">💳</span>Billing</a></li>
+                <li><a href="/invoices"><span class="nav-icon" aria-hidden="true">🧾</span>Invoices</a></li>
+                <li><a href="/tickets"><span class="nav-icon" aria-hidden="true">🛠️</span>Tickets</a></li>
+            </ul>
+        </div>
+        </nav>
+        <div class="user-card">
+            <div class="user-info">
+                <div class="avatar-sm">AD</div>
+                <div>
+                    <div class="user-name">Admin User</div>
+                    <div class="user-role">Super Admin</div>
+                </div>
+            </div>
+            <div class="user-stats">
+                <div class="stat"><div class="stat-val">2</div><div class="stat-label">Towers</div></div>
+                <div class="stat"><div class="stat-val">200</div><div class="stat-label">SAS</div></div>
+                <div class="stat"><div class="stat-val">12</div><div class="stat-label">Devices</div></div>
+            </div>
+            <div class="user-actions">
+                <button class="nav-link-btn"><span class="nav-icon">⚙️</span>Settings</button>
+                <button class="nav-link-btn"><span class="nav-icon">🚪</span>Sign Out</button>
+            </div>
+        </div>
+        <div class="upgrade-card">
+            <h5>Upgrade Infrastructure</h5>
+            <p>Unlock unlimited towers, real-time sync & advanced analytics.</p>
+            <button class="upgrade-btn">Upgrade Premium</button>
+            <p style="font-size:0.7rem; opacity:0.7; margin-top:8px;">Cluster Status: Optimal</p>
+        </div>
+    </aside>
+
+    <!-- Topbar -->
+    <header class="topbar">
+        <div class="right">
+            <a class="icon-btn" href="/alerts" aria-label="Alerts" title="Alerts">🔔</a>
+            <div class="avatar">TD</div>
+        </div>
+    </header>
+
+    <main class="main">
+        <header class="content-header">
+            <h1>Remote Actions</h1>
+            <div class="controls">
+                <button class="export-btn">📥 Export Logs</button>
+            </div>
+        </header>
+
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Devices Online</h3></div>
+                <div class="kpi-value">10</div>
+                <div class="kpi-change badge-up">▲ Reachable</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Actions Today</h3></div>
+                <div class="kpi-value">14</div>
+                <div class="kpi-change badge-up">▲ Executed</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Pending</h3></div>
+                <div class="kpi-value">0</div>
+                <div class="kpi-change badge-up">▲ Queue empty</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Failed</h3></div>
+                <div class="kpi-value">0</div>
+                <div class="kpi-change badge-up">▲ 0%</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h3>Device Actions</h3><span class="card-actions">Remote device control</span></div>
+            <div class="card-body">
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Device</th>
+                                <th>IP</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><span class="mono">node-001</span></td>
+                                <td>10.0.0.1</td>
+                                <td><span class="status-badge healthy">● Online</span></td>
+                                <td>
+                                    <button class="action-btn" onclick="runAction('node-001', 'reboot', this)">🔄 Reboot</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><span class="mono">node-002</span></td>
+                                <td>10.0.0.2</td>
+                                <td><span class="status-badge warning">● Warning</span></td>
+                                <td>
+                                    <button class="action-btn" onclick="runAction('node-002', 'disable', this)">⏸ Disable</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><span class="mono">node-003</span></td>
+                                <td>10.0.0.3</td>
+                                <td><span class="status-badge healthy">● Online</span></td>
+                                <td>
+                                    <button class="action-btn" onclick="runAction('node-003', 'kick', this)">👢 Kick Session</button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="alert-msg" id="action-result"></div>
+
+    </main>
+
+    <script>
+        function runAction(deviceId, action, button) {
+            window.TowerDesk.inlineConfirm(button, action + ' ' + deviceId + '?').then(function (yes) {
+                if (yes) sendAction(deviceId, action);
+            });
+        }
+        function sendAction(deviceId, action) {
+            var result = document.getElementById('action-result');
+            result.className = 'alert-msg';
+            fetch('/api/actions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: action, deviceId: deviceId })
+            })
+                .then(function (r) {
+                    return r.json().then(function (d) {
+                        if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+                        return d;
+                    });
+                })
+                .then(function (d) {
+                    result.className = 'alert-msg success';
+                    result.textContent = 'Action "' + action + '" sent to ' + deviceId + ': ' + (d.message || d.action);
+                })
+                .catch(function (e) {
+                    result.className = 'alert-msg error';
+                    result.textContent = 'Error: ' + e.message;
+                });
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,222 @@
+// RADIUS / SAS subscribers. A tower owner authenticates customers against a RADIUS server
+// (FreeRADIUS, MikroTik User-Manager) or a SAS. This module normalises whatever the source
+// reports into one subscriber-session shape the UI can render, and ships a deterministic demo
+// source so the page works offline / in the portable trial build.
+//
+// Normalised subscriber session:
+//   { id, username, name, plan, rateDown, rateUp (Mbps), online, framedIp, mac, nas,
+//     sessionStart (iso), sessionSeconds, bytesDown, bytesUp, liveDownBps, liveUpBps,
+//     signal (dBm|null), lastSeen (iso) }
+const fs = require('fs');
+const path = require('path');
+const storage = require('./storage');
+const { dataDir } = require('./paths');
+
+const FILE = path.join(dataDir(), 'radius.json');
+const SOURCES = ['demo', 'mikrotik', 'freeradius'];
+
+// ---- Config (data/radius.json). The server secret is encrypted at rest, never returned. ----
+function loadConfig() {
+  try {
+    return JSON.parse(fs.readFileSync(FILE, 'utf8'));
+  } catch (e) {
+    return { source: 'none' };
+  }
+}
+function saveConfig(cfg) {
+  fs.mkdirSync(path.dirname(FILE), { recursive: true });
+  const tmp = FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, FILE);
+}
+// Public view: no secret, just whether one is saved.
+function getConfig() {
+  const c = loadConfig();
+  const { secret, ...rest } = c;
+  return { ...rest, source: c.source || 'none', hasSecret: !!secret };
+}
+function setConfig(input) {
+  const cur = loadConfig();
+  const allowed = SOURCES.concat('none'); // 'none' = disconnected
+  const next = {
+    source: allowed.includes(input.source) ? input.source : 'none',
+    host: input.host !== undefined ? String(input.host || '').trim().slice(0, 120) : cur.host,
+    port: input.port !== undefined ? (input.port ? Number(input.port) : null) : cur.port,
+    username: input.username !== undefined ? String(input.username || '').slice(0, 64) : cur.username,
+    nas: input.nas !== undefined ? String(input.nas || '').trim().slice(0, 80) : cur.nas,
+    secret: input.password ? storage.encrypt(String(input.password)) : cur.secret
+  };
+  saveConfig(next);
+  return getConfig();
+}
+
+// ---- Shared helpers ----
+function hms(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+  if (d) return d + 'd ' + h + 'h';
+  if (h) return h + 'h ' + m + 'm';
+  return m + 'm ' + (sec % 60) + 's';
+}
+
+function summarise(subs) {
+  const online = subs.filter((s) => s.online);
+  return {
+    total: subs.length,
+    online: online.length,
+    offline: subs.length - online.length,
+    liveDownBps: online.reduce((a, s) => a + (s.liveDownBps || 0), 0),
+    liveUpBps: online.reduce((a, s) => a + (s.liveUpBps || 0), 0),
+    bytesDown: subs.reduce((a, s) => a + (s.bytesDown || 0), 0),
+    bytesUp: subs.reduce((a, s) => a + (s.bytesUp || 0), 0)
+  };
+}
+
+// ---- Demo source: deterministic sessions that advance over time so the page looks live. ----
+const DEMO_NAMES = [
+  'Ahmed Saleh', 'Fatima Noor', 'Omar Haddad', 'Layla Karim', 'Yusuf Aziz', 'Mariam Jalal',
+  'Hassan Rifai', 'Noor Abbas', 'Zaid Mansour', 'Huda Nasser', 'Kareem Fadel', 'Sara Qasim',
+  'Tariq Amin', 'Dina Farah', 'Samir Odeh', 'Rania Khoury', 'Bilal Hamdan', 'Lina Sabbagh',
+  'Firas Daoud', 'Nadia Shadid', 'Mazen Ghanem', 'Rasha Hilal', 'Jamal Barakat', 'Aisha Zahra',
+  'Khalil Toma', 'Salma Younan', 'Nabil Aractingi', 'Dalia Srour', 'Wael Kassab', 'Maya Rahhal'
+];
+const DEMO_PLANS = [
+  { plan: 'Home 10M', down: 10, up: 2 },
+  { plan: 'Home 20M', down: 20, up: 4 },
+  { plan: 'Pro 50M', down: 50, up: 10 },
+  { plan: 'Business 100M', down: 100, up: 25 }
+];
+const DEMO_NAS = ['Sector North', 'Sector West', 'Sector South'];
+
+function demoSubs(n) {
+  n = n || 24;
+  const now = Date.now();
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const name = DEMO_NAMES[i % DEMO_NAMES.length];
+    const user = name.toLowerCase().split(' ')[0] + (i + 1) + '@hrins';
+    const p = DEMO_PLANS[(i * 7 + 3) % DEMO_PLANS.length];
+    // South sector is "down" in the demo, matching the monitoring demo — its clients are offline.
+    const nas = DEMO_NAS[i % DEMO_NAS.length];
+    const online = nas !== 'Sector South' && (i % 9 !== 4); // ~85% of the two live sectors
+    const startedAgo = ((i * 137 + 41) % 1400) * 60 + 90; // seconds, stable per subscriber
+    const sessionSeconds = online ? startedAgo + Math.floor((now / 1000) % 600) : 0;
+    // Live rate wiggles under the plan ceiling; bytes accumulate with the session length.
+    const phase = (now / 1000) / 11 + i;
+    const dFrac = online ? 0.08 + 0.5 * (0.5 + 0.5 * Math.sin(phase)) : 0;
+    const uFrac = online ? 0.05 + 0.3 * (0.5 + 0.5 * Math.sin(phase + 2)) : 0;
+    const liveDownBps = Math.round(p.down * 1e6 * dFrac);
+    const liveUpBps = Math.round(p.up * 1e6 * uFrac);
+    const bytesDown = Math.round(p.down * 1e6 / 8 * 0.18 * sessionSeconds);
+    const bytesUp = Math.round(p.up * 1e6 / 8 * 0.12 * sessionSeconds);
+    out.push({
+      id: 'sub-' + (i + 1),
+      username: user,
+      name: name,
+      plan: p.plan,
+      rateDown: p.down,
+      rateUp: p.up,
+      online: online,
+      framedIp: '10.81.' + (61 + (i % 3)) + '.' + (10 + i),
+      mac: 'DC:9F:DB:' + ((i * 11 + 16) % 256).toString(16).padStart(2, '0').toUpperCase() + ':' +
+        ((i * 7 + 32) % 256).toString(16).padStart(2, '0').toUpperCase() + ':' +
+        ((i * 5 + 1) % 256).toString(16).padStart(2, '0').toUpperCase(),
+      nas: nas,
+      sessionStart: online ? new Date(now - sessionSeconds * 1000).toISOString() : null,
+      sessionSeconds: sessionSeconds,
+      sessionText: online ? hms(sessionSeconds) : '—',
+      bytesDown: bytesDown,
+      bytesUp: bytesUp,
+      liveDownBps: liveDownBps,
+      liveUpBps: liveUpBps,
+      signal: online ? -(52 + ((i * 13) % 24)) : null,
+      lastSeen: online ? new Date(now).toISOString() : new Date(now - ((i * 97 + 20) % 2000) * 60000).toISOString()
+    });
+  }
+  return out;
+}
+
+// ---- MikroTik source: PPPoE/hotspot active sessions from a router acting as NAS/RADIUS. ----
+// Best-effort and fully defensive: any failure returns an empty list with a note, never throws.
+function num(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
+function rateToMbps(rl) {
+  // MikroTik rate-limit "rx/tx" like "20M/4M" (as seen from the client: rx=download).
+  if (!rl) return { down: null, up: null };
+  const parts = String(rl).split('/');
+  const toM = (s) => {
+    const m = /([\d.]+)\s*([kKmMgG]?)/.exec(s || '');
+    if (!m) return null;
+    const v = parseFloat(m[1]); const u = m[2].toLowerCase();
+    return Math.round((u === 'g' ? v * 1000 : u === 'k' ? v / 1000 : v) * 10) / 10;
+  };
+  return { down: toM(parts[0]), up: toM(parts[1]) };
+}
+async function mikrotikSubs(cfg) {
+  const mt = require('./transports/mikrotik');
+  let session;
+  try {
+    const password = cfg.secret ? storage.decrypt(cfg.secret) : '';
+    session = await mt.Session.open({ host: cfg.host, port: cfg.port || undefined, username: cfg.username || 'admin', password, timeout: 6000 });
+    const [active, secrets] = await Promise.all([
+      session.run(['/ppp/active/print']),
+      session.run(['/ppp/secret/print', '=.proplist=name,profile,rate-limit,comment']).catch(() => [])
+    ]);
+    const byName = {};
+    secrets.forEach((s) => { if (s.name) byName[s.name] = s; });
+    const now = Date.now();
+    const subs = active.map((a, i) => {
+      const sec = byName[a.name] || {};
+      const rl = rateToMbps(a['rate-limit'] || sec['rate-limit']);
+      const upSec = num(a.uptime && /(\d+)/.test(a.uptime) ? a.uptime : 0) || 0;
+      return {
+        id: a['.id'] || ('ppp-' + i),
+        username: a.name,
+        name: sec.comment || a.name,
+        plan: sec.profile || a.service || 'PPPoE',
+        rateDown: rl.down, rateUp: rl.up,
+        online: true,
+        framedIp: a.address || null,
+        mac: a['caller-id'] || null,
+        nas: cfg.nas || a['calling-station-id'] || 'NAS',
+        sessionStart: null,
+        sessionSeconds: upSec,
+        sessionText: a.uptime || '—',
+        bytesDown: null, bytesUp: null,
+        liveDownBps: null, liveUpBps: null,
+        signal: null,
+        lastSeen: new Date(now).toISOString()
+      };
+    });
+    return { subscribers: subs, note: null };
+  } catch (e) {
+    return { subscribers: [], note: 'Could not reach the MikroTik NAS: ' + e.message };
+  } finally {
+    if (session && session.close) try { session.close(); } catch (e) { /* ignore */ }
+  }
+}
+
+// ---- Public: list current subscribers from whichever source is configured. ----
+async function list(opts) {
+  opts = opts || {};
+  if (opts.demo) {
+    const subs = demoSubs(24);
+    return { source: 'demo', configured: true, server: 'Demo RADIUS', note: null, summary: summarise(subs), subscribers: subs };
+  }
+  const cfg = loadConfig();
+  const source = cfg.source || 'none';
+  if (source === 'demo') {
+    const subs = demoSubs(24);
+    return { source: 'demo', configured: true, server: 'Demo RADIUS', note: null, summary: summarise(subs), subscribers: subs };
+  }
+  if (source === 'mikrotik') {
+    const r = await mikrotikSubs(cfg);
+    return { source: 'mikrotik', configured: true, server: cfg.host || 'MikroTik NAS', note: r.note, summary: summarise(r.subscribers), subscribers: r.subscribers };
+  }
+  if (source === 'freeradius') {
+    // SQL-backed FreeRADIUS needs a DB driver; not bundled to keep the app offline/portable.
+    return { source: 'freeradius', configured: true, server: cfg.host || 'FreeRADIUS', note: 'FreeRADIUS SQL source is not built into this portable build yet.', summary: summarise([]), subscribers: [] };
+  }
+  return { source: 'none', configured: false, server: null, note: 'No RADIUS/SAS server connected yet.', summary: summarise([]), subscribers: [] };
+}
+
+module.exports = { list, getConfig, setConfig, SOURCES, _demoSubs: demoSubs };

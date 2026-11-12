@@ -1,0 +1,20 @@
+# TowerDesk — keep local state and generated files out of git.
+# IMPORTANT: data/ holds each install's own devices, saved passwords (encrypted),
+# alerts and the login — it must NEVER be committed, so a "git pull" update brings
+# new code without ever touching the operator's data.
+data/
+node_modules/
+
+# Test + build artifacts
+dist/
+test-results/
+playwright-report/
+tests/qa/reports/
+# Regenerated on every `npm run test:qa` run (capture-only, not compared).
+tests/qa/screenshots/
+
+# Logs / OS cruft
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db

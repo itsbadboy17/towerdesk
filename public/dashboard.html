@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TowerDesk - ISP Dashboard</title>
+    <link rel="stylesheet" href="/app.css">
+    <script src="/app.js"></script>
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="brand">Tower<span class="mark">Desk</span></div>
+        <nav aria-label="Main">
+        <div class="nav-section">
+            <h4>Network</h4>
+            <ul>
+                <li><a href="/"><span class="nav-icon" aria-hidden="true">🏠</span>Overview</a></li>
+                <li><a href="/monitoring"><span class="nav-icon" aria-hidden="true">📡</span>Monitoring</a></li>
+                <li><a href="/map"><span class="nav-icon" aria-hidden="true">🗺️</span>Tower Map</a></li>
+                <li><a href="/alerts"><span class="nav-icon" aria-hidden="true">🚨</span>Alerts</a></li>
+                <li><a href="/remote"><span class="nav-icon" aria-hidden="true">🖥️</span>Remote Actions</a></li>
+                <li><a href="/add-device"><span class="nav-icon" aria-hidden="true">➕</span>Add Device</a></li>
+            </ul>
+        </div>
+        <div class="nav-section">
+            <h4>Customers</h4>
+            <ul>
+                <li><a href="/sas"><span class="nav-icon" aria-hidden="true">👥</span>SAS<span class="nav-count">200</span></a></li>
+                <li><a href="/plans"><span class="nav-icon" aria-hidden="true">📋</span>Plans</a></li>
+                <li><a href="/vouchers"><span class="nav-icon" aria-hidden="true">🎫</span>Vouchers</a></li>
+                <li><a href="/billing"><span class="nav-icon" aria-hidden="true">💳</span>Billing</a></li>
+                <li><a href="/invoices"><span class="nav-icon" aria-hidden="true">🧾</span>Invoices</a></li>
+                <li><a href="/tickets"><span class="nav-icon" aria-hidden="true">🛠️</span>Tickets</a></li>
+            </ul>
+        </div>
+        </nav>
+        <div class="user-card">
+            <div class="user-info">
+                <div class="avatar-sm">AD</div>
+                <div>
+                    <div class="user-name">Admin User</div>
+                    <div class="user-role">Super Admin</div>
+                </div>
+            </div>
+            <div class="user-stats">
+                <div class="stat"><div class="stat-val">2</div><div class="stat-label">Towers</div></div>
+                <div class="stat"><div class="stat-val">200</div><div class="stat-label">SAS</div></div>
+                <div class="stat"><div class="stat-val">12</div><div class="stat-label">Devices</div></div>
+            </div>
+            <div class="user-actions">
+                <button class="nav-link-btn"><span class="nav-icon">⚙️</span>Settings</button>
+                <button class="nav-link-btn"><span class="nav-icon">🚪</span>Sign Out</button>
+            </div>
+        </div>
+
+        <div class="upgrade-card">
+            <h5>Upgrade Infrastructure</h5>
+            <p>Unlock unlimited towers, real-time sync & advanced analytics.</p>
+            <button class="upgrade-btn">Upgrade Premium</button>
+            <p style="font-size:0.7rem; opacity:0.7; margin-top:8px;">Cluster Status: Optimal</p>
+        </div>
+    </aside>
+
+    <!-- Topbar -->
+    <header class="topbar">
+        <div class="right">
+            <a class="icon-btn" href="/alerts" aria-label="Alerts" title="Alerts">🔔</a>
+            <div class="avatar">TD</div>
+        </div>
+    </header>
+
+    <main class="main">
+        <header class="content-header">
+            <h1>Infrastructure Overview</h1>
+            <div class="controls">
+                <button class="export-btn">📥 Export Logs</button>
+            </div>
+        </header>
+
+        <!-- KPI Row -->
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Total SAS</h3></div>
+                <div class="kpi-value">200</div>
+                <div class="kpi-change badge-up">▲ +15.5% vs last period</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Active Towers</h3></div>
+                <div class="kpi-value">2</div>
+                <div class="kpi-change badge-up">▲ 100% uptime</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Bandwidth Usage</h3></div>
+                <div class="kpi-value">44.7 Gb/s</div>
+                <div class="kpi-change badge-up">▲ +4.2% vs last period</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Error Rate</h3></div>
+                <div class="kpi-value">0.8%</div>
+                <div class="kpi-change badge-down">▼ down from 1.2%</div>
+            </div>
+        </div>
+
+        <!-- Middle Grid -->
+        <div class="grid">
+            <div class="card wide-chart">
+                <div class="card-header"><h3>Total Revenue</h3><span class="card-actions">Last 7 days</span></div>
+                <div class="card-body">
+                    <div class="chart-wrap">
+                        <svg viewBox="0 0 700 220" xmlns="http://www.w3.org/2000/svg">
+                            <defs>
+                                <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stop-color="#2563eb" stop-opacity="0.35"/>
+                                    <stop offset="100%" stop-color="#2563eb" stop-opacity="0.0"/>
+                                </linearGradient>
+                            </defs>
+                            <path class="chart-area" d="M 40,180 L 40,160 Q 100,140 160,150 Q 220,160 280,130 Q 340,100 400,140 Q 460,180 520,140 Q 580,100 640,150 Q 650,150 660,145 L 660,180 H 40 Z"/>
+                            <path class="chart-line" d="M 40,160 Q 100,140 160,150 Q 220,160 280,130 Q 340,100 400,140 Q 460,180 520,140 Q 580,100 640,150 Q 650,150 660,145"/>
+                            <line x1="40" y1="180" x2="660" y2="180" stroke="#e5e7eb" stroke-width="1"/>
+                            <line x1="40" y1="160" x2="660" y2="160" stroke="#e5e7eb" stroke-width="1"/>
+                            <line x1="40" y1="140" x2="660" y2="140" stroke="#e5e7eb" stroke-width="1"/>
+                        </svg>
+                    </div>
+                    <div class="breakdown">
+                        <div class="breakdown-item"><div class="breakdown-label">SAS</div><div class="breakdown-bar"><div class="breakdown-fill" style="width:78%;background:var(--accent)"></div></div></div>
+                        <div class="breakdown-item"><div class="breakdown-label">Towers</div><div class="breakdown-bar"><div class="breakdown-fill" style="width:92%;background:#22c55e"></div></div></div>
+                        <div class="breakdown-item"><div class="breakdown-label">Uptime</div><div class="breakdown-bar"><div class="breakdown-fill" style="width:99.9%;background:#16a34a"></div></div></div>
+                    </div>
+                </div>
+            </div>
+            <div class="side-stack">
+                <div class="card">
+                    <div class="card-header"><h3>Most Day Active</h3><span class="card-actions">Peak hours</span></div>
+                    <div class="card-body">
+                        <div class="chart-wrap">
+                            <svg viewBox="0 0 340 160" xmlns="http://www.w3.org/2000/svg">
+                                <rect x="60" y="110" width="40" height="30" class="chart-bar"/>
+                                <rect x="110" y="70" width="40" height="70" class="chart-bar"/>
+                                <rect x="160" y="90" width="40" height="50" class="chart-bar"/>
+                                <rect x="210" y="50" width="40" height="90" class="chart-bar"/>
+                                <rect x="260" y="80" width="40" height="60" class="chart-bar"/>
+                                <line x1="30" y1="130" x2="320" y2="130" stroke="#e5e7eb" stroke-width="1"/>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header"><h3>Repeat Subscription Rate</h3><span class="card-actions">99.98%</span></div>
+                    <div class="card-body" style="display:flex; align-items:center; justify-content:center; height:140px;">
+                        <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="60" cy="60" r="48" class="gauge-track"/>
+                            <circle cx="60" cy="60" r="48" class="gauge-progress" stroke-dasharray="302,302" stroke-dashoffset="0.6"/>
+                            <text x="60" y="64" class="gauge-text">99.98%</text>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom: Critical Server Nodes (full width) -->
+        <div class="card">
+            <div class="card-header"><h3>Critical Server Nodes</h3><span class="card-actions">Live status</span></div>
+            <div class="card-body">
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Node ID</th><th>Region</th><th>CPU</th><th>Memory</th><th>Status</th></tr></thead>
+                        <tbody>
+                            <tr><td><span class="mono">node-001</span></td><td>us-east-1</td><td><span class="mono">72%</span></td><td><span class="mono">81%</span></td><td><span class="status-badge healthy">● Healthy</span></td></tr>
+                            <tr><td><span class="mono">node-002</span></td><td>eu-west-1</td><td><span class="mono">91%</span></td><td><span class="mono">67%</span></td><td><span class="status-badge warning">● Warning</span></td></tr>
+                            <tr><td><span class="mono">node-003</span></td><td>ap-south-1</td><td><span class="mono">44%</span></td><td><span class="mono">52%</span></td><td><span class="status-badge healthy">● Healthy</span></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add Widget Modal -->
+        <div class="modal-overlay" id="widgetModal">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>Add Widget</h3>
+                    <button class="close-btn" onclick="document.getElementById('widgetModal').style.display='none'">×</button>
+                </div>
+                <div class="widget-list">
+                    <div class="widget-item" onclick="alert('Widget added')">
+                        <div class="widget-thumb">📱</div>
+                        <div class="widget-info"><h4>Devices by Type</h4><p>Router, ONT, modem breakdown.</p></div>
+                        <button class="select-btn">Select</button>
+                    </div>
+                    <div class="widget-item" onclick="alert('Widget added')">
+                        <div class="widget-thumb">📊</div>
+                        <div class="widget-info"><h4>Dashboard Overview</h4><p>Key infra metrics at a glance.</p></div>
+                        <button class="select-btn">Select</button>
+                    </div>
+                    <div class="widget-item" onclick="alert('Widget added')">
+                        <div class="widget-thumb">🎫</div>
+                        <div class="widget-info"><h4>Ticket Performance</h4><p>Volume, resolution, status.</p></div>
+                        <button class="select-btn">Select</button>
+                    </div>
+                    <div class="widget-item" onclick="alert('Widget added')">
+                        <div class="widget-thumb">📈</div>
+                        <div class="widget-info"><h4>Bandwidth Trend</h4><p>Daily usage patterns.</p></div>
+                        <button class="select-btn">Select</button>
+                    </div>
+                    <div class="widget-item" onclick="alert('Widget added')">
+                        <div class="widget-thumb">👥</div>
+                        <div class="widget-info"><h4>Subscriber Segments</h4><p>Group by plan & region.</p></div>
+                        <button class="select-btn">Select</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        document.querySelectorAll('.add-widget').forEach(b => b.addEventListener('click', () => {
+            document.getElementById('widgetModal').style.display = 'flex';
+        }));
+        document.querySelectorAll('.close-btn').forEach(b => b.addEventListener('click', () => {
+            document.getElementById('widgetModal').style.display = 'none';
+        }));
+    </script>
+</body>
+</html>

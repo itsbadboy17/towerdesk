@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoring - TowerDesk ISP Dashboard</title>
+    <link rel="stylesheet" href="/app.css">
+    <script src="/app.js"></script>
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="brand">Tower<span class="mark">Desk</span></div>
+        <nav aria-label="Main">
+        <div class="nav-section">
+            <h4>Network</h4>
+            <ul>
+                <li><a href="/"><span class="nav-icon" aria-hidden="true">🏠</span>Overview</a></li>
+                <li><a href="/monitoring"><span class="nav-icon" aria-hidden="true">📡</span>Monitoring</a></li>
+                <li><a href="/map"><span class="nav-icon" aria-hidden="true">🗺️</span>Tower Map</a></li>
+                <li><a href="/alerts"><span class="nav-icon" aria-hidden="true">🚨</span>Alerts</a></li>
+                <li><a href="/remote"><span class="nav-icon" aria-hidden="true">🖥️</span>Remote Actions</a></li>
+                <li><a href="/add-device"><span class="nav-icon" aria-hidden="true">➕</span>Add Device</a></li>
+            </ul>
+        </div>
+        <div class="nav-section">
+            <h4>Customers</h4>
+            <ul>
+                <li><a href="/sas"><span class="nav-icon" aria-hidden="true">👥</span>SAS<span class="nav-count">200</span></a></li>
+                <li><a href="/plans"><span class="nav-icon" aria-hidden="true">📋</span>Plans</a></li>
+                <li><a href="/vouchers"><span class="nav-icon" aria-hidden="true">🎫</span>Vouchers</a></li>
+                <li><a href="/billing"><span class="nav-icon" aria-hidden="true">💳</span>Billing</a></li>
+                <li><a href="/invoices"><span class="nav-icon" aria-hidden="true">🧾</span>Invoices</a></li>
+                <li><a href="/tickets"><span class="nav-icon" aria-hidden="true">🛠️</span>Tickets</a></li>
+            </ul>
+        </div>
+        </nav>
+        <div class="user-card">
+            <div class="user-info">
+                <div class="avatar-sm">AD</div>
+                <div>
+                    <div class="user-name">Admin User</div>
+                    <div class="user-role">Super Admin</div>
+                </div>
+            </div>
+            <div class="user-stats">
+                <div class="stat"><div class="stat-val">2</div><div class="stat-label">Towers</div></div>
+                <div class="stat"><div class="stat-val">200</div><div class="stat-label">SAS</div></div>
+                <div class="stat"><div class="stat-val">12</div><div class="stat-label">Devices</div></div>
+            </div>
+            <div class="user-actions">
+                <button class="nav-link-btn"><span class="nav-icon">⚙️</span>Settings</button>
+                <button class="nav-link-btn"><span class="nav-icon">🚪</span>Sign Out</button>
+            </div>
+        </div>
+        <div class="upgrade-card">
+            <h5>Upgrade Infrastructure</h5>
+            <p>Unlock unlimited towers, real-time sync & advanced analytics.</p>
+            <button class="upgrade-btn">Upgrade Premium</button>
+            <p style="font-size:0.7rem; opacity:0.7; margin-top:8px;">Cluster Status: Optimal</p>
+        </div>
+    </aside>
+
+    <!-- Topbar -->
+    <header class="topbar">
+        <div class="left">
+            <div class="org-select">cards.admin.cr ▾</div>
+            <div class="plan-select">HRINS ▾</div>
+        </div>
+        <div class="right">
+            <a class="icon-btn" href="/alerts" aria-label="Alerts" title="Alerts">🔔</a>
+            <button class="icon-btn" type="button" aria-label="Signal" title="Signal">📶</button>
+            <div class="avatar">TD</div>
+        </div>
+    </header>
+
+    <main class="main">
+        <header class="content-header">
+            <h1>Network Monitor</h1>
+            <div class="controls">
+                <span class="live-pill" id="live-pill"><span class="live-dot"></span><span id="live-text">Connecting…</span></span>
+                <a class="btn-secondary" href="/add-device">➕ Add Device</a>
+            </div>
+        </header>
+
+        <div class="provider-tabs" id="provider-tabs" hidden></div>
+
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Devices</h3></div>
+                <div class="kpi-value" id="kpi-total">–</div>
+                <div class="kpi-change muted" id="kpi-total-sub">Monitored</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Online</h3></div>
+                <div class="kpi-value" id="kpi-online">–</div>
+                <div class="kpi-change badge-up" id="kpi-online-sub">&nbsp;</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Offline</h3></div>
+                <div class="kpi-value" id="kpi-offline">–</div>
+                <div class="kpi-change badge-down" id="kpi-offline-sub">&nbsp;</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Total Traffic</h3></div>
+                <div class="kpi-value" id="kpi-traffic">–</div>
+                <div class="kpi-change muted" id="kpi-traffic-sub">RX + TX, live</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Sectors</h3></div>
+                <div class="kpi-value" id="kpi-sectors">–</div>
+                <div class="kpi-change muted" id="kpi-sectors-sub">PtMP access points</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Subscribers</h3></div>
+                <div class="kpi-value" id="kpi-subs">–</div>
+                <div class="kpi-change muted" id="kpi-subs-sub">Connected clients</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h3>Live Devices</h3><span class="card-actions" id="interval-note">Checked every 10 s · last 10 minutes shown</span></div>
+            <div class="card-body">
+                <div class="live-grid" id="live-grid">
+                    <p class="muted">Loading…</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h3>Events</h3><span class="card-actions">Devices going online / offline</span></div>
+            <div class="card-body">
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Time</th><th>Device</th><th>IP</th><th>Event</th></tr></thead>
+                        <tbody id="event-list"><tr><td colspan="4" class="muted">No events yet.</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/monitoring.js"></script>
+</body>
+</html>

@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAS - TowerDesk ISP Dashboard</title>
+    <link rel="stylesheet" href="/app.css">
+    <script src="/app.js"></script>
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="brand">Tower<span class="mark">Desk</span></div>
+        <nav aria-label="Main">
+        <div class="nav-section">
+            <h4>Network</h4>
+            <ul>
+                <li><a href="/"><span class="nav-icon" aria-hidden="true">🏠</span>Overview</a></li>
+                <li><a href="/monitoring"><span class="nav-icon" aria-hidden="true">📡</span>Monitoring</a></li>
+                <li><a href="/map"><span class="nav-icon" aria-hidden="true">🗺️</span>Tower Map</a></li>
+                <li><a href="/alerts"><span class="nav-icon" aria-hidden="true">🚨</span>Alerts</a></li>
+                <li><a href="/remote"><span class="nav-icon" aria-hidden="true">🖥️</span>Remote Actions</a></li>
+                <li><a href="/add-device"><span class="nav-icon" aria-hidden="true">➕</span>Add Device</a></li>
+            </ul>
+        </div>
+        <div class="nav-section">
+            <h4>Customers</h4>
+            <ul>
+                <li><a href="/sas"><span class="nav-icon" aria-hidden="true">👥</span>SAS<span class="nav-count">200</span></a></li>
+                <li><a href="/plans"><span class="nav-icon" aria-hidden="true">📋</span>Plans</a></li>
+                <li><a href="/vouchers"><span class="nav-icon" aria-hidden="true">🎫</span>Vouchers</a></li>
+                <li><a href="/billing"><span class="nav-icon" aria-hidden="true">💳</span>Billing</a></li>
+                <li><a href="/invoices"><span class="nav-icon" aria-hidden="true">🧾</span>Invoices</a></li>
+                <li><a href="/tickets"><span class="nav-icon" aria-hidden="true">🛠️</span>Tickets</a></li>
+            </ul>
+        </div>
+        </nav>
+        <div class="user-card">
+            <div class="user-info">
+                <div class="avatar-sm">AD</div>
+                <div>
+                    <div class="user-name">Admin User</div>
+                    <div class="user-role">Super Admin</div>
+                </div>
+            </div>
+            <div class="user-stats">
+                <div class="stat"><div class="stat-val">2</div><div class="stat-label">Towers</div></div>
+                <div class="stat"><div class="stat-val">200</div><div class="stat-label">SAS</div></div>
+                <div class="stat"><div class="stat-val">12</div><div class="stat-label">Devices</div></div>
+            </div>
+            <div class="user-actions">
+                <button class="nav-link-btn"><span class="nav-icon">⚙️</span>Settings</button>
+                <button class="nav-link-btn"><span class="nav-icon">🚪</span>Sign Out</button>
+            </div>
+        </div>
+        <div class="upgrade-card">
+            <h5>Upgrade Infrastructure</h5>
+            <p>Unlock unlimited towers, real-time sync & advanced analytics.</p>
+            <button class="upgrade-btn">Upgrade Premium</button>
+            <p style="font-size:0.7rem; opacity:0.7; margin-top:8px;">Cluster Status: Optimal</p>
+        </div>
+    </aside>
+
+    <!-- Topbar -->
+    <header class="topbar">
+        <div class="left">
+            <div class="org-select">cards.admin.cr ▾</div>
+            <div class="plan-select">HRINS ▾</div>
+        </div>
+        <div class="right">
+            <a class="icon-btn" href="/alerts" aria-label="Alerts" title="Alerts">🔔</a>
+            <button class="icon-btn" type="button" aria-label="Messages" title="Messages">💬</button>
+            <div class="avatar">AR</div>
+        </div>
+    </header>
+
+    <main class="main">
+        <header class="content-header">
+            <h1>Subscribers</h1>
+            <div class="controls">
+                <span class="live-pill" id="live-pill"><span class="live-dot"></span><span id="live-text">Connecting…</span></span>
+                <button class="btn-secondary" type="button" id="open-settings">Connect server</button>
+                <button class="btn-secondary" type="button" id="sub-refresh">Refresh</button>
+            </div>
+        </header>
+
+        <div class="source-banner" id="source-banner" hidden></div>
+
+        <div class="card" id="settings-card" hidden>
+            <div class="card-header"><h3>RADIUS / SAS server</h3><span class="card-actions">Where TowerDesk reads your subscribers from</span></div>
+            <div class="card-body">
+                <form id="radius-form" class="detail-edit" autocomplete="off">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="rs-source">Source</label>
+                            <select id="rs-source">
+                                <option value="none">Not connected</option>
+                                <option value="demo">Demo data (sample subscribers)</option>
+                                <option value="mikrotik">MikroTik NAS (PPPoE / Hotspot)</option>
+                                <option value="freeradius">FreeRADIUS (SQL)</option>
+                            </select>
+                        </div>
+                        <div class="form-group" data-rs="nas">
+                            <label for="rs-nas">Sector / NAS label</label>
+                            <input type="text" id="rs-nas" placeholder="e.g. Core NAS" autocomplete="off">
+                        </div>
+                    </div>
+                    <div class="form-row" data-rs="conn">
+                        <div class="form-group">
+                            <label for="rs-host">Host / IP</label>
+                            <input type="text" id="rs-host" placeholder="e.g. 10.90.0.1" autocomplete="off">
+                        </div>
+                        <div class="form-group">
+                            <label for="rs-port">Port</label>
+                            <input type="number" id="rs-port" min="1" max="65535" placeholder="default">
+                        </div>
+                    </div>
+                    <div class="form-row" data-rs="login">
+                        <div class="form-group">
+                            <label for="rs-user">Username</label>
+                            <input type="text" id="rs-user" autocomplete="off">
+                        </div>
+                        <div class="form-group">
+                            <label for="rs-pass">Password</label>
+                            <input type="password" id="rs-pass" autocomplete="new-password" placeholder="leave blank to keep">
+                        </div>
+                    </div>
+                    <p class="muted" id="rs-hint" style="margin:0 0 12px"></p>
+                    <div class="form-actions">
+                        <button type="submit" class="btn-primary" id="rs-save">Save &amp; use</button>
+                        <button type="button" class="btn-secondary" id="rs-cancel">Cancel</button>
+                        <span id="rs-msg" class="muted"></span>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Online Now</h3></div>
+                <div class="kpi-value" id="kpi-online">–</div>
+                <div class="kpi-change muted" id="kpi-online-sub">Active sessions</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Subscribers</h3></div>
+                <div class="kpi-value" id="kpi-total">–</div>
+                <div class="kpi-change muted">Known accounts</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Download</h3></div>
+                <div class="kpi-value" id="kpi-down">–</div>
+                <div class="kpi-change muted">Aggregate, live</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Upload</h3></div>
+                <div class="kpi-value" id="kpi-up">–</div>
+                <div class="kpi-change muted">Aggregate, live</div>
+            </div>
+        </div>
+
+        <div class="filter-bar">
+            <select class="sub-filter" id="sub-filter" aria-label="Filter subscribers">
+                <option value="all">All</option>
+                <option value="online">Online</option>
+                <option value="offline">Offline</option>
+            </select>
+            <input type="search" id="sub-search" placeholder="Search name, username or IP…" aria-label="Search subscribers" />
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h3>Subscriber Sessions</h3><span class="card-actions" id="list-note">Live RADIUS data</span></div>
+            <div class="card-body">
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>Subscriber</th>
+                                <th>Plan</th>
+                                <th>IP</th>
+                                <th>Sector / NAS</th>
+                                <th>Session</th>
+                                <th>Data (↓ / ↑)</th>
+                                <th>Live rate</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sas-tbody"><tr><td colspan="8" class="muted">Loading…</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        (function () {
+            var POLL_MS = 8000;
+            var tbody = document.getElementById('sas-tbody');
+            var search = document.getElementById('sub-search');
+            var filter = document.getElementById('sub-filter');
+            var $ = function (id) { return document.getElementById(id); };
+            var DEMO = location.search.indexOf('demo') >= 0 || (function () { try { return localStorage.getItem('td-demo') === '1'; } catch (e) { return false; } })();
+            var URL = DEMO ? '/api/radius/subscribers?demo=1' : '/api/radius/subscribers';
+            var data = { subscribers: [], summary: {} };
+            var lastOk = 0;
+
+            function esc(v) {
+                return String(v === undefined || v === null ? '' : v).replace(/[&<>"']/g, function (c) {
+                    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+                });
+            }
+            function bps(v) {
+                if (v === null || v === undefined) return '–';
+                var u = ['bps', 'Kbps', 'Mbps', 'Gbps'], i = 0;
+                while (v >= 1000 && i < u.length - 1) { v /= 1000; i++; }
+                return (v < 10 && i ? v.toFixed(2) : v < 100 && i ? v.toFixed(1) : Math.round(v)) + ' ' + u[i];
+            }
+            function bytes(v) {
+                if (v === null || v === undefined) return '–';
+                var u = ['B', 'KB', 'MB', 'GB', 'TB'], i = 0;
+                while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+                return (v < 10 && i ? v.toFixed(2) : v < 100 && i ? v.toFixed(1) : Math.round(v)) + ' ' + u[i];
+            }
+            function rate(d, u) {
+                if (d === null || d === undefined) return '';
+                return d + '/' + u + 'M';
+            }
+
+            function setLive(ok, text) {
+                $('live-pill').className = 'live-pill ' + (ok ? 'ok' : 'bad');
+                $('live-text').textContent = text;
+            }
+
+            function banner() {
+                var el = $('source-banner');
+                var src = data.source, note = data.note;
+                if (src === 'none' || data.configured === false) {
+                    el.hidden = false; el.className = 'source-banner warn';
+                    el.innerHTML = '<strong>No RADIUS/SAS server connected.</strong> Showing nothing live yet — point TowerDesk at your RADIUS server, or open this page with <span class="mono">?demo=1</span> to preview with sample subscribers.';
+                    return;
+                }
+                if (src === 'demo') {
+                    el.hidden = false; el.className = 'source-banner';
+                    el.innerHTML = '<strong>Demo data.</strong> These are sample subscriber sessions — connect your RADIUS/SAS server to see real customers.';
+                    return;
+                }
+                if (note) { el.hidden = false; el.className = 'source-banner warn'; el.innerHTML = esc(note); return; }
+                el.hidden = true;
+            }
+
+            function render() {
+                var q = search.value.trim().toLowerCase();
+                var f = filter.value;
+                var s = data.summary || {};
+                $('kpi-online').textContent = s.online === undefined ? '–' : s.online;
+                $('kpi-total').textContent = s.total === undefined ? '–' : s.total;
+                $('kpi-down').textContent = bps(s.liveDownBps);
+                $('kpi-up').textContent = bps(s.liveUpBps);
+                $('kpi-online-sub').textContent = s.total ? Math.round((s.online / s.total) * 100) + '% of accounts' : 'Active sessions';
+
+                var list = (data.subscribers || []).filter(function (r) {
+                    if (f === 'online' && !r.online) return false;
+                    if (f === 'offline' && r.online) return false;
+                    if (!q) return true;
+                    return (r.name + ' ' + r.username + ' ' + (r.framedIp || '')).toLowerCase().indexOf(q) !== -1;
+                });
+                list.sort(function (a, b) { return (b.online ? 1 : 0) - (a.online ? 1 : 0) || (b.liveDownBps || 0) - (a.liveDownBps || 0); });
+
+                tbody.innerHTML = list.length ? list.map(function (r) {
+                    return '<tr>' +
+                        '<td>' + (r.online
+                            ? '<span class="status-badge healthy">● Online</span>'
+                            : '<span class="status-badge offline">● Offline</span>') + '</td>' +
+                        '<td>' + esc(r.name) + '<div class="mono" style="color:var(--text-muted)">' + esc(r.username) + '</div></td>' +
+                        '<td><span class="plan-badge">' + esc(r.plan) + '</span>' + (r.rateDown ? '<div class="mono" style="color:var(--text-muted)">' + esc(rate(r.rateDown, r.rateUp)) + '</div>' : '') + '</td>' +
+                        '<td><span class="mono">' + esc(r.framedIp || '—') + '</span></td>' +
+                        '<td>' + esc(r.nas || '—') + '</td>' +
+                        '<td><span class="mono">' + esc(r.sessionText || '—') + '</span></td>' +
+                        '<td><span class="mono">↓ ' + bytes(r.bytesDown) + ' · ↑ ' + bytes(r.bytesUp) + '</span></td>' +
+                        '<td><span class="mono">' + (r.online ? '↓ ' + bps(r.liveDownBps) + ' · ↑ ' + bps(r.liveUpBps) : '—') + '</span></td>' +
+                        '</tr>';
+                }).join('') : '<tr><td colspan="8" class="muted" style="text-align:center">No subscribers match.</td></tr>';
+            }
+
+            function poll() {
+                fetch(URL)
+                    .then(function (r) {
+                        if (r.status === 401) { location.href = '/login?next=/sas'; throw new Error('login'); }
+                        if (!r.ok) throw new Error('HTTP ' + r.status);
+                        return r.json();
+                    })
+                    .then(function (d) {
+                        data = d; lastOk = Date.now();
+                        banner(); render();
+                        $('list-note').textContent = d.server ? 'Source: ' + d.server : 'Live RADIUS data';
+                        setLive(true, 'Live');
+                    })
+                    .catch(function (e) {
+                        if (e.message !== 'login') { setLive(false, 'Disconnected — retrying'); }
+                    });
+            }
+
+            // ----- Connect-server settings panel -----
+            var HINTS = {
+                none: 'Pick a source to start pulling subscribers.',
+                demo: 'Sample subscribers for a walkthrough — no server needed.',
+                mikrotik: 'TowerDesk logs in to the router over the API and lists active PPPoE / Hotspot sessions (read-only).',
+                freeradius: 'Reads sessions from a FreeRADIUS SQL database (not bundled in this portable build yet).'
+            };
+            function syncSettings() {
+                var src = $('rs-source').value;
+                document.querySelector('[data-rs="conn"]').hidden = (src === 'none' || src === 'demo');
+                document.querySelector('[data-rs="login"]').hidden = (src === 'none' || src === 'demo');
+                document.querySelector('[data-rs="nas"]').hidden = (src === 'none' || src === 'demo');
+                $('rs-hint').textContent = HINTS[src] || '';
+            }
+            function openSettings() {
+                $('rs-msg').textContent = '';
+                fetch('/api/radius/config').then(function (r) { return r.json(); }).then(function (c) {
+                    $('rs-source').value = c.source || 'none';
+                    $('rs-host').value = c.host || '';
+                    $('rs-port').value = c.port || '';
+                    $('rs-user').value = c.username || '';
+                    $('rs-nas').value = c.nas || '';
+                    $('rs-pass').value = '';
+                    $('rs-pass').placeholder = c.hasSecret ? 'leave blank to keep' : '';
+                    syncSettings();
+                    $('settings-card').hidden = false;
+                    $('rs-source').focus();
+                });
+            }
+            $('open-settings').addEventListener('click', function () {
+                if ($('settings-card').hidden) openSettings(); else $('settings-card').hidden = true;
+            });
+            $('rs-cancel').addEventListener('click', function () { $('settings-card').hidden = true; });
+            $('rs-source').addEventListener('change', syncSettings);
+            $('radius-form').addEventListener('submit', function (ev) {
+                ev.preventDefault();
+                var btn = $('rs-save'); btn.disabled = true; $('rs-msg').textContent = 'Saving…';
+                var body = {
+                    source: $('rs-source').value,
+                    host: $('rs-host').value.trim(),
+                    port: $('rs-port').value || undefined,
+                    username: $('rs-user').value.trim(),
+                    nas: $('rs-nas').value.trim(),
+                    password: $('rs-pass').value || undefined
+                };
+                fetch('/api/radius/config', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+                }).then(function (r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                }).then(function () {
+                    btn.disabled = false; $('rs-msg').textContent = 'Saved ✓';
+                    $('settings-card').hidden = true;
+                    URL = '/api/radius/subscribers'; // use the saved source (demo query override no longer needed)
+                    poll();
+                }).catch(function (e) {
+                    btn.disabled = false; $('rs-msg').textContent = 'Could not save: ' + e.message;
+                });
+            });
+
+            search.addEventListener('input', render);
+            filter.addEventListener('change', render);
+            $('sub-refresh').addEventListener('click', poll);
+            setInterval(function () {
+                if (lastOk && Date.now() - lastOk < POLL_MS * 3) setLive(true, 'Live · updated ' + Math.round((Date.now() - lastOk) / 1000) + 's ago');
+            }, 1000);
+            poll();
+            setInterval(function () { if (!document.hidden) poll(); }, POLL_MS);
+            document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });
+        })();
+    </script>
+</body>
+</html>

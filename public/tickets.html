@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tickets - TowerDesk ISP Dashboard</title>
+    <link rel="stylesheet" href="/app.css">
+    <script src="/app.js"></script>
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="brand">Tower<span class="mark">Desk</span></div>
+        <nav aria-label="Main">
+        <div class="nav-section">
+            <h4>Network</h4>
+            <ul>
+                <li><a href="/"><span class="nav-icon" aria-hidden="true">🏠</span>Overview</a></li>
+                <li><a href="/monitoring"><span class="nav-icon" aria-hidden="true">📡</span>Monitoring</a></li>
+                <li><a href="/map"><span class="nav-icon" aria-hidden="true">🗺️</span>Tower Map</a></li>
+                <li><a href="/alerts"><span class="nav-icon" aria-hidden="true">🚨</span>Alerts</a></li>
+                <li><a href="/remote"><span class="nav-icon" aria-hidden="true">🖥️</span>Remote Actions</a></li>
+                <li><a href="/add-device"><span class="nav-icon" aria-hidden="true">➕</span>Add Device</a></li>
+            </ul>
+        </div>
+        <div class="nav-section">
+            <h4>Customers</h4>
+            <ul>
+                <li><a href="/sas"><span class="nav-icon" aria-hidden="true">👥</span>SAS<span class="nav-count">200</span></a></li>
+                <li><a href="/plans"><span class="nav-icon" aria-hidden="true">📋</span>Plans</a></li>
+                <li><a href="/vouchers"><span class="nav-icon" aria-hidden="true">🎫</span>Vouchers</a></li>
+                <li><a href="/billing"><span class="nav-icon" aria-hidden="true">💳</span>Billing</a></li>
+                <li><a href="/invoices"><span class="nav-icon" aria-hidden="true">🧾</span>Invoices</a></li>
+                <li><a href="/tickets"><span class="nav-icon" aria-hidden="true">🛠️</span>Tickets</a></li>
+            </ul>
+        </div>
+        </nav>
+        <div class="user-card">
+            <div class="user-info">
+                <div class="avatar-sm">AD</div>
+                <div>
+                    <div class="user-name">Admin User</div>
+                    <div class="user-role">Super Admin</div>
+                </div>
+            </div>
+            <div class="user-stats">
+                <div class="stat"><div class="stat-val">2</div><div class="stat-label">Towers</div></div>
+                <div class="stat"><div class="stat-val">200</div><div class="stat-label">SAS</div></div>
+                <div class="stat"><div class="stat-val">12</div><div class="stat-label">Devices</div></div>
+            </div>
+            <div class="user-actions">
+                <button class="nav-link-btn"><span class="nav-icon">⚙️</span>Settings</button>
+                <button class="nav-link-btn"><span class="nav-icon">🚪</span>Sign Out</button>
+            </div>
+        </div>
+        <div class="upgrade-card">
+            <h5>Upgrade Infrastructure</h5>
+            <p>Unlock unlimited towers, real-time sync & advanced analytics.</p>
+            <button class="upgrade-btn">Upgrade Premium</button>
+            <p style="font-size:0.7rem; opacity:0.7; margin-top:8px;">Cluster Status: Optimal</p>
+        </div>
+    </aside>
+
+    <!-- Topbar -->
+    <header class="topbar">
+        <div class="right">
+            <a class="icon-btn" href="/alerts" aria-label="Alerts" title="Alerts">🔔</a>
+            <div class="avatar">TD</div>
+        </div>
+    </header>
+
+    <main class="main">
+        <header class="content-header">
+            <h1>Support Tickets</h1>
+            <div class="controls">
+                <button class="export-btn">📥 Export Logs</button>
+            </div>
+        </header>
+
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Total Tickets</h3></div>
+                <div class="kpi-value">24</div>
+                <div class="kpi-change badge-down">▼ 3 new</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Open</h3></div>
+                <div class="kpi-value">8</div>
+                <div class="kpi-change badge-down">▼ Needs attention</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>In Progress</h3></div>
+                <div class="kpi-value">6</div>
+                <div class="kpi-change badge-up">▲ Assigned</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-head"><h3>Resolved</h3></div>
+                <div class="kpi-value">10</div>
+                <div class="kpi-change badge-up">▲ 42%</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h3>Ticket List</h3><span class="card-actions">Customer support</span></div>
+            <div class="card-body">
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Ticket ID</th>
+                                <th>Subscriber</th>
+                                <th>Subject</th>
+                                <th>Priority</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><span class="mono">TKT-101</span></td><td>John Doe</td><td>No internet connection</td><td><span class="status-badge critical">● High</span></td><td><span class="status-badge warning">● Open</span></td><td>2026-11-01</td></tr>
+                            <tr><td><span class="mono">TKT-102</span></td><td>Jane Smith</td><td>Slow speeds</td><td><span class="status-badge warning">● Medium</span></td><td><span class="status-badge healthy">● In Progress</span></td><td>2026-11-01</td></tr>
+                            <tr><td><span class="mono">TKT-103</span></td><td>Robert Johnson</td><td>Billing inquiry</td><td><span class="status-badge warning">● Low</span></td><td><span class="status-badge healthy">● Resolved</span></td><td>2026-10-31</td></tr>
+                            <tr><td><span class="mono">TKT-104</span></td><td>Emily Davis</td><td>Router not working</td><td><span class="status-badge critical">● High</span></td><td><span class="status-badge warning">● Open</span></td><td>2026-10-30</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+</body>
+</html>
