@@ -42,3 +42,4 @@
 - The token is only attached to HTTPS requests to api.github.com (`requestHeaders`), so a manifest URL or a caller-supplied download URL cannot leak it. With a token, downloads use the release asset's API URL (octet-stream) or the zipball.
 - Clearer 401/404 messages (404 without a token hints that the repo may be private).
 - No dependency added. test/updater.js: 12 new assertions. npm test + QA 655/655 pass.
+- Version bumped to 0.1.1 (first build with the updater token field); portable zip rebuilt.

@@ -1,6 +1,6 @@
 {
   "name": "towerdesk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A portable ISP dashboard for small networks",
   "main": "index.js",
   "scripts": {
