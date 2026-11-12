@@ -11,6 +11,7 @@ const path = require('path');
 const os = require('os');
 const { execFile } = require('child_process');
 const { dataDir } = require('./paths');
+const storage = require('./storage');
 
 const APP_DIR = path.join(__dirname, '..');
 const CFG = path.join(dataDir(), 'update.json');
@@ -38,16 +39,22 @@ function isNewer(candidate, base) {
 function loadConfig() {
   try { return JSON.parse(fs.readFileSync(CFG, 'utf8')); } catch (e) { return {}; }
 }
+// Public view: the access token is never returned, only whether one is saved.
 function getConfig() {
   const c = loadConfig();
-  return { repo: c.repo || '', manifestUrl: c.manifestUrl || '', channel: c.channel || 'release' };
+  return { repo: c.repo || '', manifestUrl: c.manifestUrl || '', channel: c.channel || 'release', hasToken: !!c.token };
 }
+// A blank token keeps the saved one; clearToken removes it. Stored encrypted at rest.
 function setConfig(input) {
+  const cur = loadConfig();
+  const token = String((input && input.token) || '').trim().slice(0, 400);
   const next = {
     repo: String((input && input.repo) || '').trim().slice(0, 140),
     manifestUrl: String((input && input.manifestUrl) || '').trim().slice(0, 400),
     channel: input && input.channel === 'prerelease' ? 'prerelease' : 'release'
   };
+  if (token) next.token = storage.encrypt(token);
+  else if (cur.token && !(input && input.clearToken)) next.token = cur.token;
   fs.mkdirSync(path.dirname(CFG), { recursive: true });
   const tmp = CFG + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(next, null, 2), { mode: 0o600 });
@@ -63,9 +70,11 @@ function describeRelease(rel) {
   const version = parseVer(tag).join('.');
   // Prefer a .zip release asset; fall back to the source zipball.
   let downloadUrl = rel.downloadUrl || rel.zipUrl || '';
+  // On a private repo the browser URL can't be fetched with a token; the asset's API URL can.
+  let privateUrl = '';
   if (!downloadUrl && Array.isArray(rel.assets)) {
     const zip = rel.assets.find((a) => a && /\.zip$/i.test(a.name || '') && a.browser_download_url);
-    if (zip) downloadUrl = zip.browser_download_url;
+    if (zip) { downloadUrl = zip.browser_download_url; privateUrl = zip.url || ''; }
   }
   if (!downloadUrl) downloadUrl = rel.zipball_url || '';
   return {
@@ -74,13 +83,40 @@ function describeRelease(rel) {
     notes: String(rel.body || rel.notes || '').slice(0, 4000),
     htmlUrl: rel.html_url || rel.url || '',
     downloadUrl: downloadUrl,
+    privateUrl: privateUrl || rel.zipball_url || '',
     prerelease: !!rel.prerelease
   };
 }
 
+// ---- Private-repo access token. Only ever sent to GitHub's API host over HTTPS, so a manifest
+// URL or a caller-supplied download URL can never be used to leak it elsewhere. ----
+function savedToken() {
+  const c = loadConfig();
+  if (!c.token) return '';
+  try { return storage.decrypt(c.token) || ''; } catch (e) { return ''; }
+}
+function isGithubApi(url) {
+  try { const u = new URL(url); return u.protocol === 'https:' && u.hostname === 'api.github.com'; } catch (e) { return false; }
+}
+// Pure (token passed in) so tests can verify where the token would and would not be sent.
+function requestHeaders(url, token, accept) {
+  const h = { 'User-Agent': UA };
+  if (accept) h.Accept = accept;
+  if (token && isGithubApi(url)) h.Authorization = 'Bearer ' + token;
+  return h;
+}
+function httpError(status, hasToken) {
+  if (status === 401) return 'GitHub rejected the access token (HTTP 401). Check it has not expired.';
+  if (status === 404) return hasToken
+    ? 'Not found (HTTP 404). Check the repo name, that it has a published release, and that the token can read it.'
+    : 'Not found (HTTP 404). If the repo is private, add an access token; otherwise check the name and that a release is published.';
+  return 'HTTP ' + status;
+}
+
 function httpJson(url) {
-  return fetch(url, { headers: { 'User-Agent': UA, 'Accept': 'application/vnd.github+json' } })
-    .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+  const token = savedToken();
+  return fetch(url, { headers: requestHeaders(url, token, 'application/vnd.github+json') })
+    .then((r) => { if (!r.ok) throw new Error(httpError(r.status, !!token)); return r.json(); });
 }
 
 // ---- Check the configured source for a newer version. Throws on network/config problems. ----
@@ -110,7 +146,7 @@ async function check() {
     available: isNewer(d.version, current),
     notes: d.notes,
     htmlUrl: d.htmlUrl,
-    downloadUrl: d.downloadUrl
+    downloadUrl: (cfg.hasToken && d.privateUrl) ? d.privateUrl : d.downloadUrl
   };
 }
 
@@ -161,8 +197,11 @@ async function stage(downloadUrl) {
   const zipPath = path.join(UPDATES_DIR, 'download.zip');
   const extractDir = path.join(UPDATES_DIR, 'extract');
   rmrf(extractDir);
-  const res = await fetch(downloadUrl, { headers: { 'User-Agent': UA } });
-  if (!res.ok) throw new Error('Download failed (HTTP ' + res.status + ').');
+  // A release asset's API URL only returns the file when asked for octet-stream.
+  const accept = /\/releases\/assets\/\d+$/.test(downloadUrl) ? 'application/octet-stream' : '';
+  const token = savedToken();
+  const res = await fetch(downloadUrl, { headers: requestHeaders(downloadUrl, token, accept) });
+  if (!res.ok) throw new Error('Download failed: ' + httpError(res.status, !!token));
   const buf = Buffer.from(await res.arrayBuffer());
   fs.writeFileSync(zipPath, buf);
   await extract(zipPath, extractDir);
@@ -184,7 +223,7 @@ function status() {
 }
 
 module.exports = {
-  currentVersion, isNewer, parseVer, describeRelease,
+  currentVersion, isNewer, parseVer, describeRelease, requestHeaders,
   getConfig, setConfig, check, stage, stageFromDir, pending, clearStaged, status,
   APP_DIR, STAGED_DIR, UPDATES_DIR
 };

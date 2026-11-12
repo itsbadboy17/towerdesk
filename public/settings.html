@@ -94,6 +94,14 @@
                             <input type="text" id="up-manifest" placeholder="https://example.com/towerdesk/latest.json" autocomplete="off">
                         </div>
                     </div>
+                    <div class="form-row">
+                        <div class="form-group" style="flex:1 1 100%">
+                            <label for="up-token">Access token (only for a private repository)</label>
+                            <input type="password" id="up-token" placeholder="Read-only GitHub token" autocomplete="new-password">
+                            <span class="muted" id="up-token-state"></span>
+                            <button type="button" class="link-btn" id="up-token-clear" hidden>Remove saved token</button>
+                        </div>
+                    </div>
                     <div class="form-actions">
                         <button type="submit" class="btn-secondary" id="up-save">Save source</button>
                         <button type="button" class="btn-primary" id="up-check">Check for updates</button>
@@ -156,18 +164,47 @@
                     $('up-repo').value = s.config.repo || '';
                     $('up-manifest').value = s.config.manifestUrl || '';
                     $('up-channel').value = s.config.channel || 'release';
+                    showToken(s.config.hasToken);
                     showStaged(s.staged);
+                });
+            }
+
+            // The saved token is never sent back to the page — only whether one exists.
+            function showToken(has) {
+                $('up-token').value = '';
+                $('up-token').placeholder = has ? 'Leave blank to keep the saved token' : 'Read-only GitHub token';
+                $('up-token-state').textContent = has ? 'A token is saved (encrypted). ' : '';
+                $('up-token-clear').hidden = !has;
+            }
+            function configBody() {
+                var body = {
+                    repo: $('up-repo').value.trim(),
+                    manifestUrl: $('up-manifest').value.trim(),
+                    channel: $('up-channel').value
+                };
+                var token = $('up-token').value.trim();
+                if (token) body.token = token;
+                return body;
+            }
+            function saveConfig() {
+                return api('POST', '/api/update/config', configBody()).then(function (r) {
+                    if (r.body && !r.body.error) showToken(r.body.hasToken);
+                    return r;
                 });
             }
 
             $('update-form').addEventListener('submit', function (ev) {
                 ev.preventDefault();
                 $('up-msg').textContent = 'Saving…';
-                api('POST', '/api/update/config', {
-                    repo: $('up-repo').value.trim(),
-                    manifestUrl: $('up-manifest').value.trim(),
-                    channel: $('up-channel').value
-                }).then(function () { $('up-msg').textContent = 'Source saved ✓'; });
+                saveConfig().then(function () { $('up-msg').textContent = 'Source saved ✓'; });
+            });
+
+            $('up-token-clear').addEventListener('click', function () {
+                var body = configBody(); delete body.token; body.clearToken = true;
+                api('POST', '/api/update/config', body).then(function (r) {
+                    showToken(r.body.hasToken);
+                    $('up-msg').textContent = 'Token removed';
+                });
             });
 
             $('up-check').addEventListener('click', function () {
@@ -175,11 +212,7 @@
                 $('up-msg').textContent = 'Checking…';
                 res.hidden = true;
                 // Save the source first so the check uses the current fields.
-                api('POST', '/api/update/config', {
-                    repo: $('up-repo').value.trim(),
-                    manifestUrl: $('up-manifest').value.trim(),
-                    channel: $('up-channel').value
-                }).then(function () {
+                saveConfig().then(function () {
                     return api('POST', '/api/update/check');
                 }).then(function (r) {
                     $('up-msg').textContent = '';

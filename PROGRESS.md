@@ -35,3 +35,10 @@
 - New /settings page (Software updates panel + About tiles), wired from the sidebar Settings link; added to QA routes. Routes: GET /api/update/status|config, POST /api/update/config|check|install|cancel.
 - test/updater.js (17 assertions: version compare, release parsing, config, staging incl nested-folder + foreign-bundle + smuggled-data/ guards). Verified end-to-end: built dist, bundled node served /settings + /api/update/status, simulated a staged update -> apply preserved data/secret.key and bumped version, error path shows inline. npm test + 655/655 QA pass.
 
+
+## Git repository + private-repo updater token
+- Project is a git repo (branch main), pushed to a private GitHub repository. `.gitignore` also excludes `tests/qa/screenshots/` (regenerated every QA run).
+- Updater: optional access token for private repositories. Stored encrypted in data/update.json via the existing storage.encrypt; never returned by the API (only `hasToken`), never logged. Blank save keeps it; "Remove saved token" clears it.
+- The token is only attached to HTTPS requests to api.github.com (`requestHeaders`), so a manifest URL or a caller-supplied download URL cannot leak it. With a token, downloads use the release asset's API URL (octet-stream) or the zipball.
+- Clearer 401/404 messages (404 without a token hints that the repo may be private).
+- No dependency added. test/updater.js: 12 new assertions. npm test + QA 655/655 pass.

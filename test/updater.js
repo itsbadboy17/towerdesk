@@ -40,6 +40,32 @@ const saved = upd.setConfig({ repo: 'me/towerdesk', channel: 'prerelease' });
 ok('config repo', saved.repo === 'me/towerdesk' && saved.channel === 'prerelease');
 ok('config persisted', upd.getConfig().repo === 'me/towerdesk');
 
+// Private-repo token: encrypted at rest, never returned, kept on a blank save, removable.
+const FAKE = 'test-token-not-real-123';
+const withTok = upd.setConfig({ repo: 'me/towerdesk', channel: 'prerelease', token: FAKE });
+ok('token flagged, not returned', withTok.hasToken === true && withTok.token === undefined);
+const raw = fs.readFileSync(path.join(tmp, 'update.json'), 'utf8');
+ok('token encrypted at rest', raw.indexOf(FAKE) === -1 && JSON.parse(raw).token);
+ok('status hides token', JSON.stringify(upd.status()).indexOf(FAKE) === -1);
+ok('blank save keeps token', upd.setConfig({ repo: 'me/towerdesk', channel: 'prerelease' }).hasToken === true);
+
+// The token only ever goes to GitHub's API over HTTPS.
+ok('token sent to github api', upd.requestHeaders('https://api.github.com/repos/a/b/releases/latest', FAKE).Authorization === 'Bearer ' + FAKE);
+ok('token not sent elsewhere', !upd.requestHeaders('https://example.com/latest.json', FAKE).Authorization);
+ok('token not sent to lookalike host', !upd.requestHeaders('https://api.github.com.evil.test/x', FAKE).Authorization);
+ok('token not sent over http', !upd.requestHeaders('http://api.github.com/x', FAKE).Authorization);
+ok('no token, no auth header', !upd.requestHeaders('https://api.github.com/x', '').Authorization);
+
+// Private repos download a release asset through its API URL, or the zipball.
+const relPriv = upd.describeRelease({
+  tag_name: 'v1.6.0', zipball_url: 'https://api.github.com/repos/a/b/zipball/v1.6.0',
+  assets: [{ name: 'TowerDesk-portable.zip', browser_download_url: 'https://x/p.zip', url: 'https://api.github.com/repos/a/b/releases/assets/7' }]
+});
+ok('private url uses asset api url', relPriv.privateUrl === 'https://api.github.com/repos/a/b/releases/assets/7' && relPriv.downloadUrl === 'https://x/p.zip');
+ok('private url falls back to zipball', relZipball.privateUrl === 'https://x/zipball');
+
+ok('token removable', upd.setConfig({ repo: 'me/towerdesk', channel: 'prerelease', clearToken: true }).hasToken === false);
+
 // Staging an extracted bundle with a nested folder (like GitHub's zipball layout).
 const bundle = fs.mkdtempSync(path.join(os.tmpdir(), 'towerdesk-bundle-'));
 const inner = path.join(bundle, 'owner-towerdesk-abc123');
