@@ -121,15 +121,33 @@ function edit(id, input) {
   if (input.username !== undefined) patch.username = input.username ? String(input.username).slice(0, 64) : '';
   if (input.password) patch.secret = storage.encrypt(String(input.password));
   if (input.community) patch.communitySecret = storage.encrypt(String(input.community));
+  if (input.peerId !== undefined) setPeer(id, input.peerId);
   return update(id, patch);
+}
+
+// Pair two saved devices as the two ends of one link (stored on both), or unpair with an empty
+// peerId. A device has at most one peer, so any older pairing of either end is cleared. An
+// unknown peer or pairing a device with itself is ignored.
+function setPeer(id, peerId) {
+  const list = load();
+  const a = list.find((d) => d.id === id);
+  if (!a) return null;
+  const b = peerId ? list.find((d) => d.id === peerId) : null;
+  if (peerId && (!b || b.id === id)) return publicView(a);
+  list.forEach((d) => { if (d.peerId === id || (b && d.peerId === b.id)) d.peerId = null; });
+  a.peerId = b ? b.id : null;
+  if (b) b.peerId = a.id;
+  save(list);
+  return publicView(a);
 }
 
 function remove(id) {
   const devices = load();
   const next = devices.filter((d) => d.id !== id);
+  next.forEach((d) => { if (d.peerId === id) d.peerId = null; });
   if (next.length === devices.length) return false;
   save(next);
   return true;
 }
 
-module.exports = { TYPES, list, get, add, update, edit, reconfigure, remove, connectionOptions, publicView, findDuplicate };
+module.exports = { TYPES, list, get, add, update, edit, setPeer, reconfigure, remove, connectionOptions, publicView, findDuplicate };

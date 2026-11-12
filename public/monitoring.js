@@ -115,7 +115,8 @@
             '<div class="traffic-head"><span><strong>' + esc(top.name) + '</strong> <span class="muted">· ' + esc(m.source) + '</span></span>' +
             '<span class="legend"><span class="rx">↓ ' + esc(bps(top.rxBps)) + '</span><span class="tx">↑ ' + esc(bps(top.txBps)) + '</span></span></div>' +
             trafficChart(top.rx, top.tx) +
-            (m.kind === 'clients'
+            (m.kind === 'stations' ? ''
+            : m.kind === 'clients'
                 ? (m.clients && m.clients.length
                     ? '<table class="iface-table"><thead><tr><th>Device (' + esc(m.clientCount) + ' online)</th><th>↓ Down</th><th>↑ Up</th></tr></thead><tbody>' +
                       m.clients.map(function (c) {
@@ -130,6 +131,57 @@
             '</div>';
     }
 
+    // ----- Sector registration table (the CPE radios connected to an access point) -----
+    // SAS/RADIUS sessions are matched to stations by MAC address: when the customer's PPPoE user
+    // is dialled on the CPE radio itself, the MAC the sector sees is the one SAS records.
+    var sas = { byMac: {}, loadedAt: 0, configured: false, loading: false };
+    function macKey(m) { return String(m || '').toLowerCase().replace(/[^0-9a-f]/g, ''); }
+    function loadSas() {
+        if (sas.loading || Date.now() - sas.loadedAt < 30000) return;
+        sas.loading = true;
+        fetch('/api/radius/subscribers' + (DEMO ? '?demo=1' : ''))
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (j) {
+                sas.loading = false; sas.loadedAt = Date.now();
+                if (!j) return;
+                sas.configured = !!j.configured;
+                sas.byMac = {};
+                (j.subscribers || []).forEach(function (s) { var k = macKey(s.mac); if (k.length === 12) sas.byMac[k] = s; });
+                if (detailId && lastData) {
+                    var dd = lastData.devices.find(function (x) { return x.id === detailId; });
+                    var body = document.getElementById('detail-modal-body');
+                    if (dd && dd.role === 'sector' && body) body.innerHTML = detailBody(dd);
+                }
+            })
+            .catch(function () { sas.loading = false; sas.loadedAt = Date.now(); });
+    }
+    function registrationBlock(m) {
+        var rows = (m && m.stations) || [];
+        if (!rows.length) return '<p class="muted">No stations registered right now.</p>';
+        var matched = 0;
+        var body = rows.map(function (c) {
+            var s = sas.byMac[macKey(c.mac)];
+            if (s) matched++;
+            var user = s
+                ? '<strong>' + esc(s.username) + '</strong><div class="muted">' + esc(s.plan || '') + (s.online === false ? ' · session offline' : '') + '</div>'
+                : '<span class="muted">' + (sas.configured ? 'Not in SAS' : '—') + '</span>';
+            var rate = (c.txRate != null || c.rxRate != null) ? (c.txRate != null ? c.txRate : '–') + '/' + (c.rxRate != null ? c.rxRate : '–') : '–';
+            return '<tr><td>' + esc(c.name || c.ip || c.mac) + (c.platform ? '<div class="muted">' + esc(c.platform) + '</div>' : '') + '</td>' +
+                '<td class="mono">' + esc(c.mac || '–') + (c.ip ? '<div class="muted">' + esc(c.ip) + '</div>' : '') + '</td>' +
+                '<td>' + user + '</td>' +
+                '<td class="mono">' + (c.signal != null ? esc(c.signal) + ' dBm' : '–') + '</td>' +
+                '<td class="mono">' + (c.ccq != null ? esc(c.ccq) + '%' : '–') + '</td>' +
+                '<td class="mono">' + esc(rate) + '</td>' +
+                '<td class="mono">' + esc(bps(c.txBps)) + '</td><td class="mono">' + esc(bps(c.rxBps)) + '</td></tr>';
+        }).join('');
+        var note = sas.configured
+            ? matched + ' of ' + rows.length + ' matched to a SAS user by MAC address'
+            : 'Connect your RADIUS/SAS server on the SAS page to see each station\'s PPPoE user (matched by MAC address).';
+        return '<p class="muted reg-note">' + esc(rows.length) + ' registered · ' + esc(note) + '</p>' +
+            '<div class="reg-wrap"><table class="iface-table reg-table"><thead><tr><th>Station</th><th>MAC / IP</th><th>SAS user</th><th>Signal</th><th>CCQ</th><th>Rate tx/rx</th><th>↓ To client</th><th>↑ From client</th></tr></thead><tbody>' +
+            body + '</tbody></table></div>';
+    }
+
     // Compact card — a few key numbers; click opens the full detail.
     function card(d) {
         var state = d.online === true ? 'online' : (d.online === false ? 'offline' : 'unknown');
@@ -140,7 +192,8 @@
         var keys = [];
         if (r.signal != null) keys.push(['Signal', r.signal + ' dBm']);
         if (mx.ccq != null) keys.push(['CCQ', mx.ccq + '%']);
-        if (mx.clientCount != null) keys.push(['Clients', mx.clientCount]);
+        var nClients = mx.clientCount != null ? mx.clientCount : mx.stationCount;
+        if (nClients != null) keys.push(['Clients', nClients]);
         if (!keys.length) { keys.push(['Now', ms(d.latencyMs)]); keys.push(['Uptime', d.uptimePct === null ? '–' : d.uptimePct + '%']); }
         var top = mx.interfaces && mx.interfaces[0];
         if (top && top.rxBps != null && keys.length < 4) keys.push(['Traffic', bps(top.rxBps)]);
@@ -164,11 +217,29 @@
             '<div class="bh-name">' + esc(name) + '</div><div class="muted">' + esc(sub) + '</div>' +
             (mono ? '<div class="muted mono">' + esc(mono) + '</div>' : '') + '</div>';
     }
+    // When both radios of a link are managed, the server pairs them (peerId). The pair is shown
+    // as ONE link: the "primary" end keeps the card, the other is folded into it as the far end.
+    function peerOf(d) {
+        if (!d || !d.peerId || !lastData || d.role !== 'backhaul') return null;
+        var p = lastData.devices.find(function (x) { return x.id === d.peerId; });
+        return p && p.role === 'backhaul' ? p : null;
+    }
+    function masterRank(d) { var m = ((d.metrics || {}).radio || {}).mode; return m && /^(ap|master)/i.test(String(m)) ? 1 : 0; }
+    // True for the end that is folded into its peer's card (the master/AP side when known).
+    function isFarEnd(d) {
+        var p = peerOf(d);
+        if (!p) return false;
+        var a = masterRank(d), b = masterRank(p);
+        return a !== b ? a > b : String(p.id) < String(d.id);
+    }
+    function modelOf(d) { var det = (d.lastTest && d.lastTest.details) || {}; return det.model || TYPE_LABELS[d.type] || d.type; }
+
     function backhaulCard(d) {
         var state = d.online === true ? 'online' : (d.online === false ? 'offline' : 'unknown');
         var mx = d.metrics || {};
         var r = mx.radio || {};
         var det = (d.lastTest && d.lastTest.details) || {};
+        var peer = peerOf(d);
         var masterName = r.remoteName || det.remote || 'Upstream';
         var signalTxt = r.signal != null ? (r.signal + ' dBm') : (det.signal || '');
         var linkTxt = r.linkName || det.link || '';
@@ -184,10 +255,13 @@
         var mid = '<div class="bh-mid"><div class="bh-state ' + (state === 'online' ? 'ok' : state) + '">' +
             (state === 'offline' ? 'link down' : (state === 'online' ? 'connected' : 'checking…')) + '</div>' +
             '<div class="bh-wire ' + state + '"></div>' +
-            '<div class="muted">' + esc([linkTxt, r.freq, signalTxt].filter(Boolean).join(' · ')) + '</div></div>';
+            '<div class="muted">' + esc([linkTxt, r.freq, signalTxt].filter(Boolean).join(' · ')) + '</div>' +
+            '<div class="bh-ends ' + (peer ? 'both' : 'one') + '">' + (peer ? 'Both ends monitored' : 'Slave end only') + '</div></div>';
         return '<article class="backhaul-card ' + state + '" data-id="' + esc(d.id) + '" tabindex="0" role="button">' +
             '<div class="bh-link">' +
-                bhEnd('remote', masterName, 'Master' + (r.remoteModel ? ' · ' + r.remoteModel : ' · at provider'), '') +
+                (peer
+                    ? bhEnd('remote', peer.name, 'Master · ' + modelOf(peer), peer.ip)
+                    : bhEnd('remote', masterName, 'Master' + (r.remoteModel ? ' · ' + r.remoteModel : ' · at provider'), '')) +
                 mid +
                 bhEnd('monitoring', d.name, 'Slave · ' + (det.model || TYPE_LABELS[d.type] || d.type), d.ip) +
             '</div>' +
@@ -241,16 +315,36 @@
             '<path class="la-wave" d="M88 28c5 7 5 17 0 24M98 20c9 12 9 28 0 40"/>' +
             '</svg>';
     }
-    function linkEnd(side, title, sub, mono, rows) {
+    // Live rows for one managed radio: its own readings, and the direction it transmits.
+    function endRows(dev) {
+        var mx = dev.metrics || {};
+        var r = mx.radio || {};
+        var top = mx.interfaces && mx.interfaces[0];
+        var has = function (v) { return v !== undefined && v !== null && v !== ''; };
+        var ccq = has(r.ccq) ? r.ccq : mx.ccq;
+        var rows = [];
+        if (dev.online === false) return [['Status', 'Offline']];
+        if (has(r.signal)) rows.push(['Signal', r.signal + ' dBm']);
+        if (has(r.snr)) rows.push(['SNR', r.snr + ' dB']);
+        if (has(ccq)) rows.push(['CCQ', ccq + '%']);
+        if (has(r.txRate)) rows.push(['Rate', r.txRate + ' Mbps']);
+        if (top && has(top.txBps)) rows.push(['Traffic sent', bps(top.txBps)]);
+        if (has(r.txpower)) rows.push(['Tx power', r.txpower + ' dBm']);
+        return rows.length ? rows : [['Data', 'Collecting…']];
+    }
+    function linkEnd(side, title, sub, mono, rows, monitored, openId) {
         return '<section class="link-end ' + side + '">' + dishArt() +
             '<div class="link-end-name">' + esc(title) + '</div><div class="muted">' + esc(sub) + '</div>' +
             (mono ? '<div class="muted mono">' + esc(mono) + '</div>' : '') +
+            '<div class="link-end-tag ' + (monitored ? 'on' : 'off') + '">' + (monitored ? '● Monitored' : '○ Not monitored — read from the slave') + '</div>' +
+            (openId ? '<button type="button" class="link-btn" data-open-id="' + esc(openId) + '">Open this end</button>' : '') +
             '<dl class="link-end-data">' + rows.map(function (x) { return '<div><dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd></div>'; }).join('') + '</dl>' +
             '</section>';
     }
-    // The managed radio reports both directions of the link, so each end shows the direction it
-    // transmits: the far end sends what this radio receives (RX), this end sends its TX. The far
-    // end's own signal/CCQ appear only when the radio reports them.
+    // Both ends managed (paired): each end shows its own radio's live readings.
+    // Only this end managed: it reports both directions of the link, so the far end shows the
+    // direction it transmits (what this radio receives); its own signal/CCQ appear only if the
+    // radio reports them.
     function linkHero(d) {
         var state = d.online === true ? 'online' : (d.online === false ? 'offline' : 'unknown');
         var mx = d.metrics || {};
@@ -258,30 +352,32 @@
         var det = (d.lastTest && d.lastTest.details) || {};
         var top = mx.interfaces && mx.interfaces[0];
         var has = function (v) { return v !== undefined && v !== null && v !== ''; };
-        var ccq = has(r.ccq) ? r.ccq : mx.ccq;
-        var far = [], near = [];
-        if (has(r.remoteSignal)) far.push(['Signal', r.remoteSignal + ' dBm']);
-        if (has(r.remoteCcq)) far.push(['CCQ', r.remoteCcq + '%']);
-        if (has(r.rxRate)) far.push(['Rate', r.rxRate + ' Mbps']);
-        if (top && has(top.rxBps)) far.push(['Traffic sent', bps(top.rxBps)]);
-        if (has(r.signal)) near.push(['Signal', r.signal + ' dBm']);
-        if (has(r.snr)) near.push(['SNR', r.snr + ' dB']);
-        if (has(ccq)) near.push(['CCQ', ccq + '%']);
-        if (has(r.txRate)) near.push(['Rate', r.txRate + ' Mbps']);
-        if (top && has(top.txBps)) near.push(['Traffic sent', bps(top.txBps)]);
-        if (has(r.txpower)) near.push(['Tx power', r.txpower + ' dBm']);
-        if (!far.length) far.push(['Data', 'Not reported']);
+        var peer = peerOf(d);
+        var near = endRows(d);
+        var far = [];
+        if (peer) far = endRows(peer);
+        else {
+            if (has(r.remoteSignal)) far.push(['Signal', r.remoteSignal + ' dBm']);
+            if (has(r.remoteCcq)) far.push(['CCQ', r.remoteCcq + '%']);
+            if (has(r.rxRate)) far.push(['Rate', r.rxRate + ' Mbps']);
+            if (top && has(top.rxBps)) far.push(['Traffic sent', bps(top.rxBps)]);
+            if (!far.length) far.push(['Data', 'Not reported']);
+        }
+        // d is drawn on the right; label the ends by which one is the master when we can tell.
+        var dIsMaster = peer ? isFarEnd(d) : false;
         var facts = [r.linkName || det.link, r.freq, has(r.chanbw) ? r.chanbw + ' MHz' : '', has(r.distance) ? r.distance + ' km' : ''].filter(Boolean);
         var total = top && has(top.rxBps) ? bps((top.rxBps || 0) + (top.txBps || 0)) : (has(r.throughput) ? r.throughput + ' Mb/s' : '');
         return '<div class="link-hero ' + state + '">' +
-            linkEnd('far', r.remoteName || det.remote || 'Upstream', 'Far end' + (r.remoteModel ? ' · ' + r.remoteModel : ''), '', far) +
+            (peer
+                ? linkEnd('far', peer.name, (dIsMaster ? 'Slave' : 'Master') + ' · ' + modelOf(peer), peer.ip, far, true, peer.id)
+                : linkEnd('far', r.remoteName || det.remote || 'Upstream', 'Master' + (r.remoteModel ? ' · ' + r.remoteModel : ''), '', far, false, '')) +
             '<div class="link-mid">' +
                 '<div class="bh-state ' + (state === 'online' ? 'ok' : state) + '">' + (state === 'offline' ? 'link down' : (state === 'online' ? 'connected' : 'checking…')) + '</div>' +
                 '<div class="link-beam ' + state + '"><span></span></div>' +
                 (total ? '<div class="link-total">' + esc(total) + '</div><div class="muted">total traffic</div>' : '') +
                 '<div class="muted link-facts">' + esc(facts.join(' · ')) + '</div>' +
             '</div>' +
-            linkEnd('near', d.name, 'This end · ' + (det.model || TYPE_LABELS[d.type] || d.type), d.ip, near) +
+            linkEnd('near', d.name, (dIsMaster ? 'Master' : 'Slave') + ' · ' + modelOf(d), d.ip, near, true, '') +
             '</div>';
     }
 
@@ -306,7 +402,8 @@
             '<dl class="kv detail-kv">' + info.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') + '</dl>' +
             '<h4 class="detail-sec">Live</h4>' + statGrid(d) +
             '<h4 class="detail-sec">Latency (10 min)</h4>' + sparkline(d.history) +
-            (d.online === false ? '' : '<h4 class="detail-sec">Traffic &amp; ' + (d.metrics && d.metrics.kind === 'clients' ? 'clients' : 'interfaces') + '</h4>' + metricsBlock(d.metrics));
+            (d.online !== false && d.metrics && d.metrics.kind === 'stations' ? '<h4 class="detail-sec">Registration (connected stations)</h4>' + registrationBlock(d.metrics) : '') +
+            (d.online === false ? '' : '<h4 class="detail-sec">Traffic' + (d.metrics && d.metrics.kind === 'stations' ? '' : ' &amp; ' + (d.metrics && d.metrics.kind === 'clients' ? 'clients' : 'interfaces')) + '</h4>' + metricsBlock(d.metrics));
     }
 
     function ensureModal() {
@@ -317,7 +414,11 @@
         m.className = 'modal-overlay';
         m.innerHTML = '<div class="modal detail-modal"><div class="modal-header"><strong>Device detail</strong><button class="close-btn" aria-label="Close">×</button></div><div class="modal-body" id="detail-modal-body"></div></div>';
         document.body.appendChild(m);
-        m.addEventListener('click', function (e) { if (e.target === m || e.target.closest('.close-btn')) closeDetail(); });
+        m.addEventListener('click', function (e) {
+            var other = e.target.closest('[data-open-id]');
+            if (other) { openDetail(other.dataset.openId); return; }
+            if (e.target === m || e.target.closest('.close-btn')) closeDetail();
+        });
         document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDetail(); });
         return m;
     }
@@ -328,8 +429,10 @@
         detailId = id;
         var m = ensureModal();
         var isLink = d.role === 'backhaul';
-        m.querySelector('.detail-modal').classList.toggle('wide', isLink);
-        m.querySelector('.modal-header strong').textContent = isLink ? 'Link detail' : 'Device detail';
+        var isSector = !!(d.metrics && d.metrics.kind === 'stations');
+        if (isSector) loadSas();
+        m.querySelector('.detail-modal').classList.toggle('wide', isLink || isSector);
+        m.querySelector('.modal-header strong').textContent = isLink ? 'Link detail' : (isSector ? 'Sector detail' : 'Device detail');
         document.getElementById('detail-modal-body').innerHTML = detailBody(d);
         m.style.display = 'flex';
     }
@@ -365,8 +468,11 @@
         var s = { total: shown.length, online: shown.filter(function (d) { return d.online === true; }).length, offline: shown.filter(function (d) { return d.online === false; }).length };
         var sectors = shown.filter(function (d) { return d.role === 'sector'; });
         var subs = sectors.reduce(function (a, d) { var m = d.metrics || {}; return a + (m.clientCount || m.stationCount || 0); }, 0);
+        // A paired link is one link: fold its far end into the primary end's card, and count its
+        // traffic once (both radios report the same traffic).
+        var folded = function (d) { return isFarEnd(d) && shown.indexOf(peerOf(d)) >= 0; };
         var trafficBps = shown.reduce(function (a, d) {
-            if (!d.online) return a;
+            if (!d.online || folded(d)) return a;
             var ifs = (d.metrics && d.metrics.interfaces) || [];
             return a + ifs.reduce(function (b, i) { return b + (i.rxBps || 0) + (i.txBps || 0); }, 0);
         }, 0);
@@ -389,7 +495,7 @@
             var list = shown.slice().sort(function (a, b) {
                 return (a.online === false ? 0 : 1) - (b.online === false ? 0 : 1) || a.name.localeCompare(b.name);
             });
-            var backhaul = list.filter(function (x) { return x.role === 'backhaul'; });
+            var backhaul = list.filter(function (x) { return x.role === 'backhaul' && !folded(x); });
             var rest = list.filter(function (x) { return x.role !== 'backhaul'; });
             var html = '';
             if (backhaul.length) html += '<div class="monitor-section-label">Backhaul links</div>' + backhaul.map(backhaulCard).join('');
@@ -399,7 +505,7 @@
 
         if (detailId) {
             var dd = data.devices.find(function (x) { return x.id === detailId; });
-            if (dd) { var body = document.getElementById('detail-modal-body'); if (body) body.innerHTML = detailBody(dd); }
+            if (dd) { if (dd.metrics && dd.metrics.kind === 'stations') loadSas(); var body = document.getElementById('detail-modal-body'); if (body) body.innerHTML = detailBody(dd); }
             else closeDetail();
         }
 

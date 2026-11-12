@@ -6,6 +6,7 @@ const devices = require('./devices');
 const alerts = require('./alerts');
 const metrics = require('./metrics');
 const history = require('./history');
+const { pairLinks } = require('./links');
 
 const INTERVAL_MS = Number(process.env.TOWERDESK_MONITOR_MS) || 10000;
 const HISTORY = 60;      // samples kept per device (10 minutes at 10 s)
@@ -139,6 +140,7 @@ function snapshot() {
       location: d.location,
       role: resolveRole(d, mx),
       provider: d.provider || null,
+      peerId: d.peerId || null,
       online: s ? s.online : (d.status ? d.status.online : null),
       since: s ? new Date(s.since).toISOString() : null,
       latencyMs: last ? last.ms : null,
@@ -150,6 +152,7 @@ function snapshot() {
       lastTest: d.lastTest ? { ok: d.lastTest.ok, summary: d.lastTest.summary, error: d.lastTest.error, details: d.lastTest.details } : null
     };
   });
+  pairLinks(list);
   const online = list.filter((d) => d.online === true).length;
   const lats = list.map((d) => d.latencyMs).filter((x) => x !== null);
   return {

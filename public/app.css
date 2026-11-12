@@ -459,6 +459,15 @@ tbody tr:hover { background: var(--bg-subtle); }
 .link-hero.offline .la-dish { stroke: var(--danger); }
 .link-hero.offline .la-feed { fill: var(--danger); }
 .link-end-name { font-weight: 700; font-size: 1.02rem; margin-top: 6px; overflow-wrap: anywhere; }
+.reg-wrap { overflow-x: auto; }
+.reg-table { min-width: 720px; }
+.reg-table td { vertical-align: top; }
+.reg-note { margin-bottom: 8px; }
+.link-end-tag { display: inline-block; margin-top: 8px; padding: 2px 10px; border-radius: 999px; font-size: 0.74rem; font-weight: 600; border: 1px solid var(--border); color: var(--text-muted); }
+.link-end-tag.on { color: var(--success); border-color: currentColor; }
+.link-end .link-btn { display: block; margin: 6px auto 0; }
+.bh-ends { display: inline-block; margin-top: 6px; padding: 1px 9px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; border: 1px solid var(--border); color: var(--text-muted); }
+.bh-ends.both { color: var(--success); border-color: currentColor; }
 .link-end-data { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; margin-top: 14px; text-align: left; }
 .link-end-data > div { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background: var(--bg-card); }
 .link-end-data dt { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); font-weight: 600; }

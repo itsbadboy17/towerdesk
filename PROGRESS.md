@@ -50,3 +50,11 @@
 - Each end shows the direction it transmits: far end = this radio's RX rate/traffic, this end = TX. Far-end signal/CCQ render only if a transport supplies `radio.remoteSignal` / `radio.remoteCcq` (none does yet).
 - Reuses the existing detail modal and bps()/esc() helpers; other device types keep the narrow modal. Stacks to one column under 720px. Demo: East backhaul (airOS) now carries a CCQ.
 - npm test + QA 655/655 pass.
+
+## Links with both ends / slave only, and sector registration
+- Link pairing (src/links.js, pure): when both radios of a link are managed they are paired (`peerId`) and shown as ONE link with each end's own live data; with only the slave managed, the far end shows what the slave reports. Pairing is explicit ("Other end of this link" in the device edit form, stored on both devices, cleared on re-pair/removal) or automatic (same link name, or one end names the other as its remote).
+- Monitoring: the paired far end is folded into the primary card ("Both ends monitored" / "Slave end only" tag), its traffic is counted once in the KPI, and the wide link view marks each end Monitored / Not monitored with an "Open this end" button.
+- Sectors: detail now has a wide Registration table of connected stations (name, MAC/IP, signal, CCQ, rate, traffic each way) from the airOS station list the metrics already collected.
+- SAS match: stations are matched to RADIUS/SAS sessions by MAC address (same MAC when the PPPoE user is dialled on the CPE radio), showing the PPPoE username + plan, or "Not in SAS". Fetched from the existing /api/radius/subscribers at most every 30 s, only while a sector is open.
+- Demo: East backhaul has both ends, North backhaul slave only; sector stations carry the demo SAS MACs plus one unmatched radio.
+- test/links.js (19 assertions) added to npm test. No dependency added. npm test + QA 655/655 pass.

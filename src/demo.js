@@ -2,6 +2,9 @@
 // links, sectors with connected clients, devices) renders without a live network or VPN.
 // Shape matches src/monitor.js snapshot() exactly. Values wiggle each poll so charts look live.
 
+const { pairLinks } = require('./links');
+const subscribers = require('./subscribers');
+
 const START = Date.now();
 
 function wave(n, base, amp, period, phase) {
@@ -49,7 +52,8 @@ function backhaul(o) {
         linkName: o.link, distance: o.dist, availability: o.avail, connected: o.online,
         throughput: now, remoteName: o.remote, remoteModel: o.remoteModel
       },
-      interfaces: [iface('Link', o.online, Math.round(now * 1e6 * 0.78), Math.round(now * 1e6 * 0.22))],
+      // `flip` marks the far end of a link: what one end receives, the other sends.
+      interfaces: [iface('Link', o.online, Math.round(now * 1e6 * (o.flip ? 0.22 : 0.78)), Math.round(now * 1e6 * (o.flip ? 0.78 : 0.22)))],
       cpu: { now: o.cpu, history: wave(30, o.cpu, 6, 8, 0) }, memPct: o.mem, uptime: o.online ? o.days + 'd ' + (o.hours || 0) + 'h' : null,
       signal: o.signal, ccq: o.ccq === undefined ? null : o.ccq, stations: null, stationCount: null, clients: null, clientCount: null,
       waiting: false, error: null
@@ -58,8 +62,26 @@ function backhaul(o) {
 }
 
 // ---- Sectors (point-to-multipoint APs with connected subscriber clients) ----
+// Registration table for a demo sector: the CPE radios connected to it. Each CPE dials its own
+// PPPoE session, so its MAC is the same one the demo RADIUS/SAS source reports for that
+// subscriber (matched by MAC on the Monitoring page). One extra radio is not in SAS, to show
+// the unmatched case.
+function registration(o) {
+  if (!o.online) return [];
+  const subs = subscribers._demoSubs(24).filter((s) => s.nas === o.name && s.online);
+  const rows = subs.map((s, i) => ({
+    name: 'CPE-' + s.username.split('@')[0], ip: '10.90.' + (o.id === 's1' ? 11 : 12) + '.' + (20 + i), mac: s.mac,
+    signal: s.signal, ccq: 99 - ((i * 7) % 30), txRate: 130 + ((i * 40) % 170), rxRate: 117 + ((i * 26) % 150),
+    platform: i % 2 ? 'LiteBeam 5AC' : 'NanoBeam 5AC', rxBps: s.liveUpBps, txBps: s.liveDownBps
+  }));
+  rows.push({ name: 'CPE-spare', ip: '10.90.' + (o.id === 's1' ? 11 : 12) + '.99', mac: '44:D9:E7:0A:0B:' + (o.id === 's1' ? '01' : '02'), signal: -66, ccq: 82, txRate: 104, rxRate: 91, platform: 'NanoStation loco', rxBps: 0, txBps: 12000 });
+  return rows.sort((a, b) => (b.rxBps + b.txBps) - (a.rxBps + a.txBps));
+}
+
 function sector(o) {
-  const total = iface('Clients total', o.online, Math.round(o.mbps * 1e6 * 0.8), Math.round(o.mbps * 1e6 * 0.2));
+  const stations = registration(o);
+  const down = stations.reduce((a, s) => a + s.txBps, 0), up = stations.reduce((a, s) => a + s.rxBps, 0);
+  const total = iface('Clients total', o.online, down || Math.round(o.mbps * 1e6 * 0.8), up || Math.round(o.mbps * 1e6 * 0.2));
   return {
     id: o.id, name: o.name, type: 'ubnt', ip: o.ip, port: null, method: 'airos', location: o.loc, role: 'sector', provider: o.provider,
     online: o.online, since: o.online ? since(o.days, 0) : since(0, 0),
@@ -67,15 +89,15 @@ function sector(o) {
     uptimePct: o.online ? 99.6 : 0, history: latHist(60, o.lat || 4, 1.4, o.online ? [] : [50, 51, 52]),
     lastTest: { ok: o.online, summary: o.name + ' — ' + o.model, details: { model: o.model, signal: o.signal + ' dBm', firmware: o.fw } },
     metrics: {
-      source: 'Ubiquiti airOS', kind: 'clients',
+      source: 'Ubiquiti airOS', kind: 'stations',
       radio: {
         signal: o.signal, noise: o.noise, snr: o.signal - o.noise, ccq: o.ccq, txRate: o.txr, rxRate: o.rxr,
-        freq: o.freq + ' MHz', chanbw: o.bw, txpower: o.txp, mode: 'ap', essid: o.essid, stations: o.clients.length
+        freq: o.freq + ' MHz', chanbw: o.bw, txpower: o.txp, mode: 'ap', essid: o.essid, stations: stations.length
       },
       interfaces: [total],
-      clients: clients(o.clients), clientCount: o.clients.length,
+      stations: stations, stationCount: stations.length, clients: null, clientCount: null,
       cpu: { now: o.cpu, history: wave(30, o.cpu, 5, 9, 1) }, memPct: o.mem, uptime: o.online ? o.days + 'd' : null,
-      signal: o.signal, ccq: o.ccq, stationCount: o.clients.length,
+      signal: o.signal, ccq: o.ccq,
       waiting: false, error: null
     }
   };
@@ -97,6 +119,9 @@ function build() {
   const devices = [
     backhaul({ id: 'bh1', provider: 'HRINS core', name: 'North backhaul', type: 'mimosa', ip: '10.90.0.2', method: 'mimosa', loc: 'Tower roof', online: true, days: 41, hours: 6, lat: 3, model: 'C5c', source: 'Mimosa', remote: 'ISP core (Mansia)', remoteModel: 'B5c', link: 'core-north', signal: -42, noise: -71, txr: 300, rxr: 390, freq: 6340, bw: 80, txp: 24, temp: 52, dist: 7.2, avail: 99.98, mbps: 148, cpu: 22, mem: 38 }),
     backhaul({ id: 'bh2', provider: 'Horizon Telecom', name: 'East backhaul', type: 'ubnt', ip: '10.90.0.6', method: 'airos', loc: 'Tower roof', online: true, days: 12, hours: 2, lat: 5, model: 'airFiber 5XHD', source: 'Ubiquiti airOS', remote: 'Horizon POP', remoteModel: 'airFiber', link: 'horizon-east', signal: -56, noise: -92, ccq: 94, txr: 360, rxr: 300, freq: 5700, bw: 40, txp: 22, temp: 47, dist: 11.4, avail: 99.2, mbps: 72, cpu: 16, mem: 41 }),
+    // The far end of the East backhaul is also managed, so that link shows live data from both
+    // radios; the North backhaul has only its tower end (the usual "slave only" case).
+    backhaul({ id: 'bh2m', provider: 'Horizon Telecom', name: 'Horizon POP', type: 'ubnt', ip: '10.90.0.5', method: 'airos', loc: 'Horizon site', online: true, days: 12, hours: 2, lat: 6, model: 'airFiber 5XHD', source: 'Ubiquiti airOS', remote: 'East backhaul', remoteModel: 'airFiber 5XHD', link: 'horizon-east', signal: -58, noise: -91, ccq: 91, txr: 300, rxr: 360, freq: 5700, bw: 40, txp: 23, temp: 44, dist: 11.4, avail: 99.2, mbps: 72, cpu: 14, mem: 39, flip: true }),
     sector({ id: 's1', provider: 'HRINS core', name: 'Sector North', ip: '10.90.1.1', loc: 'Tower roof', online: true, days: 22, lat: 4, model: 'NanoStation 5AC', fw: 'XC.v8.7.11', signal: -53, noise: -94, ccq: 96, txr: 300, rxr: 300, freq: 5180, bw: 40, txp: 24, essid: 'HRINS-N', mbps: 88, cpu: 28, mem: 44,
       clients: [['ek2@cr', '10.81.61.128', -61, 4.2, 0.3], ['fag@cr', '10.81.61.106', -44, 1.1, 0.1], ['fahmi@cr', '10.82.155.107', -42, 0.0, 0.0], ['fathel@cr', '10.81.61.177', -50, 0.1, 1.0], ['zuhair@cr', '10.81.61.44', -58, 2.3, 0.2], ['noor@cr', '10.81.61.90', -47, 0.8, 0.1]] }),
     sector({ id: 's2', provider: 'HRINS core', name: 'Sector West', ip: '10.90.1.2', loc: 'Tower roof', online: true, days: 6, lat: 7, model: 'LiteAP AC', fw: 'XC.v8.7.11', signal: -58, noise: -88, ccq: 71, txr: 260, rxr: 240, freq: 5500, bw: 40, txp: 25, essid: 'HRINS-W', mbps: 31, cpu: 35, mem: 52,
@@ -108,6 +133,7 @@ function build() {
     device({ id: 'd2', provider: 'HRINS core', name: 'Fiber ONU', type: 'onu', ip: '10.90.0.9', method: 'ping', loc: 'Cabinet', online: true, days: 29, lat: 2, summary: 'Replies to ping (2 ms)', details: {}, metrics: null })
   ];
 
+  pairLinks(devices);
   const online = devices.filter((d) => d.online === true).length;
   const lats = devices.map((d) => d.latencyMs).filter((x) => x !== null);
   return {

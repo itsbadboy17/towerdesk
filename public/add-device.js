@@ -377,7 +377,7 @@
             var cfg = r[0].find(function (x) { return x.id === id; });
             if (!cfg) { show('bad', '<p class="result-title bad">Device not found (it may have been removed).</p>'); return; }
             var live = (r[1].devices || []).find(function (x) { return x.id === id; }) || {};
-            renderDetail({ cfg: cfg, online: live.online, metrics: live.metrics, lastTest: live.lastTest || cfg.lastTest });
+            renderDetail({ cfg: cfg, online: live.online, metrics: live.metrics, lastTest: live.lastTest || cfg.lastTest, others: r[0].filter(function (x) { return x.id !== id; }) });
         }).catch(function (e) { show('bad', '<p class="result-title bad">❌ ' + esc(e.message) + '</p>'); });
     }
 
@@ -413,6 +413,12 @@
                 '<div class="form-row">' +
                     '<div class="form-group"><label for="edit-provider">Upstream provider</label><input type="text" id="edit-provider" autocomplete="off" placeholder="e.g. HRINS core" value="' + esc(cfg.provider || '') + '"></div>' +
                     '<div class="form-group"><label for="edit-location">Location</label><input type="text" id="edit-location" autocomplete="off" placeholder="e.g. Tower roof" value="' + esc(cfg.location || '') + '"></div>' +
+                '</div>' +
+                '<div class="form-row">' +
+                    '<div class="form-group"><label for="edit-peer">Other end of this link (if you manage it too)</label><select id="edit-peer">' +
+                        '<option value="">— Not in TowerDesk (this end only) —</option>' +
+                        (d.others || []).map(function (o) { return '<option value="' + esc(o.id) + '"' + (cfg.peerId === o.id ? ' selected' : '') + '>' + esc(o.name) + ' · ' + esc(o.ip) + '</option>'; }).join('') +
+                    '</select></div>' +
                 '</div>' +
                 '<h4>Change how this is monitored</h4>' +
                 '<div class="form-row">' +
@@ -466,6 +472,7 @@
             api('PUT', '/api/devices/' + encodeURIComponent(cfg.id), {
                 provider: $('edit-provider').value.trim(),
                 location: $('edit-location').value.trim(),
+                peerId: $('edit-peer').value,
                 method: key,
                 port: $('edit-port').value || undefined,
                 username: login && !mm.passwordOnly ? ($('edit-username').value.trim() || undefined) : undefined,
