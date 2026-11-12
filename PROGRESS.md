@@ -44,3 +44,9 @@
 - No dependency added. test/updater.js: 12 new assertions. npm test + QA 655/655 pass.
 - Version bumped to 0.1.1 (first build with the updater token field); portable zip rebuilt.
 - 0.1.2: updater's stageFromDir also accepts the portable zip layout (app\ or TowerDesk\app\), staging only the app; so the portable zip can be attached to a release as the update bundle. 3 new assertions; verified by extracting the real built zip and staging it.
+
+## Wide link detail (backhaul)
+- Clicking a backhaul link on Monitoring opens a wide modal (max 1020px) with a two-ended view: a vector dish for each end, a live beam + total traffic in the middle, and each end's data beneath it (signal, SNR, CCQ when the radio reports it, rate, traffic sent, Tx power).
+- Each end shows the direction it transmits: far end = this radio's RX rate/traffic, this end = TX. Far-end signal/CCQ render only if a transport supplies `radio.remoteSignal` / `radio.remoteCcq` (none does yet).
+- Reuses the existing detail modal and bps()/esc() helpers; other device types keep the narrow modal. Stacks to one column under 720px. Demo: East backhaul (airOS) now carries a CCQ.
+- npm test + QA 655/655 pass.

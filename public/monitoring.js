@@ -230,6 +230,61 @@
         }).join('') + '</div>';
     }
 
+    // ----- Wide two-ended view for a backhaul link -----
+    // A dish on a mast, drawn facing right; the far end is mirrored with CSS so the two face
+    // each other. Colours come from the theme (currentColor + accent).
+    function dishArt() {
+        return '<svg class="link-art" viewBox="0 0 120 110" aria-hidden="true">' +
+            '<path class="la-mast" d="M52 104V46M40 104h24M46 104l6-22 6 22"/>' +
+            '<path class="la-dish" d="M58 14c-16 8-22 26-12 44 4 7 10 12 16 14z"/>' +
+            '<path class="la-arm" d="M52 46l22-6M46 30l28 10"/><circle class="la-feed" cx="76" cy="40" r="4"/>' +
+            '<path class="la-wave" d="M88 28c5 7 5 17 0 24M98 20c9 12 9 28 0 40"/>' +
+            '</svg>';
+    }
+    function linkEnd(side, title, sub, mono, rows) {
+        return '<section class="link-end ' + side + '">' + dishArt() +
+            '<div class="link-end-name">' + esc(title) + '</div><div class="muted">' + esc(sub) + '</div>' +
+            (mono ? '<div class="muted mono">' + esc(mono) + '</div>' : '') +
+            '<dl class="link-end-data">' + rows.map(function (x) { return '<div><dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd></div>'; }).join('') + '</dl>' +
+            '</section>';
+    }
+    // The managed radio reports both directions of the link, so each end shows the direction it
+    // transmits: the far end sends what this radio receives (RX), this end sends its TX. The far
+    // end's own signal/CCQ appear only when the radio reports them.
+    function linkHero(d) {
+        var state = d.online === true ? 'online' : (d.online === false ? 'offline' : 'unknown');
+        var mx = d.metrics || {};
+        var r = mx.radio || {};
+        var det = (d.lastTest && d.lastTest.details) || {};
+        var top = mx.interfaces && mx.interfaces[0];
+        var has = function (v) { return v !== undefined && v !== null && v !== ''; };
+        var ccq = has(r.ccq) ? r.ccq : mx.ccq;
+        var far = [], near = [];
+        if (has(r.remoteSignal)) far.push(['Signal', r.remoteSignal + ' dBm']);
+        if (has(r.remoteCcq)) far.push(['CCQ', r.remoteCcq + '%']);
+        if (has(r.rxRate)) far.push(['Rate', r.rxRate + ' Mbps']);
+        if (top && has(top.rxBps)) far.push(['Traffic sent', bps(top.rxBps)]);
+        if (has(r.signal)) near.push(['Signal', r.signal + ' dBm']);
+        if (has(r.snr)) near.push(['SNR', r.snr + ' dB']);
+        if (has(ccq)) near.push(['CCQ', ccq + '%']);
+        if (has(r.txRate)) near.push(['Rate', r.txRate + ' Mbps']);
+        if (top && has(top.txBps)) near.push(['Traffic sent', bps(top.txBps)]);
+        if (has(r.txpower)) near.push(['Tx power', r.txpower + ' dBm']);
+        if (!far.length) far.push(['Data', 'Not reported']);
+        var facts = [r.linkName || det.link, r.freq, has(r.chanbw) ? r.chanbw + ' MHz' : '', has(r.distance) ? r.distance + ' km' : ''].filter(Boolean);
+        var total = top && has(top.rxBps) ? bps((top.rxBps || 0) + (top.txBps || 0)) : (has(r.throughput) ? r.throughput + ' Mb/s' : '');
+        return '<div class="link-hero ' + state + '">' +
+            linkEnd('far', r.remoteName || det.remote || 'Upstream', 'Far end' + (r.remoteModel ? ' · ' + r.remoteModel : ''), '', far) +
+            '<div class="link-mid">' +
+                '<div class="bh-state ' + (state === 'online' ? 'ok' : state) + '">' + (state === 'offline' ? 'link down' : (state === 'online' ? 'connected' : 'checking…')) + '</div>' +
+                '<div class="link-beam ' + state + '"><span></span></div>' +
+                (total ? '<div class="link-total">' + esc(total) + '</div><div class="muted">total traffic</div>' : '') +
+                '<div class="muted link-facts">' + esc(facts.join(' · ')) + '</div>' +
+            '</div>' +
+            linkEnd('near', d.name, 'This end · ' + (det.model || TYPE_LABELS[d.type] || d.type), d.ip, near) +
+            '</div>';
+    }
+
     function detailBody(d) {
         var cs = window.TowerDesk.connState(d);
         var det = (d.lastTest && d.lastTest.details) || {};
@@ -247,6 +302,7 @@
                 '<div><h3>' + esc(d.name) + '</h3><div class="muted mono">' + esc(d.ip) + ' · ' + esc(roleLabel) + '</div></div>' +
                 '<span class="status-badge ' + cs.badge + '">● ' + esc(cs.label) + '</span>' +
             '</div>' +
+            (d.role === 'backhaul' ? linkHero(d) : '') +
             '<dl class="kv detail-kv">' + info.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') + '</dl>' +
             '<h4 class="detail-sec">Live</h4>' + statGrid(d) +
             '<h4 class="detail-sec">Latency (10 min)</h4>' + sparkline(d.history) +
@@ -271,6 +327,9 @@
         if (!d) return;
         detailId = id;
         var m = ensureModal();
+        var isLink = d.role === 'backhaul';
+        m.querySelector('.detail-modal').classList.toggle('wide', isLink);
+        m.querySelector('.modal-header strong').textContent = isLink ? 'Link detail' : 'Device detail';
         document.getElementById('detail-modal-body').innerHTML = detailBody(d);
         m.style.display = 'flex';
     }
