@@ -444,6 +444,52 @@
         if (m) m.style.display = 'none';
     }
 
+    // ----- "Needs attention": the few things worth looking at first -----
+    // Thresholds are deliberately simple and conservative; devices whose network is unreachable
+    // are skipped (their state is unknown, and the banner already says so).
+    var ATT = { linkSignal: -70, linkCapacity: 85, staSignal: -73, staCcq: 70, cpu: 85, max: 8 };
+    function attentionItems(devices) {
+        var out = [];
+        var add = function (sev, id, what, why, rank) { out.push({ sev: sev, id: id, what: what, why: why, rank: rank }); };
+        devices.forEach(function (d) {
+            if (d.unreachable || d.online === null || d.online === undefined) return;
+            if (d.online === false) { add('critical', d.id, d.name, 'offline' + (d.since ? ' for ' + ago(d.since) : ''), 0); return; }
+            var mx = d.metrics || {};
+            var r = mx.radio || {};
+            if (d.lastTest && d.lastTest.ok === false) add('warning', d.id, d.name, 'answers, but the login is not working', 1);
+            if (mx.cpu && mx.cpu.now >= ATT.cpu) add('warning', d.id, d.name, 'CPU at ' + mx.cpu.now + '%', 4);
+            if (d.role === 'backhaul' && !isFarEnd(d)) {
+                if (r.signal != null && r.signal <= ATT.linkSignal) add('warning', d.id, d.name, 'weak link signal, ' + r.signal + ' dBm', 2);
+                var cap = (r.throughput != null && r.rxRate) ? Math.round((r.throughput / r.rxRate) * 100) : null;
+                if (cap != null && cap >= ATT.linkCapacity) add('warning', d.id, d.name, 'link at ' + cap + '% of its capacity', 2);
+            }
+            (mx.stations || []).forEach(function (c) {
+                var bad = [];
+                if (c.signal != null && c.signal <= ATT.staSignal) bad.push(c.signal + ' dBm');
+                if (c.ccq != null && c.ccq < ATT.staCcq) bad.push('CCQ ' + c.ccq + '%');
+                if (!bad.length) return;
+                var s = sas.byMac[macKey(c.mac)];
+                add('warning', d.id, (s ? s.username : (c.name || c.mac)) + ' on ' + d.name, 'weak radio link: ' + bad.join(', '), 3);
+            });
+        });
+        return out.sort(function (a, b) { return a.rank - b.rank; });
+    }
+    function renderAttention(devices) {
+        var cardEl = $('attention-card');
+        if (!cardEl) return;
+        var known = devices.filter(function (d) { return !d.unreachable && d.online !== null && d.online !== undefined; });
+        cardEl.hidden = !known.length;
+        if (!known.length) return;
+        if (devices.some(function (d) { return d.metrics && d.metrics.stations && d.metrics.stations.length; })) loadSas();
+        var items = attentionItems(devices);
+        $('attention-count').textContent = items.length ? items.length + (items.length === 1 ? ' item' : ' items') : '';
+        $('attention-list').innerHTML = items.length
+            ? items.slice(0, ATT.max).map(function (it) {
+                return '<li class="' + it.sev + '"><button type="button" data-id="' + esc(it.id) + '"><span class="att-dot" aria-hidden="true"></span><span class="att-what">' + esc(it.what) + '</span><span class="att-why">' + esc(it.why) + '</span></button></li>';
+            }).join('') + (items.length > ATT.max ? '<li class="att-ok">and ' + (items.length - ATT.max) + ' more</li>' : '')
+            : '<li class="att-ok">Nothing needs attention — every reachable device, link and customer radio looks fine.</li>';
+    }
+
     function provKey(d) { return d.provider || 'Unassigned'; }
     function renderProviderTabs(devices) {
         var el = document.getElementById('provider-tabs');
@@ -483,6 +529,7 @@
             var ifs = (d.metrics && d.metrics.interfaces) || [];
             return a + ifs.reduce(function (b, i) { return b + (i.rxBps || 0) + (i.txBps || 0); }, 0);
         }, 0);
+        renderAttention(shown);
         $('kpi-total').textContent = s.total;
         $('kpi-online').textContent = s.online;
         $('kpi-offline').textContent = s.offline;
@@ -561,6 +608,14 @@
             if (e.key !== 'Enter' && e.key !== ' ') return;
             var cardEl = e.target.closest('.live-card, .backhaul-card');
             if (cardEl && cardEl.dataset.id) { e.preventDefault(); openDetail(cardEl.dataset.id); }
+        });
+    }
+
+    var attList = document.getElementById('attention-list');
+    if (attList) {
+        attList.addEventListener('click', function (e) {
+            var btn = e.target.closest('button[data-id]');
+            if (btn) openDetail(btn.dataset.id);
         });
     }
 

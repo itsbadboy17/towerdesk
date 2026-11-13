@@ -108,6 +108,18 @@ button, input, select, textarea { font: inherit; color: inherit; }
     font-size: 0.875rem; font-weight: 500;
     transition: background 0.14s, color 0.14s;
 }
+/* Pages that still show sample data only are kept out of the sidebar until they are wired to
+   real data (they stay reachable by address). Remove a line here to bring a page back. */
+.nav-section li:has(> a[href="/"]),
+.nav-section li:has(> a[href="/map"]),
+.nav-section li:has(> a[href="/remote"]),
+.nav-section li:has(> a[href="/plans"]),
+.nav-section li:has(> a[href="/vouchers"]),
+.nav-section li:has(> a[href="/billing"]),
+.nav-section li:has(> a[href="/invoices"]),
+.nav-section li:has(> a[href="/tickets"]) { display: none; }
+/* The SAS count in the sidebar is a fixed sample number, not the real total. */
+.nav-section a[href="/sas"] .nav-count { display: none; }
 .nav-section a:hover { background: var(--bg-hover); color: var(--text-main); }
 .nav-section a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .nav-section a.active::before { content: ""; position: absolute; inset-inline-start: 0; top: 50%; transform: translateY(-50%); width: 3px; height: 18px; border-radius: 0 3px 3px 0; background: var(--accent); }
@@ -459,6 +471,15 @@ tbody tr:hover { background: var(--bg-subtle); }
 .link-hero.offline .la-dish { stroke: var(--danger); }
 .link-hero.offline .la-feed { fill: var(--danger); }
 .link-end-name { font-weight: 700; font-size: 1.02rem; margin-top: 6px; overflow-wrap: anywhere; }
+/* "Needs attention" list on Monitoring. */
+.attention-list { list-style: none; display: grid; gap: 6px; }
+.attention-list button { display: flex; align-items: baseline; gap: 10px; width: 100%; text-align: start; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); color: var(--text-main); font: inherit; cursor: pointer; }
+.attention-list button:hover { border-color: var(--accent); }
+.attention-list .att-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--warning, #b45309); transform: translateY(-1px); }
+.attention-list .critical .att-dot { background: var(--danger); }
+.attention-list .att-what { font-weight: 600; overflow-wrap: anywhere; }
+.attention-list .att-why { color: var(--text-muted); overflow-wrap: anywhere; }
+.attention-list .att-ok { color: var(--text-muted); padding: 2px 0; }
 .reg-wrap { overflow-x: auto; }
 .reg-table { min-width: 720px; }
 .reg-table td { vertical-align: top; }

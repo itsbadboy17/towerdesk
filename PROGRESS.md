@@ -74,3 +74,9 @@
 - SAS Radius 4 subscriber source (src/transports/sas4.js, read-only): logs in to the SAS 4 admin API with a manager account and lists open sessions (index/online, paged); payload wrapping done with node:crypto (no dependency). Password encrypted at rest via storage.encrypt, one login reused ~50 min, live speed derived from byte-counter growth. Selectable under SAS > Connect server.
 - Tests: fake SAS 4 panel (13 assertions), alert debounce + per-network unreachable (11 assertions). npm test passes. Playwright QA NOT run for this change (user asked to hold QA until the site is finished).
 - Not verified against a real SAS 4 server.
+
+## Sample pages hidden + "Needs attention" list
+- Sidebar: pages that only show sample data (Overview, Tower Map, Remote Actions, Plans, Vouchers, Billing, Invoices, Tickets) are hidden with one CSS block in app.css; the fixed sample "200" SAS count is hidden too. The pages and routes still exist (reachable by address) — delete a CSS line to bring one back. This is a design change the user asked me to choose; visual baselines not touched.
+- `/` now redirects to `/monitoring` (the sample Overview stays at `/dashboard`).
+- Monitoring: "Needs attention" card above Live Devices — offline devices, failed logins, weak backhaul signal (<= -70 dBm), link >= 85% capacity, CPU >= 85%, and customer radios with signal <= -73 dBm or CCQ < 70% (named by SAS user when matched). Skips devices on an unreachable network. Click an item to open that device. Thresholds are the ATT constants in monitoring.js.
+- npm test passes. Playwright QA NOT run (on hold until the site is finished).

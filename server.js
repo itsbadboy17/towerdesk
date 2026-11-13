@@ -23,8 +23,10 @@ app.use(auth.middleware);
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 // Overview page (the dashboard)
+// The Overview page still shows sample data, so the app opens on the live Monitoring page.
+// The sample Overview stays reachable at /dashboard.
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+  res.redirect('/monitoring');
 });
 
 // Routes for different pages (placeholder)
