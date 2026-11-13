@@ -4,7 +4,9 @@ const auth = require('./src/auth');
 const app = express();
 
 app.disable('x-powered-by');
-app.use(express.json());
+// Small JSON bodies everywhere; the restore upload brings its own larger limit.
+const jsonBody = express.json();
+app.use((req, res, next) => (req.path === '/api/restore' ? next() : jsonBody(req, res, next)));
 
 // Login (enforced once a password is set with `npm run set-password`)
 app.get('/login', (req, res) => {
@@ -581,6 +583,30 @@ app.post('/api/radius/config', (req, res) => {
   } catch (e) {
     res.status(400).json({ error: 'Could not save RADIUS settings' });
   }
+});
+
+// Backup / restore of the data folder (Settings page). The download contains the saved logins
+// and their key, so it is only ever sent to the signed-in operator who asked for it.
+const backup = require('./src/backup');
+app.get('/api/backup', (req, res) => {
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Disposition', 'attachment; filename="towerdesk-backup-' + stamp + '.json"');
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(backup.create(updater.currentVersion()));
+});
+app.post('/api/restore', express.json({ limit: '20mb' }), (req, res) => {
+  try {
+    const out = backup.restore(req.body);
+    res.json({ ok: true, restored: out.restored.length, restartRequired: true });
+  } catch (e) {
+    res.json({ error: e.message });
+  }
+});
+
+// Network tools (ping / traceroute from this computer). Always 200 with { ok, output | error }:
+// an unreachable host is a normal answer, not a server fault.
+app.post('/api/tools/:tool', async (req, res) => {
+  res.json(await require('./src/tools').run(req.params.tool, req.body && req.body.host));
 });
 
 // Handle theme switching

@@ -264,6 +264,73 @@
         return { key: 'reachable', label: 'Reachable', badge: 'info', hint: 'Answers ping/web, but with no login — status only, no traffic graphs. Add a login or SNMP to monitor it fully.' };
     };
 
+    // ----- Shared formatting helpers for newer pages -----
+    function esc(v) {
+        return String(v === undefined || v === null ? '' : v).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+    function scaled(v, units, step) {
+        if (v === null || v === undefined) return '–';
+        var i = 0;
+        while (v >= step && i < units.length - 1) { v /= step; i++; }
+        return (v < 10 && i ? v.toFixed(2) : v < 100 && i ? v.toFixed(1) : Math.round(v)) + ' ' + units[i];
+    }
+    window.TowerDesk.fmt = {
+        esc: esc,
+        bps: function (v) { return scaled(v, ['bps', 'Kbps', 'Mbps', 'Gbps'], 1000); },
+        bytes: function (v) { return scaled(v, ['B', 'KB', 'MB', 'GB', 'TB'], 1024); },
+        ago: function (iso) {
+            if (!iso) return '';
+            var s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+            if (s < 60) return s + 's';
+            if (s < 3600) return Math.floor(s / 60) + 'm';
+            if (s < 86400) return Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm';
+            return Math.floor(s / 86400) + 'd ' + Math.floor((s % 86400) / 3600) + 'h';
+        }
+    };
+
+    // Save a table as a .csv file that opens directly in Excel (UTF-8 with BOM so Arabic names
+    // survive). Built in the browser — nothing is sent anywhere.
+    window.TowerDesk.exportCsv = function (filename, headers, rows) {
+        var cell = function (v) {
+            v = v === null || v === undefined ? '' : String(v);
+            if (/^[=+\-@]/.test(v)) v = "'" + v; // never let a value be read as a formula
+            return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+        };
+        var text = [headers].concat(rows).map(function (r) { return r.map(cell).join(','); }).join('\r\n');
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8' }));
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    };
+
+    // Ping / traceroute buttons for a host. Returns HTML; clicks are handled once, page-wide.
+    window.TowerDesk.netTools = function (host) {
+        if (!host) return '';
+        return '<div class="net-tools" data-host="' + esc(host) + '">' +
+            '<button type="button" class="btn-secondary btn-sm" data-tool="ping">Ping</button>' +
+            '<button type="button" class="btn-secondary btn-sm" data-tool="trace">Traceroute</button>' +
+            '<pre class="net-tools-out" hidden></pre></div>';
+    };
+    document.addEventListener('click', function (e) {
+        var btn = e.target.closest && e.target.closest('.net-tools button[data-tool]');
+        if (!btn) return;
+        var box = btn.closest('.net-tools');
+        var out = box.querySelector('.net-tools-out');
+        var label = btn.textContent;
+        out.hidden = false;
+        out.textContent = (btn.dataset.tool === 'trace' ? 'Tracing the route to ' : 'Pinging ') + box.dataset.host + '…';
+        box.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+        fetch('/api/tools/' + btn.dataset.tool, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host: box.dataset.host }) })
+            .then(function (r) { return r.json(); })
+            .then(function (j) { out.textContent = j.output || j.error || 'No output.'; })
+            .catch(function () { out.textContent = 'Could not run the command.'; })
+            .then(function () { box.querySelectorAll('button').forEach(function (b) { b.disabled = false; }); btn.textContent = label; });
+    });
+
     window.TowerDesk.inlineConfirm = function (button, question) {
         return new Promise(function (resolve) {
             var box = document.createElement('span');

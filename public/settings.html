@@ -114,6 +114,26 @@
         </div>
 
         <div class="card">
+            <div class="card-header"><h3>Backup and restore</h3><span class="card-actions">Devices, saved logins and settings</span></div>
+            <div class="card-body">
+                <p class="muted" style="margin-top:0">A backup is one file with your devices, saved logins, alerts and settings. <strong>Keep it private:</strong> it holds your saved device passwords together with the key that unlocks them. Monitoring history is not included.</p>
+                <div class="form-actions">
+                    <a class="btn-primary" href="/api/backup" download id="bk-download">Download backup</a>
+                </div>
+                <div class="form-row" style="margin-top:16px">
+                    <div class="form-group" style="flex:1 1 100%">
+                        <label for="bk-file">Restore from a backup file</label>
+                        <input type="file" id="bk-file" accept=".json,application/json">
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="bk-restore">Restore…</button>
+                    <span id="bk-msg" class="muted" role="status"></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
             <div class="card-header"><h3>About this install</h3><span class="card-actions">Portable &amp; offline</span></div>
             <div class="card-body">
                 <div class="stat-grid">
@@ -246,6 +266,26 @@
                     loadStatus();
                 });
             }
+
+            // Restore replaces the current devices and settings, so it asks first. The server keeps
+            // a copy of what it replaces (data/before-restore/…).
+            $('bk-restore').addEventListener('click', function () {
+                var msg = $('bk-msg');
+                var file = $('bk-file').files[0];
+                if (!file) { msg.textContent = 'Choose a backup file first.'; return; }
+                window.TowerDesk.inlineConfirm($('bk-restore'), 'Replace your current devices and settings with this backup?').then(function (yes) {
+                    if (!yes) return;
+                    msg.textContent = 'Restoring…';
+                    file.text().then(function (text) {
+                        var bundle;
+                        try { bundle = JSON.parse(text); } catch (e) { msg.textContent = 'That file is not a TowerDesk backup.'; return; }
+                        return api('POST', '/api/restore', bundle).then(function (r) {
+                            msg.textContent = r.body.error ? 'Restore failed: ' + r.body.error
+                                : 'Restored ✓ — close TowerDesk and start it again to load the restored data.';
+                        });
+                    }).catch(function () { msg.textContent = 'Restore failed — could not read or send the file.'; });
+                });
+            });
 
             loadStatus();
         })();

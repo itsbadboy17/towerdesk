@@ -8,6 +8,8 @@
     var selectedProvider = (function () { try { return localStorage.getItem('td-provider') || 'all'; } catch (e) { return 'all'; } })();
     var $ = function (id) { return document.getElementById(id); };
     var lastOk = 0;
+    var openOnLoad = (/[?&]open=([^&]+)/.exec(location.search) || [])[1];
+    if (openOnLoad) openOnLoad = decodeURIComponent(openOnLoad);
 
     function esc(v) {
         return String(v === undefined || v === null ? '' : v).replace(/[&<>"']/g, function (c) {
@@ -152,7 +154,7 @@
                 if (detailId && lastData) {
                     var dd = lastData.devices.find(function (x) { return x.id === detailId; });
                     var body = document.getElementById('detail-modal-body');
-                    if (dd && dd.role === 'sector' && body) body.innerHTML = detailBody(dd);
+                    if (dd && dd.role === 'sector' && body && !body.querySelector('.net-tools-out:not([hidden]), .sta-history')) body.innerHTML = detailBody(dd);
                 }
             })
             .catch(function () { sas.loading = false; sas.loadedAt = Date.now(); });
@@ -179,9 +181,20 @@
         var note = sas.configured
             ? matched + ' of ' + rows.length + ' matched to a SAS user by MAC address'
             : 'Connect your RADIUS/SAS server on the SAS page to see each station\'s PPPoE user (matched by MAC address).';
-        return '<p class="muted reg-note">' + esc(rows.length) + ' registered · ' + esc(note) + '</p>' +
+        return '<p class="muted reg-note">' + esc(rows.length) + ' registered · ' + esc(note) + ' <button type="button" class="link-btn" data-export-reg>Export to Excel</button></p>' +
             '<div class="reg-wrap"><table class="iface-table reg-table"><thead><tr><th>Station</th><th>MAC / IP</th><th>SAS user</th><th>Signal</th><th>CCQ</th><th>Rate tx/rx</th><th>↓ To client</th><th>↑ From client</th></tr></thead><tbody>' +
             body + '</tbody></table></div>';
+    }
+
+    function exportRegistration(id) {
+        var d = lastData && lastData.devices.find(function (x) { return x.id === id; });
+        var rows = (d && d.metrics && d.metrics.stations) || [];
+        window.TowerDesk.exportCsv('registration-' + String(d ? d.name : 'sector').replace(/[^\w-]+/g, '_') + '.csv',
+            ['Sector', 'Station', 'Model', 'MAC', 'IP', 'SAS user', 'Plan', 'Signal (dBm)', 'CCQ (%)', 'TX rate (Mbps)', 'RX rate (Mbps)', 'To client (bps)', 'From client (bps)'],
+            rows.map(function (c) {
+                var s = sas.byMac[macKey(c.mac)] || {};
+                return [d.name, c.name, c.platform, c.mac, c.ip, s.username, s.plan, c.signal, c.ccq, c.txRate, c.rxRate, c.txBps, c.rxBps];
+            }));
     }
 
     // Compact card — a few key numbers; click opens the full detail.
@@ -383,6 +396,14 @@
             '</div>';
     }
 
+    // The device's own web page. The saved port is only used when it is a web port (the MikroTik
+    // API or SNMP port would not open in a browser).
+    function webUrl(d) {
+        var web = ['http', 'https', 'tplink', 'airos', 'mimosa'].indexOf(d.method) >= 0;
+        var scheme = (d.method === 'https' || d.method === 'airos') ? 'https' : 'http';
+        return scheme + '://' + d.ip + (web && d.port ? ':' + d.port : '');
+    }
+
     function detailBody(d) {
         var cs = window.TowerDesk.connState(d);
         var det = (d.lastTest && d.lastTest.details) || {};
@@ -399,6 +420,10 @@
         return '<div class="detail-top">' +
                 '<div><h3>' + esc(d.name) + '</h3><div class="muted mono">' + esc(d.ip) + ' · ' + esc(roleLabel) + '</div></div>' +
                 '<span class="status-badge ' + cs.badge + '">● ' + esc(cs.label) + '</span>' +
+            '</div>' +
+            '<div class="detail-actions">' +
+                '<a class="btn-secondary btn-sm" href="' + esc(webUrl(d)) + '" target="_blank" rel="noopener">Open device page ↗</a>' +
+                window.TowerDesk.netTools(d.ip) +
             '</div>' +
             (d.role === 'backhaul' ? linkHero(d) : '') +
             '<dl class="kv detail-kv">' + info.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') + '</dl>' +
@@ -419,6 +444,7 @@
         m.addEventListener('click', function (e) {
             var other = e.target.closest('[data-open-id]');
             if (other) { openDetail(other.dataset.openId); return; }
+            if (e.target.closest('[data-export-reg]')) { exportRegistration(detailId); return; }
             if (e.target === m || e.target.closest('.close-btn')) closeDetail();
         });
         document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDetail(); });
@@ -559,7 +585,13 @@
 
         if (detailId) {
             var dd = data.devices.find(function (x) { return x.id === detailId; });
-            if (dd) { if (dd.metrics && dd.metrics.kind === 'stations') loadSas(); var body = document.getElementById('detail-modal-body'); if (body) body.innerHTML = detailBody(dd); }
+            if (dd) {
+                if (dd.metrics && dd.metrics.kind === 'stations') loadSas();
+                var body = document.getElementById('detail-modal-body');
+                // Leave the card alone while a ping/traceroute result or a station's history is
+                // open in it — refreshing would wipe what the user is reading.
+                if (body && !body.querySelector('.net-tools-out:not([hidden]), .sta-history')) body.innerHTML = detailBody(dd);
+            }
             else closeDetail();
         }
 
@@ -586,6 +618,8 @@
             .then(function (data) {
                 lastOk = Date.now();
                 render(data);
+                // Deep link from other pages: /monitoring?open=<device id> opens that device once.
+                if (openOnLoad) { var want = openOnLoad; openOnLoad = null; openDetail(want); }
                 setLive(true, 'Live');
             })
             .catch(function (e) {
