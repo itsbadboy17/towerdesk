@@ -250,6 +250,28 @@ async function readRegistration(session, knownCommand) {
   return null;
 }
 
+// The access-point radio of a MikroTik sector (legacy wireless package): the settings the
+// advisor reasons about. Returns null when there is no enabled AP-mode radio. Read-only.
+async function readWireless(session) {
+  let rows;
+  try {
+    rows = await session.run(['/interface/wireless/print', '=.proplist=.id,name,mode,disabled,frequency,band,channel-width,tx-power,tx-power-mode,ssid']);
+  } catch (e) {
+    if (session.closed) throw e;
+    return null;
+  }
+  const w = rows.find((r) => r.disabled !== 'true' && /^ap|bridge$/.test(String(r.mode || '')));
+  if (!w || !w['.id'] || !w.name) return null;
+  const width = /(\d+)/.exec(String(w['channel-width'] || ''));
+  return {
+    id: w['.id'], name: w.name, mode: w.mode, ssid: w.ssid, band: w.band,
+    frequencyRaw: w.frequency, frequency: num(w.frequency) === undefined ? null : num(w.frequency),
+    channelWidth: width ? Number(width[1]) : null,
+    txPower: num(w['tx-power']) === undefined ? null : num(w['tx-power']),
+    txPowerMode: w['tx-power-mode'] || 'default'
+  };
+}
+
 // Turn on SNMP and make sure the given read-only community exists. This WRITES to the router
 // (the only non-read-only operation in TowerDesk) and needs an API user with write permission.
 // It never changes the community's address restrictions and never removes anything.
@@ -286,4 +308,4 @@ async function test(opts) {
   }
 }
 
-module.exports = { test, Session, readSystem, readInterfaces, readRegistration, parseRegistration, enableSnmp, isAuthError, encodeSentence, parseSentences };
+module.exports = { test, Session, readSystem, readInterfaces, readWireless, readRegistration, parseRegistration, enableSnmp, isAuthError, encodeSentence, parseSentences };

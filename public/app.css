@@ -524,6 +524,11 @@ tr.row-click:hover td, tr.row-click:focus-visible td { background: var(--bg-hove
 .reg-table { min-width: 720px; }
 .reg-table td { vertical-align: top; }
 .reg-note { margin-bottom: 8px; }
+/* OLT: ONU table. Weak light / hot ONU readings stand out. */
+.lvl-bad { color: var(--danger, #dc2626); font-weight: 600; }
+.lvl-warn { color: var(--warning, #d97706); font-weight: 600; }
+.onu-filter { width: 100%; max-width: 340px; margin: 0 0 8px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-input, var(--bg-card)); color: var(--text); font: inherit; }
+.reg-table tr.down td { opacity: .6; }
 .link-end-tag { display: inline-block; margin-top: 8px; padding: 2px 10px; border-radius: 999px; font-size: 0.74rem; font-weight: 600; border: 1px solid var(--border); color: var(--text-muted); }
 .link-end-tag.on { color: var(--success); border-color: currentColor; }
 .link-end .link-btn { display: block; margin: 6px auto 0; }
@@ -672,3 +677,24 @@ button:disabled { opacity: 0.6; cursor: progress; }
     body { background: #fff; }
     .card, .kpi-card { box-shadow: none; break-inside: avoid; }
 }
+
+/* Arabic (RTL): numbers with units and addresses read left to right, so "-28.6 dBm" keeps its
+   minus sign in front. */
+html[dir="rtl"] .mono, html[dir="rtl"] .stat-tile .v, html[dir="rtl"] .legend span { direction: ltr; unicode-bidi: isolate; }
+html[dir="rtl"] td.mono, html[dir="rtl"] div.mono, html[dir="rtl"] dd.mono, html[dir="rtl"] .stat-tile .v { text-align: right; }
+
+/* Sector advisor */
+.adv-panel { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; }
+.adv-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 8px; }
+.adv-hint { margin: 0; }
+.adv-findings { margin: 8px 0; padding-inline-start: 18px; }
+.adv-findings li { margin: 4px 0; }
+.adv-findings .adv-warning { color: var(--warning, #d97706); }
+.adv-findings .adv-ok { color: var(--success, #16a34a); }
+.adv-ai { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; }
+.adv-ai h5, .adv-panel > h5 { margin: 10px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.adv-ai ul { margin: 0; padding-inline-start: 18px; }
+.adv-table td { vertical-align: top; }
+.adv-pending { border: 1px solid var(--warning, #d97706); border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
+.adv-exp { border: 1px dashed var(--warning, #d97706); border-radius: 8px; padding: 8px 12px; margin: 10px 0; font-size: 13px; }
+.adv-ok { color: var(--success, #16a34a); font-weight: 600; }

@@ -8,6 +8,7 @@ const snmp = require('./transports/snmp');
 const tplink = require('./transports/tplink');
 const airos = require('./transports/airos');
 const mimosa = require('./transports/mimosa');
+const olt = require('./transports/olt');
 
 const BUSY_BACKOFF_MS = 60 * 1000;     // someone is using the router's web page
 const LOCKED_BACKOFF_MS = 30 * 60 * 1000;
@@ -100,6 +101,19 @@ async function pollMikrotik(device, s, now) {
     }
     s.regCommand = reg ? reg.command : false;
     applyStations(s, reg ? reg.stations : [], now);
+    // A sector's own radio settings (frequency, width, power), for the detail card and the
+    // advisor. Only asked of routers that actually serve stations.
+    // Best effort: a router that does not answer this must never break monitoring, so a failure
+    // is remembered (like regCommand) and the question is not asked again on this connection.
+    if (reg && reg.stations.length && /\/wireless\//.test(reg.command) && s.wirelessRead !== false) {
+      try {
+        const w = await mikrotik.readWireless(s.session);
+        s.radio = w ? { mode: 'ap', essid: w.ssid, freq: w.frequency ? w.frequency + ' MHz' : undefined, chanbw: w.channelWidth || undefined, txpower: w.txPower === null ? undefined : w.txPower, stations: reg.stations.length } : null;
+      } catch (e) {
+        s.wirelessRead = false;
+        s.radio = null;
+      }
+    }
   }
 }
 
@@ -210,6 +224,34 @@ async function pollSnmp(device, s, now) {
   const opts = devices.connectionOptions(devices.get(device.id) || device);
   const ifaces = await snmp.readInterfaces({ host: opts.host, port: opts.port || 161, community: opts.community, version: device.method === 'snmp1' ? '1' : '2c' });
   applyCounters(s, ifaces, now);
+  await pollOnus(device, s, now, { host: opts.host, port: opts.port || 161, community: opts.community, version: device.method === 'snmp1' ? '1' : '2c' });
+}
+
+// An OLT's ONU list (optical power, temperature). Walking it is heavy, so it runs once a minute
+// rather than on every poll. A plain SNMP device is probed once and then left alone; one added
+// as an OLT is retried, since an OLT can simply have no ONU online at that moment.
+const ONU_EVERY_MS = 60 * 1000;
+const ONU_RETRY_MS = 10 * 60 * 1000;
+async function pollOnus(device, s, now, conn) {
+  if (s.oltProfile === false || now < (s.onuNext || 0)) return;
+  s.onuNext = now + ONU_EVERY_MS;
+  let res;
+  try {
+    res = await olt.readOnus(conn, s.oltProfile || undefined);
+  } catch (e) {
+    return; // keep the last list; the interface read already proved the device answers
+  }
+  if (!res) {
+    if (s.oltProfile) { s.onus = []; return; }
+    if (device.type === 'olt') s.onuNext = now + ONU_RETRY_MS; else s.oltProfile = false;
+    return;
+  }
+  s.oltProfile = res.profile;
+  s.oltLabel = res.label;
+  // Weakest light first: those are the ones worth looking at. Offline ONUs go last.
+  const rank = (o) => (o.online ? (o.signal === null ? 0 : o.signal) : 1000);
+  s.onus = res.onus.sort((a, b) => rank(a) - rank(b));
+  s.kind = 'onus';
 }
 
 async function poll(device) {
@@ -305,6 +347,10 @@ function snapshot(device) {
     radio: s.radio || null,
     stations: s.stations ? s.stations.slice(0, 64) : null,
     stationCount: s.stations ? s.stations.length : null,
+    onus: s.onus ? s.onus.slice(0, 512) : null,
+    onuCount: s.onus ? s.onus.length : null,
+    onuOnline: s.onus ? s.onus.filter((o) => o.online).length : null,
+    oltLabel: s.oltLabel || null,
     clients: s.clients ? s.clients.slice(0, 8) : null,
     clientCount: s.clients ? s.clients.length : null,
     lastPoll: s.lastPoll,

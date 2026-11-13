@@ -569,6 +569,93 @@ app.post('/api/update/install', async (req, res) => {
 });
 app.post('/api/update/cancel', (req, res) => { updater.clearStaged(); res.json({ ok: true }); });
 
+// Sector advisor. The built-in diagnosis is offline. AI advice is fetched only when the owner
+// has saved a key and presses the button. Changes are applied only from a proposal the server
+// itself produced and the owner accepted; the router undoes them on its own unless kept.
+const advisor = require('./src/advisor');
+const radio = require('./src/radio');
+const isDemo = (req) => process.env.TOWERDESK_DEMO === '1' || (req.query && req.query.demo === '1');
+const demoPending = new Map();
+function advisorDevice(req) {
+  const snap = isDemo(req) ? require('./src/demo').snapshot() : monitor.snapshot();
+  const device = (snap.devices || []).find((d) => d.id === req.params.id);
+  return { snap, device };
+}
+function demoStatus(id) {
+  const p = demoPending.get(id);
+  if (!p) return null;
+  if (Date.now() >= p.revertAt) { demoPending.delete(id); return { expired: true, applied: p.applied }; }
+  return { applied: p.applied, revertAt: p.revertAt, secondsLeft: Math.round((p.revertAt - Date.now()) / 1000), revertMinutes: radio.REVERT_MIN };
+}
+app.get('/api/ai/config', (req, res) => res.json(advisor.getConfig()));
+app.post('/api/ai/config', (req, res) => {
+  try { res.json(advisor.setConfig(req.body || {})); }
+  catch (e) { res.status(400).json({ error: 'Could not save the AI settings' }); }
+});
+app.post('/api/advisor/:id', async (req, res) => {
+  const { snap, device } = advisorDevice(req);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+  const demo = isDemo(req);
+  const lang = req.body && req.body.lang === 'ar' ? 'ar' : 'en';
+  const useAi = !!(req.body && req.body.ai);
+  try {
+    const canApply = demo ? ['frequency', 'txPower'] : radio.capabilities(device);
+    // Demo never calls the AI service: it shows a sample answer so the screen can be tried.
+    const out = await advisor.advise(device, snap.devices, { canApply, useAi: useAi && !demo, lang });
+    if (demo && useAi) {
+      const ctx = advisor.context(device, snap.devices, canApply);
+      out.ai = { summary: 'Sample answer (demo mode, nothing was sent anywhere). A few clients sit at the edge of this sector and it shares spectrum with one of your other radios.', causes: ['Channel overlap with your own radio on the same tower.', 'Two clients are far out or slightly off aim.'], manual: ['Realign the weakest client and check its cable.'], confidence: 'medium' };
+      out.changes = advisor.sanitize(ctx, [
+        { setting: 'frequency', to: (ctx.sector.frequencyMHz || 5180) + 40, reason: 'Moves this sector clear of your other radio on the same tower.', risk: 'Clients reconnect; allow about a minute.' },
+        { setting: 'txPower', to: Math.max(3, (ctx.sector.txPowerDbm || 24) - 2), reason: 'Most clients are strong, so less power still reaches them.', risk: 'The weakest clients lose about 2 dB.' }
+      ]);
+      out.proposalId = out.changes.length ? advisor.remember(device.id, out.changes) : null;
+    }
+    out.hasKey = demo ? true : advisor.getConfig().hasKey;
+    out.applyNote = demo ? null : radio.whyNot(device);
+    out.experimental = demo ? (device.type === 'ubnt' || device.method === 'airos') : radio.experimental(device);
+    out.pending = demo ? demoStatus(device.id) : radio.status(device.id);
+    res.json(out);
+  } catch (e) { res.json({ error: 'Could not check this sector' }); }
+});
+// Read-only: can this radio take a one-click change? Logs in and looks; changes nothing.
+app.post('/api/advisor/:id/preflight', async (req, res) => {
+  const { device } = advisorDevice(req);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+  if (isDemo(req)) return res.json({ ok: true, problems: [], frequency: 5500, txPower: 25, sample: true });
+  try { res.json(await radio.preflight(device)); }
+  catch (e) { res.json({ ok: false, problems: ['Could not check this radio.'] }); }
+});
+app.post('/api/advisor/:id/apply', async (req, res) => {
+  const { device } = advisorDevice(req);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+  const p = advisor.proposal(req.body && req.body.proposalId, device.id);
+  if (!p) return res.json({ error: 'This proposal has expired. Check the sector again.' });
+  const accept = Array.isArray(req.body && req.body.accept) ? req.body.accept.map(Number) : [];
+  const chosen = p.changes.filter((c, i) => c.applicable && accept.includes(i));
+  if (!chosen.length) return res.json({ error: 'No change was selected.' });
+  try {
+    let st;
+    if (isDemo(req)) {
+      const now = Date.now();
+      demoPending.set(device.id, { applied: chosen.map((c) => ({ setting: c.setting, label: c.label, unit: c.unit, from: c.from, to: c.to })), revertAt: now + radio.REVERT_MIN * 60 * 1000 });
+      st = demoStatus(device.id);
+    } else {
+      st = await radio.apply(device, chosen);
+    }
+    advisor.forget(req.body.proposalId);
+    res.json({ pending: st });
+  } catch (e) { res.json({ error: e.message }); }
+});
+app.post('/api/advisor/:id/:action(keep|undo)', async (req, res) => {
+  const { device } = advisorDevice(req);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+  try {
+    if (isDemo(req)) { demoPending.delete(device.id); return res.json(req.params.action === 'keep' ? { kept: true } : { undone: true }); }
+    res.json(req.params.action === 'keep' ? await radio.keep(device) : await radio.undo(device));
+  } catch (e) { res.json({ error: e.message }); }
+});
+
 // RADIUS / SAS subscribers (the customer sessions authenticated against the tower's RADIUS or
 // SAS server). Demo mode serves realistic sessions so the page works without a live server.
 const subscribers = require('./src/subscribers');

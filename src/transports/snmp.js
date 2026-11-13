@@ -11,7 +11,7 @@ const OIDS = {
 };
 
 // IANA enterprise numbers in sysObjectID (1.3.6.1.4.1.<n>...) -> TowerDesk device type.
-const ENTERPRISES = { 14988: 'mikrotik', 41112: 'ubnt', 10002: 'ubnt', 43356: 'mimosa', 9: 'cisco', 11863: 'tplink' };
+const ENTERPRISES = { 14988: 'mikrotik', 41112: 'ubnt', 10002: 'ubnt', 43356: 'mimosa', 9: 'cisco', 11863: 'tplink', 3320: 'olt', 17409: 'olt', 34592: 'olt', 50224: 'olt', 37950: 'olt' };
 
 function vendorFromObjectId(oid) {
   const m = String(oid || '').match(/^1\.3\.6\.1\.4\.1\.(\d+)(\.|$)/);

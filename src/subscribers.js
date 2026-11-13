@@ -86,7 +86,7 @@ const DEMO_PLANS = [
   { plan: 'Pro 50M', down: 50, up: 10 },
   { plan: 'Business 100M', down: 100, up: 25 }
 ];
-const DEMO_NAS = ['Sector North', 'Sector West', 'Sector South'];
+const DEMO_NAS = ['Sector North', 'Sector West', 'Sector South', 'Fiber OLT'];
 
 function demoSubs(n) {
   n = n || 24;

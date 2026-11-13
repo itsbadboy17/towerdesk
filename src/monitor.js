@@ -82,6 +82,7 @@ async function applyResult(device, r, networkDown) {
     }
     if (mx && mx.cpu && typeof mx.cpu.now === 'number') cpu = mx.cpu.now;
     if (mx && mx.stations) history.recordStations(device.id, mx.stations); // signal/CCQ per customer radio
+    if (mx && mx.onus) history.recordStations(device.id, mx.onus.filter((o) => o.online)); // optical power per ONU (those with a MAC)
   } else {
     metrics.pause(device.id);
   }

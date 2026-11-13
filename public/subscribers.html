@@ -273,8 +273,10 @@
                 var bits = [];
                 if (st.signal !== null) bits.push(st.signal + ' dBm');
                 if (st.ccq !== null) bits.push('CCQ ' + st.ccq + '%');
+                if (st.onu && st.temp !== null) bits.push(st.temp + ' °C');
+                if (st.onu && !st.online) bits.push('ONU offline');
                 return '<strong>' + esc(st.sectorName) + '</strong>' + (bits.length ? ' <span class="mono">· ' + esc(bits.join(' · ')) + '</span>' : '') +
-                    '<div class="mono" style="color:var(--text-muted)">' + esc(st.name || '') + (st.name ? ' · ' : '') + esc(st.mac) + (st.near ? ' (≈ MAC one step off)' : '') + '</div>';
+                    '<div class="mono" style="color:var(--text-muted)">' + esc(st.name || '') + (st.name ? ' · ' : '') + esc(st.mac || st.serial || '') + (st.near ? ' (≈ MAC one step off)' : '') + (st.byName ? ' (matched by name)' : '') + '</div>';
             }
 
             var shownList = [], openId = null;
@@ -339,9 +341,13 @@
                 ].filter(function (x) { return x[1]; });
                 var radio = st
                     ? '<h4 class="detail-sec">On the tower</h4><dl class="kv detail-kv">' +
-                        '<dt>Sector</dt><dd>' + esc(st.sectorName) + '</dd>' +
-                        '<dt>Radio</dt><dd>' + esc(st.name || '—') + ' <span class="mono muted">' + esc(st.mac) + (st.near ? ' (≈ MAC one step off)' : '') + '</span></dd>' +
-                        (st.signal !== null ? '<dt>Signal</dt><dd>' + esc(st.signal) + ' dBm</dd>' : '') +
+                        '<dt>' + (st.onu ? 'OLT' : 'Sector') + '</dt><dd>' + esc(st.sectorName) + (st.port ? ' <span class="mono muted">' + esc(st.port) + '</span>' : '') + '</dd>' +
+                        '<dt>' + (st.onu ? 'ONU' : 'Radio') + '</dt><dd>' + esc(st.name || '—') + ' <span class="mono muted">' + esc(st.mac || st.serial || '') + (st.near ? ' (≈ MAC one step off)' : '') + (st.byName ? ' (matched by name)' : '') + '</span></dd>' +
+                        (st.signal !== null ? '<dt>' + (st.onu ? 'Rx power' : 'Signal') + '</dt><dd>' + esc(st.signal) + ' dBm</dd>' : '') +
+                        (st.onu && st.txPower !== null ? '<dt>Tx power</dt><dd>' + esc(st.txPower) + ' dBm</dd>' : '') +
+                        (st.onu && st.oltRx !== null ? '<dt>Rx at OLT</dt><dd>' + esc(st.oltRx) + ' dBm</dd>' : '') +
+                        (st.onu && st.temp !== null ? '<dt>Temperature</dt><dd>' + esc(st.temp) + ' °C</dd>' : '') +
+                        (st.onu && st.distance !== null ? '<dt>Fibre length</dt><dd>' + esc(st.distance) + ' m</dd>' : '') +
                         (st.ccq !== null ? '<dt>CCQ</dt><dd>' + esc(st.ccq) + '%</dd>' : '') +
                         (st.txRate !== null || st.rxRate !== null ? '<dt>Rate tx/rx</dt><dd>' + esc(st.txRate === null ? '–' : st.txRate) + '/' + esc(st.rxRate === null ? '–' : st.rxRate) + ' Mbps</dd>' : '') +
                         '</dl><div class="detail-actions"><a class="btn-secondary btn-sm" href="/monitoring?open=' + encodeURIComponent(st.sectorId) + demoQ + '">Open this sector</a></div>'

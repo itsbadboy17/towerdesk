@@ -115,6 +115,24 @@ function device(o) {
   };
 }
 
+// ---- OLT (fibre): its ONUs with optical power and temperature ----
+// The demo ONUs are named after the PPPoE username on the OLT, which is how a GPON ONU (serial
+// number, no MAC) is traced to its SAS user. Some have weak light, one is offline, a few are not in SAS.
+function demoOnus() {
+  const subs = subscribers._demoSubs(24).filter((x) => x.nas === 'Fiber OLT' && x.online);
+  const rows = subs.map((x, i) => ({
+    port: 'GPON 0/1/' + (i % 2) + ':' + i, name: x.username, serial: 'HWTC' + (0x7A10C400 + i * 37).toString(16).toUpperCase(),
+    online: true, signal: [-19.2, -21.6, -27.9, -25.3, -23.4, -28.6, -20.1, -22.8][i % 8],
+    txPower: Math.round((2.1 + (i % 4) * 0.2) * 10) / 10, oltRx: [-20.4, -22.9, -29.3, -26.7, -24.8, -30.1, -21.5, -24.0][i % 8],
+    temp: 41 + (i * 5) % 19, distance: 420 + i * 310
+  }));
+  rows.push({ port: 'GPON 0/1/1:20', name: 'shop-front', serial: 'ZTEGC0A1B2C3', online: true, signal: -24.7, txPower: 2.3, oltRx: -26.0, temp: 47, distance: 1890 });
+  rows.push({ port: 'GPON 0/1/0:22', name: 'old-cafe', serial: 'HWTC7A10F0A7', online: false, signal: null, txPower: null, oltRx: null, temp: null, distance: null });
+  rows.push({ port: 'GPON 0/1/1:21', name: '', serial: 'HWTC7A10F001', online: true, signal: -22.2, txPower: 2.0, oltRx: -23.6, temp: 52, distance: 760 });
+  const rank = (o) => (o.online ? (o.signal === null ? 0 : o.signal) : 1000);
+  return rows.sort((a, b) => rank(a) - rank(b));
+}
+
 function build() {
   const devices = [
     backhaul({ id: 'bh1', provider: 'HRINS core', name: 'North backhaul', type: 'mimosa', ip: '10.90.0.2', method: 'mimosa', loc: 'Tower roof', online: true, days: 41, hours: 6, lat: 3, model: 'C5c', source: 'Mimosa', remote: 'ISP core (Mansia)', remoteModel: 'B5c', link: 'core-north', signal: -42, noise: -71, txr: 300, rxr: 390, freq: 6340, bw: 80, txp: 24, temp: 52, dist: 7.2, avail: 99.98, mbps: 148, cpu: 22, mem: 38 }),
@@ -130,6 +148,14 @@ function build() {
     device({ id: 'd1', provider: 'HRINS core', name: 'Core router', type: 'mikrotik', ip: '10.90.0.1', method: 'mikrotik', loc: 'Cabinet', online: true, days: 63, lat: 1, summary: 'RouterOS 7.14 on RB5009',
       details: { model: 'RB5009', version: '7.14', uptime: '63d 4h' },
       metrics: { source: 'MikroTik API', kind: 'interfaces', radio: null, interfaces: [iface('ether1 (WAN)', true, 190e6, 54e6), iface('sfp-sfpplus1', true, 210e6, 60e6), iface('ether2', true, 8e6, 3e6)], cpu: { now: 18, history: wave(30, 18, 7, 8, 0) }, memPct: 34, uptime: '63d 4h', signal: null, ccq: null, stations: null, stationCount: null, clients: null, clientCount: null, waiting: false, error: null } }),
+    (function () {
+      const onus = demoOnus();
+      return device({ id: 'olt1', provider: 'HRINS core', name: 'Fiber OLT', type: 'olt', ip: '10.90.0.20', method: 'snmp', loc: 'Cabinet', online: true, days: 88, lat: 1, summary: 'OLT-1 — Huawei MA5608T',
+        details: { model: 'MA5608T', description: 'Huawei Integrated Access Software' },
+        metrics: { source: 'SNMP', kind: 'onus', radio: null, interfaces: [iface('GPON 0/1/0', true, 61e6, 9e6), iface('GPON 0/1/1', true, 44e6, 6e6), iface('uplink 0/2/0', true, 105e6, 15e6)],
+          cpu: null, memPct: null, uptime: '88d', signal: null, ccq: null, stations: null, stationCount: null, clients: null, clientCount: null,
+          onus: onus, onuCount: onus.length, onuOnline: onus.filter((o) => o.online).length, oltLabel: 'Huawei GPON', waiting: false, error: null } });
+    })(),
     device({ id: 'd2', provider: 'HRINS core', name: 'Fiber ONU', type: 'onu', ip: '10.90.0.9', method: 'ping', loc: 'Cabinet', online: true, days: 29, lat: 2, summary: 'Replies to ping (2 ms)', details: {}, metrics: null })
   ];
 

@@ -106,3 +106,31 @@
 ## 0.1.5
 - Updater unpacks with the Windows tar.exe by full path (Git's tar earlier on PATH could not read the zip). Found by a real end-to-end update test: 0.1.3 copy -> 0.1.4 from the public repo, no token.
 - Known limit: a self-update replaces app files only, not node_modules; a release that adds a dependency needs the full zip.
+
+## OLT support and Arabic pass (unreleased)
+- New `src/transports/olt.js`: reads an OLT's ONUs over SNMP (optical Rx/Tx power, Rx at the OLT, temperature, fibre length, online state). Profiles: Huawei GPON (HUAWEI-XPON-MIB), ZTE GPON (C300/C320), BDCOM EPON, and the NSCRTV standard EPON MIB used by C-Data / HSGQ. Picked from sysObjectID, otherwise each is tried. Walk-only, read-only. No new dependency (uses net-snmp, already present).
+- Any SNMP device is probed once; one added with type "OLT" is retried every 10 min. ONU list refreshes once a minute (walks are heavy).
+- Monitoring: OLT detail card with a searchable ONU table, Excel export, weak-light / hot-ONU warnings in "Needs attention" (thresholds: Rx <= -27 dBm, temp >= 75 C).
+- SAS matching: EPON ONUs by MAC; GPON ONUs (serial only) by ONU name = PPPoE username. Subscriber page shows the ONU readings next to the user.
+- NOT verified on real OLTs. ZTE scaling (tx/temperature columns) and the NSCRTV port numbering are the least certain. VSOL's own MIB, Telnet/SSH and web-page-only OLTs are not built.
+- Arabic: went through every page in Arabic, added ~150 phrases, icon-prefixed and " · "-joined text is now translated part by part, numbers with units stay left-to-right.
+- Tests: test/olt.js (profile parsing, SAS matching, live read against a fake Huawei SNMP agent).
+
+## Sector advisor (unreleased)
+- New dependency `@anthropic-ai/sdk` (official Anthropic SDK, pure JS): the optional AI advisor on a sector's card calls Claude (model `claude-opus-5-5`, structured answer via one tool). Reason for the dependency: the official SDK handles auth, retries, typed errors and the refusal fallback. It is loaded only when the owner presses "Ask AI", so the app still starts and works offline without it; copies that were updated in place (the updater does not replace node_modules) say "get the full zip" instead of failing.
+- `src/advisor.js`: built-in offline diagnosis (weak clients, good-signal/low-CCQ interference, noise, overlap with own radios, CPU), the API key (Settings, stored encrypted in data/ai.json, never returned), the anonymised snapshot (no names, usernames, MAC or IP addresses leave the PC), hard limits on proposed changes (same band, power only down or +3 dB, <= 27 dBm, width never written), server-side proposals bound to one sector.
+- `src/radio.js`: the only code that changes a radio. MikroTik (legacy wireless) frequency and tx-power only. Before the change it writes a RouterOS scheduler entry that restores the old values after 5 min by itself, so a change that cuts TowerDesk off from the radio still undoes itself; "Keep" removes it, "Undo" restores now.
+- Routes: /api/ai/config, /api/advisor/:id (+ /apply, /keep, /undo). Demo mode returns a sample answer and sends nothing.
+- NOT verified on a real radio or with a real key. Ubiquiti airOS and Mimosa sectors get the diagnosis and the AI advice but no one-click apply (airOS config writes are not built).
+- Tests: test/advisor.js (diagnosis, privacy of the snapshot, change limits, AI path with a fake client, apply/keep/undo/refused/expiry against a fake MikroTik).
+
+## One-click apply on Ubiquiti airOS (unreleased, EXPERIMENTAL)
+- `src/transports/airos-ssh.js` + `src/radio.js`: apply / keep / undo for airOS over SSH (ssh2, already a dependency). Settings are applied to the RUNNING copy (/tmp/system.cfg) only and re-applied with rc.softrestart; flash is untouched until "Keep" runs `cfgmtd -w -p /etc/`. So a reboot at any point restores the old settings, and a countdown job started on the radio (sleep 300; restore running copy) restores them if nobody presses Keep. Nothing depends on TowerDesk staying open.
+- Guards: read-only preflight (settings file readable, tools present, no leftover change), the saved value must equal the value the owner was shown (frequency, power), values placed in commands are whole numbers only, a change the radio does not confirm is rolled back at once. "Test this radio (read-only)" button on the sector card.
+- Needs SSH turned on in the radio's Services page (same login as the web page); SSH port from `sshPort` on the device record, default 22.
+- NOT VERIFIED ON REAL airOS: the file paths and commands (/tmp/system.cfg keys `radio.1.freq` / `radio.1.txpower`, `/usr/etc/rc.d/rc.softrestart`, `cfgmtd -w -p /etc/`) come from general knowledge of airOS and could not be confirmed from documentation. The tests use a simulated radio, so they prove the ordering and guarantees, not the firmware's behaviour. First real use: one quiet sector, at a quiet hour.
+- Tests: test/airos-apply.js (31 checks).
+
+## 0.1.6 QA
+- Full QA suite: round 1 passed 705 of 705. Unit tests: 286 checks.
+- Unverified on real hardware: OLT readers (all brands), sector advisor with a real key, MikroTik one-click apply, Ubiquiti airOS one-click apply (experimental).

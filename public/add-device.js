@@ -21,7 +21,7 @@
         http: 'Opens the web interface to confirm it answers and identify the vendor.',
         https: 'Opens the HTTPS web interface (self-signed certificates are accepted).'
     };
-    var TYPE_LABELS = { mikrotik: 'MikroTik', cisco: 'Cisco', ubnt: 'Ubiquiti', mimosa: 'Mimosa', tplink: 'TP-Link', onu: 'ONU', other: 'Other' };
+    var TYPE_LABELS = { mikrotik: 'MikroTik', cisco: 'Cisco', ubnt: 'Ubiquiti', mimosa: 'Mimosa', tplink: 'TP-Link', onu: 'ONU', olt: 'OLT', other: 'Other' };
 
     function esc(v) {
         return String(v === undefined || v === null ? '' : v).replace(/[&<>"']/g, function (c) {

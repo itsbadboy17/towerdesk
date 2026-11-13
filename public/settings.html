@@ -114,6 +114,27 @@
         </div>
 
         <div class="card">
+            <div class="card-header"><h3>AI advisor</h3><span class="card-actions">Optional · needs internet</span></div>
+            <div class="card-body">
+                <p class="muted" style="margin-top:0">On a sector's card, the advisor can ask Claude to explain what is wrong and propose setting changes. It runs only when you press the button, and each run is billed to this key. Customer names, usernames, MAC and IP addresses are not sent: clients go as "client 1", "client 2". Without a key the built-in checks still work, fully offline.</p>
+                <form id="ai-form" class="detail-edit" autocomplete="off">
+                    <div class="form-row">
+                        <div class="form-group" style="flex:1 1 100%">
+                            <label for="ai-key">Anthropic API key</label>
+                            <input type="password" id="ai-key" placeholder="Paste your key" autocomplete="new-password">
+                            <span class="muted" id="ai-key-state"></span>
+                            <button type="button" class="link-btn" id="ai-key-clear" hidden>Remove saved key</button>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn-secondary" id="ai-save">Save key</button>
+                        <span id="ai-msg" class="muted" role="status"></span>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card">
             <div class="card-header"><h3>Backup and restore</h3><span class="card-actions">Devices, saved logins and settings</span></div>
             <div class="card-body">
                 <p class="muted" style="margin-top:0">A backup is one file with your devices, saved logins, alerts and settings. <strong>Keep it private:</strong> it holds your saved device passwords together with the key that unlocks them. Monitoring history is not included.</p>
@@ -269,6 +290,30 @@
 
             // Restore replaces the current devices and settings, so it asks first. The server keeps
             // a copy of what it replaces (data/before-restore/…).
+            // ----- AI advisor key: stored encrypted on this PC, never shown again -----
+            function showAiKey(has) {
+                $('ai-key').value = '';
+                $('ai-key').placeholder = has ? 'Leave blank to keep the saved key' : 'Paste your key';
+                $('ai-key-state').textContent = has ? 'A key is saved (encrypted). ' : '';
+                $('ai-key-clear').hidden = !has;
+            }
+            api('GET', '/api/ai/config').then(function (r) { showAiKey(!!(r.body && r.body.hasKey)); });
+            $('ai-form').addEventListener('submit', function (e) {
+                e.preventDefault();
+                var key = $('ai-key').value.trim();
+                if (!key) { $('ai-msg').textContent = 'Nothing to save'; return; }
+                api('POST', '/api/ai/config', { key: key }).then(function (r) {
+                    showAiKey(!!(r.body && r.body.hasKey));
+                    $('ai-msg').textContent = r.body && r.body.hasKey ? 'Key saved ✓' : 'Could not save the key';
+                });
+            });
+            $('ai-key-clear').addEventListener('click', function () {
+                api('POST', '/api/ai/config', { clearKey: true }).then(function (r) {
+                    showAiKey(!!(r.body && r.body.hasKey));
+                    $('ai-msg').textContent = 'Key removed';
+                });
+            });
+
             $('bk-restore').addEventListener('click', function () {
                 var msg = $('bk-msg');
                 var file = $('bk-file').files[0];

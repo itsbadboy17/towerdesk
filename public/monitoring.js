@@ -2,7 +2,7 @@
     'use strict';
 
     var POLL_MS = 5000;
-    var TYPE_LABELS = { mikrotik: 'MikroTik', cisco: 'Cisco', ubnt: 'Ubiquiti', mimosa: 'Mimosa', tplink: 'TP-Link', onu: 'ONU', other: 'Device' };
+    var TYPE_LABELS = { mikrotik: 'MikroTik', cisco: 'Cisco', ubnt: 'Ubiquiti', mimosa: 'Mimosa', tplink: 'TP-Link', onu: 'ONU', olt: 'OLT', other: 'Device' };
     var DEMO = location.search.indexOf('demo') >= 0 || (function () { try { return localStorage.getItem('td-demo') === '1'; } catch (e) { return false; } })();
     var MON_URL = DEMO ? '/api/monitor?demo=1' : '/api/monitor';
     var selectedProvider = (function () { try { return localStorage.getItem('td-provider') || 'all'; } catch (e) { return 'all'; } })();
@@ -151,15 +151,189 @@
                 sas.byMac = {};
                 // The server traces each subscriber to its station (exact MAC, or one step off when
                 // unambiguous), so index by the station's MAC.
-                (j.subscribers || []).forEach(function (s) { var k = macKey(s.station ? s.station.mac : ''); if (k.length === 12) sas.byMac[k] = s; });
+                (j.subscribers || []).forEach(function (s) { var k = s.station ? I.staKey(s.station) : ''; if (k) sas.byMac[k] = s; });
                 if (detailId && lastData) {
                     var dd = lastData.devices.find(function (x) { return x.id === detailId; });
                     var body = document.getElementById('detail-modal-body');
-                    if (dd && dd.role === 'sector' && body && !body.querySelector('.net-tools-out:not([hidden]), .sta-history')) body.innerHTML = detailBody(dd);
+                    if (dd && (dd.role === 'sector' || hasList(dd)) && body && !detailBusy(body)) body.innerHTML = detailBody(dd);
                 }
             })
             .catch(function () { sas.loading = false; sas.loadedAt = Date.now(); });
     }
+    // A sector's stations or an OLT's ONUs: both are "the customers on this device".
+    function hasList(d) { var k = d && d.metrics && d.metrics.kind; return k === 'stations' || k === 'onus'; }
+    // Do not redraw the card under the user: an open ping result, a history chart, or the ONU
+    // search box while it is being typed in.
+    function detailBusy(body) {
+        return !!body.querySelector('.net-tools-out:not([hidden]), .sta-history, .adv-open') || !!(document.activeElement && document.activeElement.id === 'onu-filter');
+    }
+
+    // ----- OLT: the ONU table (optical power, temperature) -----
+    var onuFilter = '';
+    function onuLevel(v) { return v == null ? '' : (v <= I.ATT.onuRx ? ' lvl-bad' : (v <= I.ATT.onuRx + 2 ? ' lvl-warn' : '')); }
+    function onuRows(m) {
+        var q = onuFilter.trim().toLowerCase();
+        var rows = (m && m.onus) || [];
+        if (q) rows = rows.filter(function (c) {
+            var s = sas.byMac[I.staKey(c)];
+            return [c.name, c.port, c.serial, c.mac, s && s.username].some(function (v) { return v && String(v).toLowerCase().indexOf(q) !== -1; });
+        });
+        if (!rows.length) return '<tr><td colspan="8" class="muted">No ONU matches.</td></tr>';
+        return rows.map(function (c) {
+            var s = sas.byMac[I.staKey(c)];
+            var user = s
+                ? '<strong>' + esc(s.username) + '</strong><div class="muted">' + esc(s.plan || '') + (s.online === false ? ' · session offline' : '') + (s.station && s.station.byName ? ' · matched by name' : '') + '</div>'
+                : '<span class="muted">' + (sas.configured ? 'Not in SAS' : '—') + '</span>';
+            var id = c.serial || c.mac || '–';
+            var hasMac = macKey(c.mac).length === 12;
+            return '<tr class="' + (c.online === false ? 'down' : '') + (hasMac ? ' row-click' : '') + '"' + (hasMac ? ' data-sta-mac="' + esc(c.mac) + '" tabindex="0" title="Show the optical power history of this ONU"' : '') + '>' +
+                '<td>' + (c.online === false ? '⚫ ' : '🟢 ') + esc(c.name || c.port || id) + (c.name && c.port ? '<div class="muted mono">' + esc(c.port) + '</div>' : '') + '</td>' +
+                '<td class="mono">' + esc(id) + '</td>' +
+                '<td>' + user + '</td>' +
+                '<td class="mono' + onuLevel(c.signal) + '">' + (c.signal != null ? esc(c.signal) + ' dBm' : '–') + '</td>' +
+                '<td class="mono">' + (c.txPower != null ? esc(c.txPower) + ' dBm' : '–') + '</td>' +
+                '<td class="mono' + onuLevel(c.oltRx) + '">' + (c.oltRx != null ? esc(c.oltRx) + ' dBm' : '–') + '</td>' +
+                '<td class="mono' + (c.temp != null && c.temp >= I.ATT.onuTemp ? ' lvl-bad' : '') + '">' + (c.temp != null ? esc(c.temp) + ' °C' : '–') + '</td>' +
+                '<td class="mono">' + (c.distance != null ? esc(c.distance) + ' m' : '–') + '</td></tr>';
+        }).join('');
+    }
+    function onuBlock(m) {
+        var all = (m && m.onus) || [];
+        if (!all.length) return '<p class="muted">No ONUs registered on this OLT right now.</p>';
+        var matched = all.filter(function (c) { return sas.byMac[I.staKey(c)]; }).length;
+        var weak = all.filter(function (c) { return c.online !== false && c.signal != null && c.signal <= I.ATT.onuRx; }).length;
+        var note = sas.configured
+            ? matched + ' matched to a SAS user'
+            : 'Connect your SAS server on the SAS page to see the PPPoE user of each ONU.';
+        return '<p class="muted reg-note">' + esc(m.onuCount) + ' ONUs · ' + esc(m.onuOnline) + ' online' + (weak ? ' · <span class="lvl-bad">' + weak + ' with weak light</span>' : '') + ' · ' + esc(note) +
+                (m.onuCount > all.length ? ' · showing the ' + all.length + ' weakest' : '') +
+                ' <button type="button" class="link-btn" data-export-onu>Export to Excel</button></p>' +
+            '<input type="search" id="onu-filter" class="onu-filter" placeholder="Search name, user, serial or MAC" aria-label="Search ONUs" value="' + esc(onuFilter) + '">' +
+            '<div class="reg-wrap"><table class="iface-table reg-table"><thead><tr><th>ONU</th><th>Serial / MAC</th><th>SAS user</th><th>Rx power</th><th>Tx power</th><th>Rx at OLT</th><th>Temp</th><th>Distance</th></tr></thead><tbody id="onu-rows">' +
+            onuRows(m) + '</tbody></table></div>';
+    }
+    function exportOnus(id) {
+        var d = lastData && lastData.devices.find(function (x) { return x.id === id; });
+        var rows = (d && d.metrics && d.metrics.onus) || [];
+        window.TowerDesk.exportCsv('onus-' + String(d ? d.name : 'olt').replace(/[^\w-]+/g, '_') + '.csv',
+            ['OLT', 'ONU', 'Port', 'Serial', 'MAC', 'SAS user', 'Plan', 'Online', 'Rx power dBm', 'Tx power dBm', 'Rx at OLT dBm', 'Temp C', 'Distance m'],
+            rows.map(function (c) {
+                var s = sas.byMac[I.staKey(c)] || {};
+                return [d.name, c.name, c.port, c.serial, c.mac, s.username, s.plan, c.online === false ? 'no' : 'yes', c.signal, c.txPower, c.oltRx, c.temp, c.distance];
+            }));
+    }
+
+    // ----- Sector advisor: diagnose, propose, and apply only what the owner accepts -----
+    var adv = { id: null, busy: false, data: null, error: null, msg: '', pf: null };
+    function advQ() { return DEMO ? '?demo=1' : ''; }
+    function advPost(path, body) {
+        return fetch('/api/advisor/' + encodeURIComponent(detailId) + path + advQ(), {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {})
+        }).then(function (r) { return r.json(); });
+    }
+    function advRedraw() {
+        var el = document.getElementById('adv-panel');
+        var d = lastData && lastData.devices.find(function (x) { return x.id === detailId; });
+        if (el && d) el.outerHTML = advisorBlock(d);
+    }
+    function advRun(useAi) {
+        adv = { id: detailId, busy: true, data: adv.id === detailId ? adv.data : null, error: null, msg: useAi ? 'Asking the AI…' : 'Checking…' };
+        advRedraw();
+        advPost('', { ai: !!useAi, lang: document.documentElement.lang === 'ar' ? 'ar' : 'en' }).then(function (j) {
+            adv.busy = false; adv.msg = '';
+            if (j.error) adv.error = j.error; else adv.data = j;
+            advRedraw();
+        }).catch(function () { adv.busy = false; adv.msg = ''; adv.error = 'Could not reach TowerDesk.'; advRedraw(); });
+    }
+    // Read-only: log in to the radio and check it can take a one-click change. Changes nothing.
+    function advPreflight() {
+        adv.busy = true; adv.error = null; adv.msg = 'Checking the radio…'; adv.pf = null; advRedraw();
+        advPost('/preflight').then(function (j) {
+            adv.busy = false; adv.msg = '';
+            adv.pf = { ok: !!j.ok, problems: j.problems || [], frequency: j.frequency, txPower: j.txPower, sample: !!j.sample };
+            advRedraw();
+        }).catch(function () { adv.busy = false; adv.msg = ''; adv.error = 'Could not reach TowerDesk.'; advRedraw(); });
+    }
+    function advApply() {
+        var boxes = document.querySelectorAll('#adv-panel input[data-adv-change]:checked');
+        var accept = Array.prototype.map.call(boxes, function (b) { return Number(b.dataset.advChange); });
+        if (!accept.length) { adv.error = 'Tick at least one change first.'; advRedraw(); return; }
+        var list = accept.map(function (i) { var c = adv.data.changes[i]; return c.label + ' ' + (c.from == null ? '?' : c.from) + ' → ' + c.to + ' ' + c.unit; }).join(', ');
+        var btn = document.getElementById('adv-apply');
+        window.TowerDesk.inlineConfirm(btn, 'Change this live sector now? ' + list + '. Clients may drop for about a minute.').then(function (yes) {
+            if (!yes) return;
+            adv.busy = true; adv.error = null; adv.msg = 'Applying…'; advRedraw();
+            advPost('/apply', { proposalId: adv.data.proposalId, accept: accept }).then(function (j) {
+                adv.busy = false; adv.msg = '';
+                if (j.error) adv.error = j.error;
+                else { adv.data.pending = j.pending; adv.data.changes = []; adv.data.proposalId = null; }
+                advRedraw();
+            }).catch(function () { adv.busy = false; adv.msg = ''; adv.error = 'Lost contact while applying. The radio puts the old values back by itself in a few minutes.'; advRedraw(); });
+        });
+    }
+    function advFinish(action) {
+        adv.busy = true; adv.error = null; adv.msg = action === 'keep' ? 'Keeping…' : 'Undoing…'; advRedraw();
+        advPost('/' + action).then(function (j) {
+            adv.busy = false;
+            if (j.error) { adv.error = j.error; adv.msg = ''; }
+            else { adv.data.pending = null; adv.msg = action === 'keep' ? 'Kept. The new values stay.' : 'Undone. The old values are back.'; }
+            advRedraw();
+        }).catch(function () { adv.busy = false; adv.msg = ''; adv.error = 'Could not reach the radio. It puts the old values back by itself.'; advRedraw(); });
+    }
+    function advisorBlock(d) {
+        var mine = adv.id === d.id;
+        var a = mine ? adv.data : null;
+        var h = '<div id="adv-panel" class="adv-panel' + (mine && (a || adv.busy || adv.error) ? ' adv-open' : '') + '">';
+        h += '<div class="adv-actions"><button type="button" class="btn-secondary btn-sm" data-adv="check"' + (adv.busy ? ' disabled' : '') + '>Check this sector</button>' +
+            '<button type="button" class="btn-primary btn-sm" data-adv="ai"' + (adv.busy ? ' disabled' : '') + '>Ask AI for advice</button>' +
+            (mine && adv.msg ? '<span class="muted" role="status">' + esc(adv.msg) + '</span>' : '') + '</div>';
+        if (mine && adv.error) h += '<p class="live-error">⚠️ ' + esc(adv.error) + '</p>';
+        var pf = mine ? adv.pf : null;
+        if (!a) return h + '<p class="muted adv-hint">The check reads this sector\'s live data and points at likely causes. AI advice is optional and needs a key in Settings.</p></div>';
+        h += '<ul class="adv-findings">' + a.findings.map(function (f) { return '<li class="adv-' + esc(f.severity) + '">' + esc(f.text) + '</li>'; }).join('') + '</ul>';
+        if (a.aiError) h += '<p class="live-error">⚠️ ' + esc(a.aiError) + '</p>';
+        if (a.ai) {
+            h += '<div class="adv-ai"><div class="adv-ai-head"><strong>AI advice</strong> <span class="muted">confidence: ' + esc(a.ai.confidence) + ' · sent ' + esc(a.sent.clients) + ' clients and ' + esc(a.sent.otherRadios) + ' radios, no names or addresses</span></div>' +
+                '<p>' + esc(a.ai.summary) + '</p>' +
+                (a.ai.causes.length ? '<h5>Likely causes</h5><ul>' + a.ai.causes.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
+                (a.ai.manual.length ? '<h5>To do by hand</h5><ul>' + a.ai.manual.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') + '</div>';
+        }
+        if (a.pending && !a.pending.expired) {
+            h += '<div class="adv-pending"><strong>Changed just now:</strong> ' + a.pending.applied.map(function (c) { return esc(c.label) + ' ' + esc(c.from == null ? '?' : c.from) + ' → ' + esc(c.to) + ' ' + esc(c.unit); }).join(', ') +
+                '<p class="muted">The radio puts the old values back by itself <span data-adv-until="' + esc(a.pending.revertAt) + '"></span> unless you press Keep. Watch the clients come back first.</p>' +
+                '<div class="adv-actions"><button type="button" class="btn-primary btn-sm" data-adv="keep"' + (adv.busy ? ' disabled' : '') + '>Keep the change</button>' +
+                '<button type="button" class="btn-secondary btn-sm" data-adv="undo"' + (adv.busy ? ' disabled' : '') + '>Undo now</button></div></div>';
+        } else if (a.pending && a.pending.expired) {
+            h += '<p class="muted">The last change was not kept, so the radio put the old values back.</p>';
+        }
+        if (a.changes && a.changes.length) {
+            var canAny = a.changes.some(function (c) { return c.applicable; });
+            if (a.experimental && canAny) {
+                h += '<div class="adv-exp"><strong>Experimental on Ubiquiti radios.</strong> This has not been proven on a real radio yet. Try it first on one quiet sector, at a quiet hour, with the sector open in front of you. It needs SSH turned on in the radio\'s Services page. <div class="adv-actions"><button type="button" class="btn-secondary btn-sm" data-adv="preflight"' + (adv.busy ? ' disabled' : '') + '>Test this radio (read-only)</button>' +
+                    (pf ? (pf.ok ? '<span class="adv-ok">✓ Ready' + (pf.sample ? ' (sample)' : '') + (pf.frequency != null ? ' · ' + esc(pf.frequency) + ' MHz' : '') + (pf.txPower != null ? ' · ' + esc(pf.txPower) + ' dBm' : '') + '</span>' : '<span class="live-error">✗ ' + esc((pf.problems || [])[0] || 'Not ready') + '</span>') : '') + '</div></div>';
+            }
+            h += '<h5>Proposed changes</h5><div class="reg-wrap"><table class="iface-table adv-table"><thead><tr><th></th><th>Setting</th><th>Now</th><th>New</th><th>Why</th><th>Risk</th></tr></thead><tbody>' +
+                a.changes.map(function (c, i) {
+                    return '<tr><td>' + (c.applicable ? '<input type="checkbox" data-adv-change="' + i + '" aria-label="Apply ' + esc(c.label) + '">' : '<span class="muted" title="Set this one on the radio\'s own page">by hand</span>') + '</td>' +
+                        '<td><strong>' + esc(c.label) + '</strong></td><td class="mono">' + esc(c.from == null ? '?' : c.from + ' ' + c.unit) + '</td><td class="mono"><strong>' + esc(c.to + ' ' + c.unit) + '</strong></td>' +
+                        '<td>' + esc(c.reason) + '</td><td class="muted">' + esc(c.risk) + '</td></tr>';
+                }).join('') + '</tbody></table></div>' +
+                (canAny
+                    ? '<div class="adv-actions"><button type="button" class="btn-primary btn-sm" id="adv-apply" data-adv="apply"' + (adv.busy ? ' disabled' : '') + '>Apply ticked changes</button><span class="muted">Nothing changes until you press this and confirm. It undoes itself after ' + esc((a.pending && a.pending.revertMinutes) || 5) + ' minutes unless you keep it.</span></div>'
+                    : '<p class="muted">' + esc(a.applyNote || 'These have to be set on the radio\'s own page.') + '</p>');
+        } else if (a.ai && !(a.pending && !a.pending.expired)) {
+            h += '<p class="muted">The AI proposed no setting change for this sector.</p>';
+        }
+        return h + '</div>';
+    }
+    // Countdown on a pending change.
+    setInterval(function () {
+        var el = document.querySelector('#adv-panel [data-adv-until]');
+        if (!el) return;
+        var left = Math.max(0, Math.round((Number(el.dataset.advUntil) - Date.now()) / 1000));
+        el.textContent = left ? 'in ' + Math.floor(left / 60) + ':' + ('0' + (left % 60)).slice(-2) : 'now';
+    }, 1000);
+
     function registrationBlock(m) {
         var rows = (m && m.stations) || [];
         if (!rows.length) return '<p class="muted">No stations registered right now.</p>';
@@ -345,6 +519,7 @@
         if (mx.cpu) t.push(['CPU', mx.cpu.now + '%']);
         if (has(mx.memPct)) t.push(['RAM', mx.memPct + '%']);
         if (has(mx.stationCount)) t.push(['Clients', mx.stationCount]);
+        if (has(mx.onuCount)) t.push(['ONUs online', mx.onuOnline + ' / ' + mx.onuCount]);
         t.push(['Latency', ms(d.latencyMs)]);
         t.push(['Avg latency', ms(d.avgLatencyMs)]);
         t.push(['Uptime', d.uptimePct === null ? '–' : d.uptimePct + '%']);
@@ -464,7 +639,9 @@
             '<dl class="kv detail-kv">' + info.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') + '</dl>' +
             '<h4 class="detail-sec">Live</h4>' + statGrid(d) +
             '<h4 class="detail-sec">Latency (10 min)</h4>' + sparkline(d.history) +
+            (d.online !== false && d.metrics && d.metrics.kind === 'stations' ? '<h4 class="detail-sec">Advisor</h4>' + advisorBlock(d) : '') +
             (d.online !== false && d.metrics && d.metrics.kind === 'stations' ? '<h4 class="detail-sec">Registration (connected stations)</h4>' + registrationBlock(d.metrics) : '') +
+            (d.online !== false && d.metrics && d.metrics.kind === 'onus' ? '<h4 class="detail-sec">ONUs (fibre customers)</h4>' + onuBlock(d.metrics) : '') +
             (d.online === false ? '' : '<h4 class="detail-sec">Traffic' + (d.metrics && d.metrics.kind === 'stations' ? '' : ' &amp; ' + (d.metrics && d.metrics.kind === 'clients' ? 'clients' : 'interfaces')) + '</h4>' + metricsBlock(d.metrics));
     }
 
@@ -480,9 +657,23 @@
             var other = e.target.closest('[data-open-id]');
             if (other) { openDetail(other.dataset.openId); return; }
             if (e.target.closest('[data-export-reg]')) { exportRegistration(detailId); return; }
+            if (e.target.closest('[data-export-onu]')) { exportOnus(detailId); return; }
+            var advBtn = e.target.closest('[data-adv]');
+            if (advBtn) {
+                var act = advBtn.dataset.adv;
+                if (act === 'check') advRun(false); else if (act === 'ai') advRun(true); else if (act === 'apply') advApply(); else if (act === 'preflight') advPreflight(); else advFinish(act);
+                return;
+            }
             var staRow = e.target.closest('tr[data-sta-mac]');
             if (staRow && staRow.dataset.staMac) { toggleStationHistory(staRow); return; }
             if (e.target === m || e.target.closest('.close-btn')) closeDetail();
+        });
+        m.addEventListener('input', function (e) {
+            if (e.target.id !== 'onu-filter') return;
+            onuFilter = e.target.value;
+            var d = lastData && lastData.devices.find(function (x) { return x.id === detailId; });
+            var tb = document.getElementById('onu-rows');
+            if (d && tb) tb.innerHTML = onuRows(d.metrics);
         });
         document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDetail(); });
         return m;
@@ -495,14 +686,17 @@
         var m = ensureModal();
         var isLink = d.role === 'backhaul';
         var isSector = !!(d.metrics && d.metrics.kind === 'stations');
-        if (isSector) loadSas();
-        m.querySelector('.detail-modal').classList.toggle('wide', isLink || isSector);
-        m.querySelector('.modal-header strong').textContent = isLink ? 'Link detail' : (isSector ? 'Sector detail' : 'Device detail');
+        var isOlt = !!(d.metrics && d.metrics.kind === 'onus');
+        if (isSector || isOlt) loadSas();
+        m.querySelector('.detail-modal').classList.toggle('wide', isLink || isSector || isOlt);
+        m.querySelector('.modal-header strong').textContent = isLink ? 'Link detail' : (isSector ? 'Sector detail' : (isOlt ? 'OLT detail' : 'Device detail'));
         document.getElementById('detail-modal-body').innerHTML = detailBody(d);
         m.style.display = 'flex';
     }
     function closeDetail() {
         detailId = null;
+        adv = { id: null, busy: false, data: null, error: null, msg: '', pf: null };
+        onuFilter = '';
         var m = document.getElementById('detail-modal');
         if (m) m.style.display = 'none';
     }
@@ -516,7 +710,7 @@
         var known = devices.filter(function (d) { return !d.unreachable && d.online !== null && d.online !== undefined; });
         cardEl.hidden = !known.length;
         if (!known.length) return;
-        if (devices.some(function (d) { return d.metrics && d.metrics.stations && d.metrics.stations.length; })) loadSas();
+        if (devices.some(function (d) { return d.metrics && ((d.metrics.stations && d.metrics.stations.length) || (d.metrics.onus && d.metrics.onus.length)); })) loadSas();
         var items = attentionItems(devices);
         $('attention-count').textContent = items.length ? items.length + (items.length === 1 ? ' item' : ' items') : '';
         $('attention-list').innerHTML = items.length
@@ -596,11 +790,11 @@
         if (detailId) {
             var dd = data.devices.find(function (x) { return x.id === detailId; });
             if (dd) {
-                if (dd.metrics && dd.metrics.kind === 'stations') loadSas();
+                if (hasList(dd)) loadSas();
                 var body = document.getElementById('detail-modal-body');
                 // Leave the card alone while a ping/traceroute result or a station's history is
                 // open in it — refreshing would wipe what the user is reading.
-                if (body && !body.querySelector('.net-tools-out:not([hidden]), .sta-history')) body.innerHTML = detailBody(dd);
+                if (body && !detailBusy(body)) body.innerHTML = detailBody(dd);
             }
             else closeDetail();
         }

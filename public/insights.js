@@ -34,7 +34,13 @@
     }
 
     // Thresholds are deliberately simple and conservative.
-    var ATT = { linkSignal: -70, linkCapacity: 85, staSignal: -73, staCcq: 70, cpu: 85 };
+    var ATT = { linkSignal: -70, linkCapacity: 85, staSignal: -73, staCcq: 70, cpu: 85, onuRx: -27, onuTemp: 75 };
+
+    // One key for a station or an ONU: its MAC, or the serial number for a GPON ONU.
+    function staKey(c) {
+        var k = macKey(c && c.mac);
+        return k.length === 12 ? k : (c && c.serial ? 'sn:' + String(c.serial).toUpperCase() : '');
+    }
 
     // The few things worth looking at first. Devices whose network is unreachable are skipped
     // (their state is unknown). `sasByMac` maps a station MAC key to its subscriber, if known.
@@ -62,6 +68,20 @@
                 var s = sasByMac && sasByMac[macKey(c.mac)];
                 add('warning', d.id, (s ? s.username : (c.name || c.mac)) + ' on ' + d.name, 'weak radio link: ' + bad.join(', '), 3);
             });
+            // Fibre: weak light at the ONU (dirty connector, bend, too many splits) or a hot ONU.
+            // Summed up per OLT when there are many, so one bad splitter does not flood the list.
+            var weak = [];
+            (mx.onus || []).forEach(function (c) {
+                if (c.online === false) return;
+                var bad = [];
+                if (c.signal != null && c.signal <= ATT.onuRx) bad.push(c.signal + ' dBm');
+                if (c.temp != null && c.temp >= ATT.onuTemp) bad.push(c.temp + ' °C');
+                if (!bad.length) return;
+                var s = sasByMac && sasByMac[staKey(c)];
+                weak.push({ who: s ? s.username : (c.name || c.serial || c.mac || c.port), why: bad.join(', ') });
+            });
+            if (weak.length > 5) add('warning', d.id, weak.length + ' ONUs on ' + d.name, 'weak optical power or running hot', 3);
+            else weak.forEach(function (w) { add('warning', d.id, w.who + ' on ' + d.name, 'weak fibre signal: ' + w.why, 3); });
         });
         return out.sort(function (a, b) { return a.rank - b.rank; });
     }
@@ -72,13 +92,13 @@
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (j) {
                 var byMac = {};
-                ((j && j.subscribers) || []).forEach(function (s) { var k = macKey(s.station ? s.station.mac : ''); if (k.length === 12) byMac[k] = s; });
+                ((j && j.subscribers) || []).forEach(function (s) { var k = s.station ? staKey(s.station) : ''; if (k) byMac[k] = s; });
                 return { configured: !!(j && j.configured), byMac: byMac, data: j };
             });
     }
 
     window.TowerDesk.insights = {
-        macKey: macKey, peerOf: peerOf, isFarEnd: isFarEnd, attention: attention, loadSasByMac: loadSasByMac,
+        macKey: macKey, staKey: staKey, peerOf: peerOf, isFarEnd: isFarEnd, attention: attention, loadSasByMac: loadSasByMac,
         topIface: topIface, trafficBps: trafficBps, capacityPct: capacityPct, ATT: ATT
     };
 })();

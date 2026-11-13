@@ -93,6 +93,186 @@
     };
 
     // Phrases with a number or name in the middle.
+    // Added after going through every page in Arabic and collecting what was still English.
+    var AR_MORE = {
+        "OLT detail": "تفاصيل OLT",
+        "ONUs (fibre customers)": "أجهزة ONU (مشتركو الألياف)",
+        "ONUs online": "ONU متصلة",
+        "Rx power": "قدرة الاستقبال",
+        "Tx power": "قدرة الإرسال",
+        "Rx at OLT": "الاستقبال عند OLT",
+        "Temp": "الحرارة",
+        "Temperature": "درجة الحرارة",
+        "Distance": "المسافة",
+        "Fibre length": "طول الليف",
+        "Serial / MAC": "الرقم التسلسلي / MAC",
+        "Search ONUs": "بحث في أجهزة ONU",
+        "Search name, user, serial or MAC": "ابحث بالاسم أو المستخدم أو الرقم التسلسلي أو MAC",
+        "No ONU matches.": "لا يوجد ONU مطابق.",
+        "No ONUs registered on this OLT right now.": "لا توجد أجهزة ONU مسجلة على هذا OLT حالياً.",
+        "Not in SAS": "غير موجود في SAS",
+        "matched by name": "مطابقة بالاسم",
+        "session offline": "الجلسة غير متصلة",
+        "Connect your SAS server on the SAS page to see the PPPoE user of each ONU.": "اربط سيرفر SAS من صفحة SAS لرؤية مستخدم PPPoE لكل ONU.",
+        "OLT (Fiber, reads its ONUs over SNMP)": "OLT (ألياف، يقرأ أجهزة ONU عبر SNMP)",
+        "ONU (Fiber GPON/EPON)": "ONU (ألياف GPON/EPON)",
+        "Show the optical power history of this ONU": "عرض سجل القدرة الضوئية لهذا ONU",
+        "Show this radio's signal history": "عرض سجل إشارة هذا الراديو",
+        "weak optical power or running hot": "قدرة ضوئية ضعيفة أو حرارة مرتفعة",
+        "Backhaul link": "رابط رئيسي",
+        "Sector (PtMP)": "قطاع (PtMP)",
+        "Device": "جهاز",
+        "Other": "أخرى",
+        "Interface": "المنفذ",
+        "Clients total": "مجموع العملاء",
+        "Traffic & interfaces": "الحركة والمنافذ",
+        "Traffic & clients": "الحركة والعملاء",
+        "Traffic": "الحركة",
+        "MAC / IP": "MAC / IP",
+        "signal": "الإشارة",
+        "CPU": "المعالج",
+        "RAM": "الذاكرة",
+        "Down": "تنزيل",
+        "Up": "رفع",
+        "Link": "الرابط",
+        "Tower network unreachable — status unknown": "شبكة البرج غير قابلة للوصول — الحالة غير معروفة",
+        "Nothing on it answered — if you connect through a VPN, check that it is open.": "لم يرد أي جهاز عليها — إذا كنت تتصل عبر VPN فتأكد أنه مفتوح.",
+        "Read-only connection": "اتصال للقراءة فقط",
+        "Last Result": "آخر نتيجة",
+        "Now": "الآن",
+        "Towers": "الأبراج",
+        "Logged in and collecting live data.": "تم تسجيل الدخول وجاري جمع البيانات المباشرة.",
+        "No reply to ping or the management port.": "لا يوجد رد على ping أو منفذ الإدارة.",
+        "Answers ping/web, but with no login — status only, no traffic graphs. Add a login or SNMP to monitor it fully.": "يرد على ping/الويب لكن بدون تسجيل دخول — الحالة فقط بدون رسوم الحركة. أضف تسجيل دخول أو SNMP لمراقبته بالكامل.",
+        "Switch to light theme": "التبديل إلى المظهر الفاتح",
+        "Switch to dark theme": "التبديل إلى المظهر الداكن",
+        "Open navigation menu": "فتح قائمة التنقل",
+        "open Monitoring": "افتح المراقبة",
+        "Live monitor": "المراقبة المباشرة",
+        "All clear": "كل شيء سليم",
+        "Active Alerts": "التنبيهات النشطة",
+        "Resolved alerts": "التنبيهات المحلولة",
+        "Resolved (24h)": "تم حلها (24 ساعة)",
+        "Events": "الأحداث",
+        "History": "السجل",
+        "Problem": "المشكلة",
+        "Resolution": "الحل",
+        "Duration": "المدة",
+        "Lasted": "استمر",
+        "Action": "إجراء",
+        "Check": "تحقق",
+        "Device offline": "الجهاز غير متصل",
+        "Device responded again": "عاد الجهاز للاستجابة",
+        "Closed automatically": "أُغلق تلقائياً",
+        "Devices going online / offline": "اتصال / انقطاع الأجهزة",
+        "Latency ≥ 200 ms": "زمن الاستجابة ≥ 200 مللي ثانية",
+        "Critical": "حرج",
+        "Warning": "تحذير",
+        "Notifications blocked in browser": "الإشعارات محظورة في المتصفح",
+        "No active alerts. Devices that stop responding show up here within seconds.": "لا توجد تنبيهات نشطة. الأجهزة التي تتوقف عن الاستجابة تظهر هنا خلال ثوانٍ.",
+        "From the live monitor · updates every 10 s": "من المراقبة المباشرة · تحديث كل 10 ث",
+        "Register New Device": "تسجيل جهاز جديد",
+        "Device Name": "اسم الجهاز",
+        "Device Type": "نوع الجهاز",
+        "Select type": "اختر النوع",
+        "Connect Using": "الاتصال عبر",
+        "Monitor via": "المراقبة عبر",
+        "Connection Result": "نتيجة الاتصال",
+        "Test Connection": "اختبار الاتصال",
+        "Auto-detect": "كشف تلقائي",
+        "Add Selected": "إضافة المحدد",
+        "Save login": "حفظ الدخول",
+        "Scan": "فحص",
+        "Scan a Network": "فحص شبكة",
+        "Scan progress": "تقدم الفحص",
+        "Enable SNMP": "تفعيل SNMP",
+        "Fix unconnected": "إصلاح غير المتصلة",
+        "IP Range": "نطاق IP",
+        "Found": "تم العثور",
+        "Stop": "إيقاف",
+        "Delete": "حذف",
+        "My Devices": "أجهزتي",
+        "Apply to selected": "تطبيق على المحدد",
+        "Select all devices": "تحديد كل الأجهزة",
+        "Select all found devices": "تحديد كل الأجهزة المكتشفة",
+        "Label (optional)": "تسمية (اختياري)",
+        "Community": "Community",
+        "SNMP Community": "SNMP Community",
+        "SNMP community": "SNMP community",
+        "SNMP Community (optional)": "SNMP Community (اختياري)",
+        "SNMP community (optional)": "SNMP community (اختياري)",
+        "Username & password": "اسم المستخدم وكلمة المرور",
+        "Ping only (no login)": "Ping فقط (بدون دخول)",
+        "Web UI (HTTP)": "واجهة الويب (HTTP)",
+        "Web UI (HTTPS)": "واجهة الويب (HTTPS)",
+        "Mimosa login": "دخول Mimosa",
+        "Ubiquiti airOS login": "دخول Ubiquiti airOS",
+        "TP-Link router login": "دخول راوتر TP-Link",
+        "MikroTik Router": "راوتر MikroTik",
+        "Cisco Router": "راوتر Cisco",
+        "TP-Link Router": "راوتر TP-Link",
+        "Checks the device is up. No login needed. Good for ONUs and anything you only want to watch.": "يتحقق أن الجهاز يعمل. لا يحتاج تسجيل دخول. مناسب لأجهزة ONU وأي جهاز تريد مراقبته فقط.",
+        "Finds every device in a range · read-only, never logs in": "يجد كل الأجهزة في النطاق · قراءة فقط ولا يسجل الدخول أبداً",
+        "Tried automatically when you add a device": "تُجرَّب تلقائياً عند إضافة جهاز",
+        "Or type one login for all selected": "أو اكتب دخولاً واحداً لكل المحدد",
+        "Enter an IP and press": "أدخل عنوان IP واضغط",
+        "Try my": "جرّب",
+        "login": "دخول",
+        "leave blank to keep": "اتركه فارغاً للإبقاء",
+        "to find the vendor and the best way to connect, or pick a method and press": "لمعرفة الشركة وأفضل طريقة للاتصال، أو اختر طريقة واضغط",
+        "Whatever matches is saved encrypted with each device. Leave both empty to add with status checks only and set logins later.": "ما يتطابق يُحفظ مشفراً مع كل جهاز. اترك الحقلين فارغين للإضافة بفحص الحالة فقط وأضف الدخول لاحقاً.",
+        "Try your saved logins & SNMP communities on every device that isn't connected yet": "جرّب بيانات الدخول و SNMP المحفوظة على كل جهاز لم يتصل بعد",
+        "Turn on SNMP on the router and monitor it that way": "شغّل SNMP على الراوتر وراقبه بهذه الطريقة",
+        "Timed out (device unreachable or port filtered)": "انتهت المهلة (الجهاز غير قابل للوصول أو المنفذ محجوب)",
+        "Wrong username or password": "اسم المستخدم أو كلمة المرور خطأ",
+        "e.g. Building A, Roof": "مثال: المبنى أ، السطح",
+        "e.g. Core NAS": "مثال: NAS الرئيسي",
+        "e.g. Main admin": "مثال: المدير الرئيسي",
+        "e.g. Tower North Router": "مثال: راوتر البرج الشمالي",
+        "Demo data (sample subscribers)": "بيانات تجريبية (مشتركون للعرض)",
+        "FreeRADIUS (SQL)": "FreeRADIUS (SQL)",
+        "MikroTik NAS (PPPoE / Hotspot)": "MikroTik NAS (PPPoE / Hotspot)",
+        "SAS Radius 4 (manager login)": "SAS Radius 4 (دخول المدير)",
+        "Where TowerDesk reads your subscribers from": "من أين يقرأ TowerDesk مشتركيك",
+        "Filter subscribers": "تصفية المشتركين",
+        "Search subscribers": "بحث في المشتركين",
+        "Search name, username, IP, MAC or sector…": "ابحث بالاسم أو المستخدم أو IP أو MAC أو القطاع…",
+        "These are sample subscriber sessions — connect your RADIUS/SAS server to see real customers.": "هذه جلسات مشتركين للعرض — اربط سيرفر RADIUS/SAS لرؤية العملاء الحقيقيين.",
+        "A backup is one file with your devices, saved logins, alerts and settings.": "النسخة الاحتياطية ملف واحد فيه أجهزتك وبيانات الدخول المحفوظة والتنبيهات والإعدادات.",
+        "Keep it private:": "احتفظ به بشكل خاص:",
+        "it holds your saved device passwords together with the key that unlocks them. Monitoring history is not included.": "يحتوي كلمات مرور أجهزتك المحفوظة مع المفتاح الذي يفتحها. سجل المراقبة غير مشمول.",
+        "TowerDesk can update itself from your GitHub repository. Nothing is downloaded until you check — the app stays fully offline otherwise.": "يستطيع TowerDesk تحديث نفسه من مستودع GitHub. لا يُنزَّل شيء حتى تضغط تحقق — وغير ذلك يبقى التطبيق بلا إنترنت تماماً.",
+        "…or a release manifest URL (optional)": "…أو رابط ملف الإصدار (اختياري)",
+        "Read-only GitHub token": "رمز GitHub للقراءة فقط",
+        "Upgrade Premium": "ترقية",
+        "Upgrade Infrastructure": "ترقية البنية",
+        "Unlock unlimited towers, real-time sync & advanced analytics.": "أبراج غير محدودة ومزامنة فورية وتحليلات متقدمة."
+    };
+    Object.keys(AR_MORE).forEach(function (k) { if (!Object.prototype.hasOwnProperty.call(AR, k)) AR[k] = AR_MORE[k]; });
+
+    // Sector advisor and AI settings.
+    var AR_ADVISOR = {
+        'Advisor': 'المستشار', 'Check this sector': 'افحص هذا القطاع', 'Ask AI for advice': 'اطلب نصيحة الذكاء الاصطناعي',
+        'AI advice': 'نصيحة الذكاء الاصطناعي', 'Likely causes': 'الأسباب المحتملة', 'To do by hand': 'يُنفَّذ يدوياً',
+        'Proposed changes': 'التغييرات المقترحة', 'Setting': 'الإعداد', 'New': 'الجديد', 'Why': 'السبب', 'Risk': 'المخاطرة',
+        'Frequency': 'التردد', 'Transmit power': 'قدرة الإرسال', 'Channel width': 'عرض القناة', 'by hand': 'يدوياً',
+        'Apply ticked changes': 'طبّق التغييرات المحددة', 'Keep the change': 'أبقِ التغيير', 'Undo now': 'تراجع الآن',
+        'Changed just now:': 'تم التغيير الآن:', 'Checking…': 'جارٍ الفحص…', 'Asking the AI…': 'جارٍ سؤال الذكاء الاصطناعي…',
+        'Applying…': 'جارٍ التطبيق…', 'Keeping…': 'جارٍ الإبقاء…', 'Undoing…': 'جارٍ التراجع…',
+        'Kept. The new values stay.': 'تم الإبقاء. القيم الجديدة باقية.', 'Undone. The old values are back.': 'تم التراجع. عادت القيم القديمة.',
+        'Tick at least one change first.': 'حدد تغييراً واحداً على الأقل أولاً.',
+        'The AI proposed no setting change for this sector.': 'لم يقترح الذكاء الاصطناعي أي تغيير في إعدادات هذا القطاع.',
+        'The last change was not kept, so the radio put the old values back.': 'لم يتم إبقاء آخر تغيير، لذلك أعاد الراديو القيم القديمة.',
+        'AI advisor': 'مستشار الذكاء الاصطناعي', 'Optional · needs internet': 'اختياري · يحتاج إنترنت', 'Anthropic API key': 'مفتاح Anthropic API',
+        'Save key': 'حفظ المفتاح', 'Paste your key': 'الصق مفتاحك', 'Remove saved key': 'إزالة المفتاح المحفوظ',
+        'Leave blank to keep the saved key': 'اتركه فارغاً للإبقاء على المفتاح المحفوظ',
+        'The check reads this sector\'s live data and points at likely causes. AI advice is optional and needs a key in Settings.': 'يقرأ الفحص البيانات الحية لهذا القطاع ويشير إلى الأسباب المحتملة. نصيحة الذكاء الاصطناعي اختيارية وتحتاج مفتاحاً في الإعدادات.',
+        'Test this radio (read-only)': 'اختبر هذا الراديو (قراءة فقط)', 'Checking the radio…': 'جارٍ فحص الراديو…', 'Ready': 'جاهز',
+        'Experimental on Ubiquiti radios.': 'تجريبي على راديوهات Ubiquiti.',
+        'Nothing is sent anywhere until you press Ask AI.': 'لا يُرسل شيء إلى أي مكان حتى تضغط اطلب نصيحة الذكاء الاصطناعي.'
+    };
+    Object.keys(AR_ADVISOR).forEach(function (k) { if (!Object.prototype.hasOwnProperty.call(AR, k)) AR[k] = AR_ADVISOR[k]; });
+
     var PATTERNS = [
         [/^(\d+) items?$/, function (m) { return m[1] + ' عنصر'; }],
         [/^and (\d+) more$/, function (m) { return 'و ' + m[1] + ' أخرى'; }],
@@ -111,7 +291,24 @@
         [/^weak radio link: (.+)$/, function (m) { return 'إشارة ضعيفة: ' + m[1]; }],
         [/^weak link signal, (.+)$/, function (m) { return 'إشارة الرابط ضعيفة، ' + m[1]; }],
         [/^link at (\d+)% of its capacity$/, function (m) { return 'الرابط عند ' + m[1] + '% من سعته'; }],
-        [/^CPU at (\d+)%$/, function (m) { return 'المعالج عند ' + m[1] + '%'; }]
+        [/^CPU at (\d+)%$/, function (m) { return 'المعالج عند ' + m[1] + '%'; }],
+        [/^weak fibre signal: (.+)$/, function (m) { return 'إشارة الليف ضعيفة: ' + m[1]; }],
+        [/^(\d+) ONUs$/, function (m) { return m[1] + ' ONU'; }],
+        [/^(\d+) ONUs on (.+)$/, function (m) { return m[1] + ' ONU على ' + m[2]; }],
+        [/^(\d+) matched to a SAS user$/, function (m) { return m[1] + ' مطابقة لمستخدم SAS'; }],
+        [/^(\d+) with weak light$/, function (m) { return m[1] + ' بإشارة ضوئية ضعيفة'; }],
+        [/^showing the (\d+) weakest$/, function (m) { return 'عرض أضعف ' + m[1]; }],
+        [/^(.+) \(([\d.]+)\) is not responding$/, function (m) { return m[1] + ' (' + m[2] + ') لا يستجيب'; }],
+        [/^(.+) latency is high \((\d+) ms average\)$/, function (m) { return 'زمن استجابة ' + m[1] + ' مرتفع (المتوسط ' + m[2] + ' مللي ثانية)'; }],
+        [/^Radios with no SAS user \((\d+)\)$/, function (m) { return 'راديوهات بلا مستخدم SAS (' + m[1] + ')'; }],
+        [/^on (Sector .+|.+)$/, function (m) { return 'على ' + m[1]; }],
+        [/^Select (.+)$/, function (m) { return 'تحديد ' + m[1]; }],
+        [/^Remove (.+)$/, function (m) { return 'إزالة ' + m[1]; }],
+        [/^Traffic, peak (.+)$/, function (m) { return 'الحركة، الذروة ' + m[1]; }],
+        [/^peak (.+)$/, function (m) { return 'الذروة ' + m[1]; }],
+        [/^Replies to ping \((\d+) ms\)$/, function (m) { return 'يرد على ping (' + m[1] + ' مللي ثانية)'; }],
+        [/^Router login OK · (\d+) devices connected$/, function (m) { return 'دخول الراوتر ناجح · ' + m[1] + ' أجهزة متصلة'; }],
+        [/^Reachable · (\d+) ms$/, function (m) { return 'قابل للوصول · ' + m[1] + ' مللي ثانية'; }]
     ];
 
     var ATTRS = ['placeholder', 'aria-label', 'title'];
@@ -119,11 +316,34 @@
     var lang = 'en';
     var observer = null;
 
-    function lookup(text) {
+    function exact(text) {
         if (Object.prototype.hasOwnProperty.call(AR, text)) return AR[text];
         for (var i = 0; i < PATTERNS.length; i++) {
             var m = PATTERNS[i][0].exec(text);
             if (m) return PATTERNS[i][1](m);
+        }
+        return null;
+    }
+    function lookup(text) {
+        var t = exact(text);
+        if (t !== null) return t;
+        // Leading icon / bullet / arrow, and a trailing colon or dash.
+        var m = /^([^A-Za-z0-9\u0600-\u06FF(]+)([\s\S]*?)(\s*[:—·-]?\s*)$/.exec(text);
+        if (m && m[2] && m[2] !== text) {
+            t = exact(m[2]);
+            if (t !== null) return m[1] + t + m[3];
+        }
+        // "a · b · c": each part on its own; only when at least one part is known.
+        if (text.indexOf(' · ') !== -1) {
+            var hit = false;
+            var out = text.split(' · ').map(function (p) {
+                var core = p.trim().replace(/\s*·$/, '');
+                var r = core ? exact(core) : null;
+                if (r === null) return p;
+                hit = true;
+                return p.replace(core, r);
+            });
+            if (hit) return out.join(' · ');
         }
         return null;
     }
