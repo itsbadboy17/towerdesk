@@ -70,5 +70,41 @@ ok('demo sector lists stations with MACs', st.length > 1 && st.every((x) => norm
 ok('demo station MACs match SAS', st.filter((x) => sasMacs.has(norm(x.mac))).length === st.length - 1);
 ok('demo offline sector has no stations', by('s3').metrics.stations.length === 0);
 
+// ---- Subscriber lookup: trace SAS sessions to sector stations by MAC ----
+const lookup = require('../src/lookup');
+const sec = (id, name, macs) => ({ id, name, metrics: { stations: macs.map((m, i) => ({ name: 'cpe' + i, mac: m, signal: -60 - i, ccq: 90 })) } });
+let subs = [{ username: 'a', mac: 'aa-bb-cc-00-00-01' }, { username: 'b', mac: 'AA:BB:CC:00:00:09' }, { username: 'c', mac: null }];
+let r = lookup.attachStations(subs, [sec('s1', 'North', ['AA:BB:CC:00:00:01']), sec('s2', 'West', ['AA:BB:CC:00:00:50'])]);
+ok('exact match ignores MAC formatting', subs[0].station && subs[0].station.sectorName === 'North' && subs[0].station.signal === -60 && subs[0].station.near === false);
+ok('no match leaves station null', subs[1].station === null && subs[2].station === null && r.matched === 1);
+
+// One step off (PPPoE dialled on another port of the CPE) matches when unambiguous, flagged near.
+subs = [{ username: 'a', mac: 'AA:BB:CC:00:00:11' }];
+r = lookup.attachStations(subs, [sec('s1', 'North', ['AA:BB:CC:00:00:10'])]);
+ok('near match one step off', subs[0].station && subs[0].station.near === true && r.near === 1);
+// Ambiguous: two subscribers both one step from the same station -> no guess.
+subs = [{ username: 'a', mac: 'AA:BB:CC:00:00:11' }, { username: 'b', mac: 'AA:BB:CC:00:00:0F' }];
+lookup.attachStations(subs, [sec('s1', 'North', ['AA:BB:CC:00:00:10'])]);
+ok('ambiguous near match refused', subs[0].station === null && subs[1].station === null);
+// Consecutive CPE MACs: exact matches win, nothing is stolen by a neighbour.
+subs = [{ username: 'a', mac: 'AA:BB:CC:00:00:10' }, { username: 'b', mac: 'AA:BB:CC:00:00:11' }];
+lookup.attachStations(subs, [sec('s1', 'North', ['AA:BB:CC:00:00:11', 'AA:BB:CC:00:00:10'])]);
+ok('consecutive MACs match exactly', subs[0].station.mac === 'AA:BB:CC:00:00:10' && subs[1].station.mac === 'AA:BB:CC:00:00:11' && !subs[0].station.near);
+ok('two steps off is not a match', lookup.isNear('aabbcc000010', 'aabbcc000012') === false);
+
+// Demo: online subscribers on the live sectors are traced to their radio.
+const demoSubs = subscribers._demoSubs(24);
+const dr = lookup.attachStations(demoSubs, snap.devices);
+const north = demoSubs.filter((s) => s.nas === 'Sector North' && s.online);
+ok('demo subscribers traced to their sector', north.length > 0 && north.every((s) => s.station && s.station.sectorName === 'Sector North') && dr.near === 0);
+ok('demo offline subscribers have no station', demoSubs.filter((s) => !s.online).every((s) => s.station === null));
+
+// ---- MikroTik registration table parsing (legacy wireless and the newer wifi package) ----
+const { parseRegistration } = require('../src/transports/mikrotik');
+const legacy = parseRegistration([{ interface: 'wlan1', 'radio-name': 'CPE-1', 'mac-address': '4C:5E:0C:00:00:01', 'last-ip': '10.0.0.5', 'signal-strength': '-58dBm@HT20-7', 'tx-ccq': '97', 'tx-rate': '144.4Mbps-20MHz/2S/SGI', 'rx-rate': '130Mbps-20MHz/2S', bytes: '1000,200' }])[0];
+ok('legacy registration row', legacy.signal === -58 && legacy.ccq === 97 && legacy.txRate === 144.4 && legacy.rxRate === 130 && legacy.txBytes === 1000 && legacy.rxBytes === 200 && legacy.name === 'CPE-1');
+const wifi = parseRegistration([{ interface: 'wifi1', 'mac-address': '4C:5E:0C:00:00:02', signal: '-63', 'tx-rate': '286800000', 'rx-rate': '258000000', bytes: '5,6' }, { interface: 'wifi1' }]);
+ok('wifi registration row', wifi.length === 1 && wifi[0].signal === -63 && wifi[0].txRate === 286.8 && wifi[0].rxRate === 258 && wifi[0].ccq === undefined && wifi[0].name === '4C:5E:0C:00:00:02');
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('Link pairing tests passed.');

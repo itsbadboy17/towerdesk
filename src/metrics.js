@@ -86,6 +86,48 @@ async function pollMikrotik(device, s, now) {
   if (sys.cpuLoad !== undefined) push(s.cpu, sys.cpuLoad);
   s.mem = sys.totalMemory ? Math.round(((sys.totalMemory - sys.freeMemory) / sys.totalMemory) * 100) : null;
   s.uptime = sys.uptime || null;
+  // Wireless registration table (a MikroTik sector). Probed once: a router with no wireless
+  // menu is remembered and never asked again, so it costs nothing on plain routers.
+  if (s.regCommand !== false) {
+    let reg;
+    try {
+      reg = await mikrotik.readRegistration(s.session, s.regCommand);
+    } catch (e) {
+      // The connection dropped while probing (e.g. a router that never answers the menu): stop
+      // asking, so a quirky router cannot turn every poll into a reconnect.
+      if (!s.regCommand) s.regCommand = false;
+      throw e;
+    }
+    s.regCommand = reg ? reg.command : false;
+    applyStations(s, reg ? reg.stations : [], now);
+  }
+}
+
+// Connected stations of an access point, with live per-station throughput from byte-counter
+// deltas (same idea as interfaces). No stations -> not a sector.
+function applyStations(s, stations, now) {
+  if (!stations || !stations.length) {
+    s.stations = null;
+    if (s.kind === 'stations') s.kind = null;
+    return;
+  }
+  s.staPrev = s.staPrev || {};
+  s.stations = stations.map((c) => {
+    let rxBps, txBps;
+    if (c.rxBytes !== undefined && c.txBytes !== undefined) {
+      const p = s.staPrev[c.mac];
+      if (p && now > p.t) {
+        const dt = (now - p.t) / 1000;
+        rxBps = Math.max(0, Math.round(((c.rxBytes - p.rx) * 8) / dt));
+        txBps = Math.max(0, Math.round(((c.txBytes - p.tx) * 8) / dt));
+      }
+      s.staPrev[c.mac] = { rx: c.rxBytes, tx: c.txBytes, t: now };
+    }
+    return { name: c.name, ip: c.ip, mac: c.mac, signal: c.signal, ccq: c.ccq, txRate: c.txRate, rxRate: c.rxRate, platform: c.platform, rxBps, txBps };
+  }).sort((a, b) => (b.rxBps || 0) + (b.txBps || 0) - ((a.rxBps || 0) + (a.txBps || 0)));
+  const macs = new Set(stations.map((x) => x.mac));
+  for (const m of Object.keys(s.staPrev)) if (!macs.has(m)) delete s.staPrev[m];
+  s.kind = 'stations';
 }
 
 async function pollTplink(device, s) {
@@ -140,30 +182,8 @@ async function pollAiros(device, s, now) {
   s.ccq = st.ccq;
   s.radio = st.radio || null;
   s.model = st.model || s.model;
-  // Point-to-multipoint AP: build the connected-subscriber list with live per-station throughput
-  // from byte-counter deltas (same idea as interfaces). Point-to-point links report no stations.
-  if (st.stations && st.stations.length) {
-    s.staPrev = s.staPrev || {};
-    s.stations = st.stations.map((c) => {
-      let rxBps, txBps;
-      if (c.rxBytes !== undefined && c.txBytes !== undefined) {
-        const p = s.staPrev[c.mac];
-        if (p && now > p.t) {
-          const dt = (now - p.t) / 1000;
-          rxBps = Math.max(0, Math.round(((c.rxBytes - p.rx) * 8) / dt));
-          txBps = Math.max(0, Math.round(((c.txBytes - p.tx) * 8) / dt));
-        }
-        s.staPrev[c.mac] = { rx: c.rxBytes, tx: c.txBytes, t: now };
-      }
-      return { name: c.name, ip: c.ip, mac: c.mac, signal: c.signal, ccq: c.ccq, txRate: c.txRate, rxRate: c.rxRate, platform: c.platform, rxBps, txBps };
-    }).sort((a, b) => (b.rxBps || 0) + (b.txBps || 0) - ((a.rxBps || 0) + (a.txBps || 0)));
-    const macs = new Set(st.stations.map((x) => x.mac));
-    for (const m of Object.keys(s.staPrev)) if (!macs.has(m)) delete s.staPrev[m];
-    s.kind = 'stations';
-  } else {
-    s.stations = null;
-    if (s.kind === 'stations') s.kind = null;
-  }
+  // Point-to-multipoint AP: the connected-subscriber list. Point-to-point links report none.
+  applyStations(s, st.stations, now);
 }
 
 async function pollMimosa(device, s, now) {

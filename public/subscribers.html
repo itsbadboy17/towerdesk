@@ -164,7 +164,7 @@
                 <option value="online">Online</option>
                 <option value="offline">Offline</option>
             </select>
-            <input type="search" id="sub-search" placeholder="Search name, username or IP…" aria-label="Search subscribers" />
+            <input type="search" id="sub-search" placeholder="Search name, username, IP, MAC or sector…" aria-label="Search subscribers" />
         </div>
 
         <div class="card">
@@ -178,7 +178,7 @@
                                 <th>Subscriber</th>
                                 <th>Plan</th>
                                 <th>IP</th>
-                                <th>Sector / NAS</th>
+                                <th>Sector / radio</th>
                                 <th>Session</th>
                                 <th>Data (↓ / ↑)</th>
                                 <th>Live rate</th>
@@ -247,6 +247,18 @@
                 el.hidden = true;
             }
 
+            // Where the subscriber is on the tower: the sector radio it is registered on (matched by
+            // MAC address), with its signal. Falls back to the NAS name SAS reports.
+            function stationCell(r) {
+                var st = r.station;
+                if (!st) return esc(r.nas || '—') + (r.mac ? '<div class="mono" style="color:var(--text-muted)">' + esc(r.mac) + '</div>' : '');
+                var bits = [];
+                if (st.signal !== null) bits.push(st.signal + ' dBm');
+                if (st.ccq !== null) bits.push('CCQ ' + st.ccq + '%');
+                return '<strong>' + esc(st.sectorName) + '</strong>' + (bits.length ? ' <span class="mono">· ' + esc(bits.join(' · ')) + '</span>' : '') +
+                    '<div class="mono" style="color:var(--text-muted)">' + esc(st.name || '') + (st.name ? ' · ' : '') + esc(st.mac) + (st.near ? ' (≈ MAC one step off)' : '') + '</div>';
+            }
+
             function render() {
                 var q = search.value.trim().toLowerCase();
                 var f = filter.value;
@@ -261,7 +273,8 @@
                     if (f === 'online' && !r.online) return false;
                     if (f === 'offline' && r.online) return false;
                     if (!q) return true;
-                    return (r.name + ' ' + r.username + ' ' + (r.framedIp || '')).toLowerCase().indexOf(q) !== -1;
+                    var st = r.station || {};
+                    return (r.name + ' ' + r.username + ' ' + (r.framedIp || '') + ' ' + (r.mac || '') + ' ' + (st.sectorName || '') + ' ' + (st.name || '')).toLowerCase().indexOf(q) !== -1;
                 });
                 list.sort(function (a, b) { return (b.online ? 1 : 0) - (a.online ? 1 : 0) || (b.liveDownBps || 0) - (a.liveDownBps || 0); });
 
@@ -273,7 +286,7 @@
                         '<td>' + esc(r.name) + '<div class="mono" style="color:var(--text-muted)">' + esc(r.username) + '</div></td>' +
                         '<td><span class="plan-badge">' + esc(r.plan) + '</span>' + (r.rateDown ? '<div class="mono" style="color:var(--text-muted)">' + esc(rate(r.rateDown, r.rateUp)) + '</div>' : '') + '</td>' +
                         '<td><span class="mono">' + esc(r.framedIp || '—') + '</span></td>' +
-                        '<td>' + esc(r.nas || '—') + '</td>' +
+                        '<td>' + stationCell(r) + '</td>' +
                         '<td><span class="mono">' + esc(r.sessionText || '—') + '</span></td>' +
                         '<td><span class="mono">↓ ' + bytes(r.bytesDown) + ' · ↑ ' + bytes(r.bytesUp) + '</span></td>' +
                         '<td><span class="mono">' + (r.online ? '↓ ' + bps(r.liveDownBps) + ' · ↑ ' + bps(r.liveUpBps) : '—') + '</span></td>' +

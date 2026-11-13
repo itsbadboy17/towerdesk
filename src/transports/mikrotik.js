@@ -201,6 +201,55 @@ async function readInterfaces(session) {
   })).filter((i) => i.name && i.rxBytes !== undefined);
 }
 
+// ---- Wireless registration table (the stations connected to a MikroTik access point) ----
+// Legacy wireless package and the newer wifi (wifiwave2) package use different menus and field
+// formats; parseRegistration accepts both. Read-only.
+const REG_COMMANDS = ['/interface/wireless/registration-table/print', '/interface/wifi/registration-table/print'];
+
+function mbps(v) {
+  if (v === undefined || v === '') return undefined;
+  const s = String(v);
+  const m = /([\d.]+)\s*Mbps/i.exec(s);          // legacy: "144.4Mbps-20MHz/2S/SGI"
+  if (m) return Math.round(parseFloat(m[1]) * 10) / 10;
+  const n = Number(s);                            // wifi: plain bits per second
+  return Number.isFinite(n) ? Math.round(n / 1e5) / 10 : undefined;
+}
+
+// Pure: rows from either registration-table menu -> the station shape the metrics layer uses.
+// Byte counters are from the access point's side: tx = sent to the client, rx = from the client.
+function parseRegistration(rows) {
+  return (rows || []).map((r) => {
+    const sig = /-?\d+/.exec(String(r['signal-strength'] !== undefined ? r['signal-strength'] : (r.signal !== undefined ? r.signal : '')));
+    const bytes = String(r.bytes || '').split(',');
+    return {
+      name: r['radio-name'] || r.comment || r['last-ip'] || r['mac-address'],
+      ip: r['last-ip'] || undefined,
+      mac: r['mac-address'],
+      signal: sig ? Number(sig[0]) : undefined,
+      ccq: num(r['tx-ccq']),
+      txRate: mbps(r['tx-rate']),
+      rxRate: mbps(r['rx-rate']),
+      platform: r.interface || undefined,
+      txBytes: num(bytes[0]),
+      rxBytes: num(bytes[1])
+    };
+  }).filter((x) => x.mac);
+}
+
+// Reads the registration table with whichever menu this router has. Returns { command, stations }
+// or null when the router has no wireless at all. `command` lets the caller skip the probing next
+// time. Never throws for a missing menu.
+async function readRegistration(session, knownCommand) {
+  for (const cmd of (knownCommand ? [knownCommand] : REG_COMMANDS)) {
+    try {
+      return { command: cmd, stations: parseRegistration(await session.run([cmd])) };
+    } catch (e) {
+      if (session.closed) throw e; // a dropped connection is a real error, not "no such menu"
+    }
+  }
+  return null;
+}
+
 // Turn on SNMP and make sure the given read-only community exists. This WRITES to the router
 // (the only non-read-only operation in TowerDesk) and needs an API user with write permission.
 // It never changes the community's address restrictions and never removes anything.
@@ -237,4 +286,4 @@ async function test(opts) {
   }
 }
 
-module.exports = { test, Session, readSystem, readInterfaces, enableSnmp, isAuthError, encodeSentence, parseSentences };
+module.exports = { test, Session, readSystem, readInterfaces, readRegistration, parseRegistration, enableSnmp, isAuthError, encodeSentence, parseSentences };

@@ -115,7 +115,7 @@
             '<div class="traffic-head"><span><strong>' + esc(top.name) + '</strong> <span class="muted">· ' + esc(m.source) + '</span></span>' +
             '<span class="legend"><span class="rx">↓ ' + esc(bps(top.rxBps)) + '</span><span class="tx">↑ ' + esc(bps(top.txBps)) + '</span></span></div>' +
             trafficChart(top.rx, top.tx) +
-            (m.kind === 'stations' ? ''
+            (m.kind === 'stations' && m.interfaces.length < 2 ? ''
             : m.kind === 'clients'
                 ? (m.clients && m.clients.length
                     ? '<table class="iface-table"><thead><tr><th>Device (' + esc(m.clientCount) + ' online)</th><th>↓ Down</th><th>↑ Up</th></tr></thead><tbody>' +
@@ -146,7 +146,9 @@
                 if (!j) return;
                 sas.configured = !!j.configured;
                 sas.byMac = {};
-                (j.subscribers || []).forEach(function (s) { var k = macKey(s.mac); if (k.length === 12) sas.byMac[k] = s; });
+                // The server traces each subscriber to its station (exact MAC, or one step off when
+                // unambiguous), so index by the station's MAC.
+                (j.subscribers || []).forEach(function (s) { var k = macKey(s.station ? s.station.mac : ''); if (k.length === 12) sas.byMac[k] = s; });
                 if (detailId && lastData) {
                     var dd = lastData.devices.find(function (x) { return x.id === detailId; });
                     var body = document.getElementById('detail-modal-body');
@@ -163,7 +165,7 @@
             var s = sas.byMac[macKey(c.mac)];
             if (s) matched++;
             var user = s
-                ? '<strong>' + esc(s.username) + '</strong><div class="muted">' + esc(s.plan || '') + (s.online === false ? ' · session offline' : '') + '</div>'
+                ? '<strong>' + esc(s.username) + '</strong><div class="muted">' + esc(s.plan || '') + (s.online === false ? ' · session offline' : '') + (s.station && s.station.near ? ' · ≈ MAC one step off' : '') + '</div>'
                 : '<span class="muted">' + (sas.configured ? 'Not in SAS' : '—') + '</span>';
             var rate = (c.txRate != null || c.rxRate != null) ? (c.txRate != null ? c.txRate : '–') + '/' + (c.rxRate != null ? c.rxRate : '–') : '–';
             return '<tr><td>' + esc(c.name || c.ip || c.mac) + (c.platform ? '<div class="muted">' + esc(c.platform) + '</div>' : '') + '</td>' +

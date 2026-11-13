@@ -563,7 +563,11 @@ const subscribers = require('./src/subscribers');
 app.get('/api/radius/subscribers', async (req, res) => {
   try {
     const demo = process.env.TOWERDESK_DEMO === '1' || (req.query && req.query.demo === '1');
-    res.json(await subscribers.list({ demo }));
+    const out = await subscribers.list({ demo });
+    // Trace each subscriber to the sector radio it is registered on (matched by MAC).
+    const snap = demo ? require('./src/demo').snapshot() : monitor.snapshot();
+    out.match = require('./src/lookup').attachStations(out.subscribers, snap.devices);
+    res.json(out);
   } catch (e) {
     res.status(500).json({ error: 'Failed to load subscribers' });
   }

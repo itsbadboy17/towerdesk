@@ -58,3 +58,11 @@
 - SAS match: stations are matched to RADIUS/SAS sessions by MAC address (same MAC when the PPPoE user is dialled on the CPE radio), showing the PPPoE username + plan, or "Not in SAS". Fetched from the existing /api/radius/subscribers at most every 30 s, only while a sector is open.
 - Demo: East backhaul has both ends, North backhaul slave only; sector stations carry the demo SAS MACs plus one unmatched radio.
 - test/links.js (19 assertions) added to npm test. No dependency added. npm test + QA 655/655 pass.
+
+## Subscriber lookup + MikroTik sector registration
+- src/lookup.js (pure): traces each RADIUS/SAS subscriber to the sector station it is registered on, by MAC. Exact match first; a MAC one step off (last byte +/-1, PPPoE dialled on another port of the CPE) is accepted only when unambiguous and flagged `near`. /api/radius/subscribers now returns `station` per subscriber and a `match` summary.
+- SAS page: "Sector / radio" column shows the sector, signal, CCQ, station name and MAC; search also matches MAC and sector name.
+- Monitoring registration table uses the same server-side match (so it gets the near-match rule too).
+- MikroTik sectors: the wireless registration table (legacy wireless and the wifi package) is read through the existing API session and becomes the station list. Probed once per device; a router with no wireless menu is never asked again. Station rate code shared with airOS (applyStations), not duplicated.
+- Tests: fake MikroTik serves a registration table (fields, live rates, role=sector); 10 new lookup/parser assertions in test/links.js. No dependency added. npm test + QA 655/655 pass.
+- Not verified on a real MikroTik AP or a real SAS.

@@ -53,6 +53,13 @@ function fakeMikrotik() {
         } else if (s[0] === '/snmp/set') {
           if (s.includes('=enabled=yes')) mtStats.snmpEnabled = true;
           sock.write(encodeSentence(['!done']));
+        } else if (s[0] === '/interface/wireless/registration-table/print') {
+          // One station; the AP sends it ~2 Mbit/s and receives ~0.4 Mbit/s.
+          const secs = (Date.now() - startedAt) / 1000;
+          sock.write(Buffer.concat([
+            encodeSentence(['!re', '=interface=wlan1', '=radio-name=CPE-Ali', '=mac-address=4C:5E:0C:AA:BB:01', '=last-ip=10.5.5.20', '=signal-strength=-61dBm@6Mbps', '=tx-ccq=93', '=tx-rate=144.4Mbps-20MHz/2S/SGI', '=rx-rate=130Mbps-20MHz/2S', '=bytes=' + Math.round(secs * 250000) + ',' + Math.round(secs * 50000)]),
+            encodeSentence(['!done'])
+          ]));
         } else if (s[0] === '/interface/print') {
           // ether1 moves ~10 Mbit/s down, 2 Mbit/s up.
           const secs = (Date.now() - startedAt) / 1000;
@@ -445,6 +452,12 @@ async function freeUdpPort() {
     assert.ok(e1.txBps > 1.5e6 && e1.txBps < 2.5e6, 'ether1 tx ~2 Mbit/s, got ' + e1.txBps);
     assert.strictEqual(m.cpu.now, 7);
     assert.strictEqual(m.memPct, 50);
+    // MikroTik sector: the wireless registration table becomes the station list, with live rates.
+    const sta = m.stations && m.stations[0];
+    assert.ok(m.kind === 'stations' && m.stationCount === 1 && sta, 'mikrotik registration table: ' + JSON.stringify(m.stations));
+    assert.ok(sta.mac === '4C:5E:0C:AA:BB:01' && sta.name === 'CPE-Ali' && sta.signal === -61 && sta.ccq === 93 && sta.txRate === 144.4 && sta.rxRate === 130, 'mikrotik station fields: ' + JSON.stringify(sta));
+    assert.ok(sta.txBps > 1.5e6 && sta.txBps < 2.5e6 && sta.rxBps > 3e5 && sta.rxBps < 5e5, 'mikrotik station rates: ' + JSON.stringify(sta));
+    assert.strictEqual(live.role, 'sector', 'a MikroTik with registered stations is a sector');
     // ~5 polls in 2 s must share one persistent API session (at most one login).
     assert.ok(mtStats.logins - loginsBeforePolling <= 1, 'polling must reuse one API session, saw ' + (mtStats.logins - loginsBeforePolling) + ' logins');
 
