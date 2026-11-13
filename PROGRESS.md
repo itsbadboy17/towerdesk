@@ -102,3 +102,7 @@
 ## 0.1.4
 - Updater defaults to the project repository (itsbadboy17/towerdesk), now public, so no repo name or token has to be entered. Still only contacted when Check for updates is pressed.
 - Git history rewritten to a GitHub no-reply author address before publishing; the old private repo is kept as towerdesk-private.
+
+## 0.1.5
+- Updater unpacks with the Windows tar.exe by full path (Git's tar earlier on PATH could not read the zip). Found by a real end-to-end update test: 0.1.3 copy -> 0.1.4 from the public repo, no token.
+- Known limit: a self-update replaces app files only, not node_modules; a release that adds a dependency needs the full zip.

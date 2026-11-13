@@ -188,9 +188,13 @@ function stageFromDir(srcDir) {
 
 function extract(zipPath, destDir) {
   // Windows 10+ ships bsdtar as tar.exe, which extracts .zip and .tar.gz with no npm dependency.
+  // Ask for it by full path: a different tar earlier on PATH (Git's GNU tar) cannot read .zip
+  // and takes "C:" for a remote host.
+  const sysTar = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
+  const tar = fs.existsSync(sysTar) ? sysTar : 'tar';
   return new Promise((resolve, reject) => {
     fs.mkdirSync(destDir, { recursive: true });
-    execFile('tar', ['-xf', zipPath, '-C', destDir], (err) => (err ? reject(new Error('Could not unpack the update (' + err.message + ').')) : resolve()));
+    execFile(tar, ['-xf', zipPath, '-C', destDir], (err) => (err ? reject(new Error('Could not unpack the update (' + err.message + ').')) : resolve()));
   });
 }
 
