@@ -66,3 +66,11 @@
 - MikroTik sectors: the wireless registration table (legacy wireless and the wifi package) is read through the existing API session and becomes the station list. Probed once per device; a router with no wireless menu is never asked again. Station rate code shared with airOS (applyStations), not duplicated.
 - Tests: fake MikroTik serves a registration table (fields, live rates, role=sector); 10 new lookup/parser assertions in test/links.js. No dependency added. npm test + QA 655/655 pass.
 - Not verified on a real MikroTik AP or a real SAS.
+
+## No false "disconnected" alerts + SAS Radius 4 source
+- Monitor: devices are grouped by network (IPv4 /24). When a network has 2+ devices and none answers (VPN closed / uplink out) those devices become "unknown/unreachable" instead of offline: no per-device event or alert, no downtime recorded, open offline alerts for them are closed, and one banner + one "Network x unreachable" event covers it. A device on another network that still answers (e.g. the home router) does not hide this.
+- An offline alert now needs 3 failed checks in a row (alerts.OFFLINE_CONFIRM), so a single dropped ping raises nothing.
+- On opening the app, a device not yet checked in this run shows "Checking…" rather than the status saved when the app was last closed.
+- SAS Radius 4 subscriber source (src/transports/sas4.js, read-only): logs in to the SAS 4 admin API with a manager account and lists open sessions (index/online, paged); payload wrapping done with node:crypto (no dependency). Password encrypted at rest via storage.encrypt, one login reused ~50 min, live speed derived from byte-counter growth. Selectable under SAS > Connect server.
+- Tests: fake SAS 4 panel (13 assertions), alert debounce + per-network unreachable (11 assertions). npm test passes. Playwright QA NOT run for this change (user asked to hold QA until the site is finished).
+- Not verified against a real SAS 4 server.

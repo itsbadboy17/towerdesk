@@ -6,6 +6,7 @@ const path = require('path');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'towerdesk-links-'));
 process.env.TOWERDESK_DATA_DIR = tmp;
+process.env.TOWERDESK_HISTORY = 'off';
 
 const { pairLinks } = require('../src/links');
 const devices = require('../src/devices');
@@ -106,5 +107,45 @@ ok('legacy registration row', legacy.signal === -58 && legacy.ccq === 97 && lega
 const wifi = parseRegistration([{ interface: 'wifi1', 'mac-address': '4C:5E:0C:00:00:02', signal: '-63', 'tx-rate': '286800000', 'rx-rate': '258000000', bytes: '5,6' }, { interface: 'wifi1' }]);
 ok('wifi registration row', wifi.length === 1 && wifi[0].signal === -63 && wifi[0].txRate === 286.8 && wifi[0].rxRate === 258 && wifi[0].ccq === undefined && wifi[0].name === '4C:5E:0C:00:00:02');
 
-fs.rmSync(tmp, { recursive: true, force: true });
-console.log('Link pairing tests passed.');
+// ---- False "disconnected" alerts: one missed check, or the whole network being unreachable ----
+const alerts = require('../src/alerts');
+const dev = { id: 'dv1', name: 'Sector', ip: '10.1.1.1' };
+const openCount = () => alerts.summary().active;
+alerts.evaluate(dev, { online: false, downStreak: 1 });
+alerts.evaluate(dev, { online: false, downStreak: 2 });
+ok('no alert for a brief drop', openCount() === 0);
+alerts.evaluate(dev, { online: false, downStreak: alerts.OFFLINE_CONFIRM });
+ok('alert after repeated failed checks', openCount() === 1);
+alerts.networkUnreachable(dev.id);
+ok('network unreachable closes device alerts', openCount() === 0);
+
+(async () => {
+  // Every device unreachable at once (192.0.2.x never answers) = the path to the tower is down:
+  // statuses become unknown, one network event is logged, and no per-device alert is raised.
+  devices.list().forEach((d) => devices.remove(d.id));
+  devices.add({ name: 'T1', type: 'other', ip: '192.0.2.1', method: 'ping' });
+  devices.add({ name: 'T2', type: 'other', ip: '192.0.2.2', method: 'ping' });
+  const monitor = require('../src/monitor');
+  ok('not checked yet shows unknown, not offline', monitor.snapshot().devices.every((d) => d.online === null));
+  for (let i = 0; i < alerts.OFFLINE_CONFIRM + 1; i++) await monitor.tick();
+  const ms = monitor.snapshot();
+  ok('all unreachable flags the network', ms.networkDown === true && ms.unreachableNetworks.join() === '192.0.2.x');
+  ok('devices are unknown, not offline', ms.devices.every((d) => d.online === null && d.unreachable === true) && ms.summary.offline === 0);
+  ok('one network event, no device events', ms.events.length === 1 && ms.events[0].id === 'network' && ms.events[0].online === false);
+  ok('no alerts while the network is down', openCount() === 0);
+
+  // A device on another network that still answers (like the home router) does not hide it,
+  // and a lone unreachable device on its own network is a normal offline.
+  devices.add({ name: 'Local', type: 'other', ip: '127.0.0.1', method: 'ping' });
+  devices.add({ name: 'Lone', type: 'other', ip: '198.51.100.9', method: 'ping' });
+  for (let i = 0; i < alerts.OFFLINE_CONFIRM; i++) await monitor.tick();
+  const m2 = monitor.snapshot();
+  const dn = (name) => m2.devices.find((d) => d.name === name);
+  ok('network still flagged with a local device online', m2.networkDown === true && dn('Local').online === true && dn('Local').unreachable === false);
+  ok('tower devices stay unknown', dn('T1').online === null && dn('T2').online === null);
+  ok('lone unreachable device is a normal offline with an alert', dn('Lone').online === false && dn('Lone').unreachable === false && openCount() === 1);
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+  console.log('Link pairing tests passed.');
+  process.exit(0);
+})();

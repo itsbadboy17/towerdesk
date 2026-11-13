@@ -8,6 +8,7 @@ const { dataDir } = require('./paths');
 const FILE = path.join(dataDir(), 'alerts.json');
 const KEEP_RESOLVED = 200;
 const LATENCY_WARN_MS = Number(process.env.TOWERDESK_LATENCY_WARN_MS) || 200;
+const OFFLINE_CONFIRM = 3; // failed checks in a row (30 s at the default interval)
 
 let alerts = null;
 
@@ -65,10 +66,20 @@ function resolve(deviceId, kind, note) {
   return a;
 }
 
-// Called by the monitor after each check of a device.
-function evaluate(device, { online, recentLatencies }) {
+// The whole tower network is unreachable (e.g. the VPN is closed): a per-device "offline" alert
+// would be wrong, so close any that are open.
+function networkUnreachable(deviceId) {
+  resolve(deviceId, 'offline', 'Tower network unreachable — status unknown');
+  resolve(deviceId, 'latency');
+}
+
+// Called by the monitor after each check of a device. An offline alert needs OFFLINE_CONFIRM
+// failed checks in a row, so one dropped ping (or the moment a VPN reconnects) raises nothing.
+function evaluate(device, { online, downStreak, recentLatencies }) {
   if (online === false) {
-    open(device, 'offline', 'critical', `${device.name} (${device.ip}) is not responding`);
+    if (downStreak === undefined || downStreak >= OFFLINE_CONFIRM) {
+      open(device, 'offline', 'critical', `${device.name} (${device.ip}) is not responding`);
+    }
     resolve(device.id, 'latency'); // latency is meaningless while down
     return;
   }
@@ -123,4 +134,4 @@ function summary() {
   };
 }
 
-module.exports = { evaluate, forgetDevice, acknowledge, list, summary, LATENCY_WARN_MS };
+module.exports = { evaluate, networkUnreachable, OFFLINE_CONFIRM, forgetDevice, acknowledge, list, summary, LATENCY_WARN_MS };

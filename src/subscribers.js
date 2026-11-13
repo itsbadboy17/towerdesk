@@ -13,7 +13,7 @@ const storage = require('./storage');
 const { dataDir } = require('./paths');
 
 const FILE = path.join(dataDir(), 'radius.json');
-const SOURCES = ['demo', 'mikrotik', 'freeradius'];
+const SOURCES = ['demo', 'sas4', 'mikrotik', 'freeradius'];
 
 // ---- Config (data/radius.json). The server secret is encrypted at rest, never returned. ----
 function loadConfig() {
@@ -195,6 +195,53 @@ async function mikrotikSubs(cfg) {
   }
 }
 
+// ---- SAS Radius 4 source: open sessions from the SAS 4 admin API (read-only). ----
+// One login is reused for ~50 minutes (the token lasts about an hour). Live speed is not in the
+// API, so it is worked out from how much each session's byte counters grew since the last read.
+const sas4State = { session: null, key: '', prev: new Map() };
+async function sas4Subs(cfg) {
+  const sas4 = require('./transports/sas4');
+  const key = [cfg.host, cfg.username, cfg.secret].join('|');
+  try {
+    let rows;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (!sas4State.session || sas4State.key !== key || Date.now() - sas4State.session.openedAt > 50 * 60 * 1000) {
+        sas4State.session = await sas4.Sas4Session.login({ host: cfg.host, username: cfg.username, password: cfg.secret ? storage.decrypt(cfg.secret) : '' });
+        sas4State.key = key;
+      }
+      try { rows = await sas4State.session.online(); break; } catch (e) {
+        sas4State.session = null;
+        if (!e.expired || attempt) throw e; // expired token: log in once more
+      }
+    }
+    const now = Date.now();
+    const seen = new Map();
+    const subs = rows.map((row) => {
+      const m = sas4.mapSession(row);
+      const p = sas4State.prev.get(m.id);
+      let down = null, up = null;
+      if (p && now > p.t && m.bytesDown !== null && m.bytesUp !== null && m.bytesDown >= p.down && m.bytesUp >= p.up) {
+        const dt = (now - p.t) / 1000;
+        down = Math.round(((m.bytesDown - p.down) * 8) / dt);
+        up = Math.round(((m.bytesUp - p.up) * 8) / dt);
+      }
+      if (m.bytesDown !== null && m.bytesUp !== null) seen.set(m.id, { down: m.bytesDown, up: m.bytesUp, t: now });
+      return {
+        id: m.id, username: m.username, name: m.name, plan: m.plan, rateDown: null, rateUp: null, online: true,
+        framedIp: m.framedIp, mac: m.mac, nas: m.nas || cfg.nas || 'SAS 4',
+        sessionStart: m.sessionSeconds ? new Date(now - m.sessionSeconds * 1000).toISOString() : null,
+        sessionSeconds: m.sessionSeconds, sessionText: m.sessionSeconds ? hms(m.sessionSeconds) : '—',
+        bytesDown: m.bytesDown, bytesUp: m.bytesUp, liveDownBps: down, liveUpBps: up,
+        signal: null, lastSeen: new Date(now).toISOString()
+      };
+    });
+    sas4State.prev = seen;
+    return { subscribers: subs, note: null };
+  } catch (e) {
+    return { subscribers: [], note: e.message };
+  }
+}
+
 // ---- Public: list current subscribers from whichever source is configured. ----
 async function list(opts) {
   opts = opts || {};
@@ -211,6 +258,10 @@ async function list(opts) {
   if (source === 'mikrotik') {
     const r = await mikrotikSubs(cfg);
     return { source: 'mikrotik', configured: true, server: cfg.host || 'MikroTik NAS', note: r.note, summary: summarise(r.subscribers), subscribers: r.subscribers };
+  }
+  if (source === 'sas4') {
+    const r = await sas4Subs(cfg);
+    return { source: 'sas4', configured: true, server: cfg.host || 'SAS Radius 4', note: r.note, summary: summarise(r.subscribers), subscribers: r.subscribers };
   }
   if (source === 'freeradius') {
     // SQL-backed FreeRADIUS needs a DB driver; not bundled to keep the app offline/portable.

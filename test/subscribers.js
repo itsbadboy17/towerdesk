@@ -63,5 +63,64 @@ function ok(name, cond) {
   const afterOff = await subs.list({});
   ok('disconnected is empty', afterOff.source === 'none' && afterOff.configured === false);
 
+  // ---- SAS Radius 4 source, against a fake panel that speaks the same wrapped-payload API ----
+  const http = require('http');
+  const sas4 = require('../src/transports/sas4');
+  ok('sas4 payload round-trips', sas4.decrypt(sas4.encrypt('{"a":1}')) === '{"a":1}');
+  ok('sas4 payload is salted + random', /^U2FsdGVkX1/.test(sas4.encrypt('x')) && sas4.encrypt('x') !== sas4.encrypt('x'));
+  ok('sas4 address forms', sas4.baseUrls('sas.example.com').join() === 'https://sas.example.com/admin/api/index.php/api/,http://sas.example.com/admin/api/index.php/api/' &&
+    sas4.baseUrls('http://10.0.0.5:8080/admin/').join() === 'http://10.0.0.5:8080/admin/api/index.php/api/');
+
+  const SAS_PASS = 'm4nager-' + Math.random().toString(16).slice(2);
+  const stats = { logins: 0, octets: 1000000 };
+  const fake = http.createServer((req, res) => {
+    let b = '';
+    req.on('data', (d) => { b += d; });
+    req.on('end', () => {
+      let body;
+      try { body = JSON.parse(sas4.decrypt(JSON.parse(b).payload)); } catch (e) { res.writeHead(400); return res.end('{}'); }
+      const send = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
+      if (req.url === '/admin/api/index.php/api/login') {
+        if (body.username === 'manager' && body.password === SAS_PASS) { stats.logins++; return send(200, { status: 200, token: 'tok-' + stats.logins }); }
+        return send(401, { status: 401, message: 'Invalid credentials' });
+      }
+      if (req.url === '/admin/api/index.php/api/index/online') {
+        if (req.headers.authorization !== 'Bearer tok-' + stats.logins) return send(401, {});
+        stats.octets += 2500000; // 2.5 MB more downloaded on every read
+        const rows = body.page === 1
+          ? [{ id: 11, username: 'ali@net', user_profile_name: '20M', framedipaddress: '10.8.0.11', callingstationid: 'AA:BB:CC:00:00:01', acctsessiontime: 3700, acctoutputoctets: stats.octets, acctinputoctets: 5000 }]
+          : [{ id: 12, username: 'sara@net', user_profile_name: '10M', framedipaddress: '10.8.0.12', callingstationid: 'AA:BB:CC:00:00:02', acctsessiontime: 60, acctoutputoctets: 1, acctinputoctets: 1 }];
+        return send(200, { current_page: body.page, last_page: 2, data: rows });
+      }
+      send(404, {});
+    });
+  });
+  await new Promise((r) => fake.listen(0, '127.0.0.1', r));
+  const sasUrl = 'http://127.0.0.1:' + fake.address().port;
+
+  subs.setConfig({ source: 'sas4', host: sasUrl, username: 'manager', password: 'wrong' });
+  let sr = await subs.list({});
+  ok('sas4 wrong password gives a note, no throw', sr.source === 'sas4' && sr.subscribers.length === 0 && /login/i.test(sr.note));
+
+  const cfgSaved = subs.setConfig({ source: 'sas4', host: sasUrl, username: 'manager', password: SAS_PASS });
+  ok('sas4 config hides password', cfgSaved.hasSecret === true && JSON.stringify(cfgSaved).indexOf(SAS_PASS) === -1);
+  ok('sas4 password encrypted at rest', fs.readFileSync(path.join(tmp, 'radius.json'), 'utf8').indexOf(SAS_PASS) === -1);
+  sr = await subs.list({});
+  ok('sas4 lists both pages', sr.subscribers.length === 2 && sr.note === null && sr.summary.online === 2);
+  const ali = sr.subscribers.find((x) => x.username === 'ali@net');
+  ok('sas4 session fields', ali.plan === '20M' && ali.framedIp === '10.8.0.11' && ali.mac === 'AA:BB:CC:00:00:01' && ali.sessionText === '1h 1m' && ali.online === true);
+  ok('sas4 first read has no live rate yet', ali.liveDownBps === null);
+  await new Promise((r) => setTimeout(r, 300));
+  sr = await subs.list({});
+  const ali2 = sr.subscribers.find((x) => x.username === 'ali@net');
+  ok('sas4 live rate from counter growth', ali2.liveDownBps > 1e6 && ali2.liveUpBps === 0);
+  ok('sas4 reuses one login', stats.logins === 1);
+  ok('sas4 result never contains the password', JSON.stringify(sr).indexOf(SAS_PASS) === -1);
+  fake.close();
+  sr = await subs.list({});
+  ok('sas4 unreachable degrades to a note', sr.subscribers.length === 0 && typeof sr.note === 'string');
+
+  subs.setConfig({ source: 'none' });
+  fs.rmSync(tmp, { recursive: true, force: true });
   console.log('Subscribers module tests passed.');
 })();

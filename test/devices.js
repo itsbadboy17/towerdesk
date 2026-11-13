@@ -498,9 +498,14 @@ async function freeUdpPort() {
     assert.strictEqual(live.online, false);
     assert.strictEqual(res.body.summary.offline, 1);
 
-    // Offline raises a critical alert; acknowledging works; coming back resolves it.
-    res = await call('GET', '/api/alerts');
-    let alert = res.body.alerts.find((a) => a.deviceId === id && !a.resolvedAt);
+    // Offline raises a critical alert — but only after several failed checks in a row, so a
+    // single dropped ping raises nothing. Acknowledging works; coming back resolves it.
+    let alert;
+    for (let i = 0; i < 20 && !alert; i++) {
+      res = await call('GET', '/api/alerts');
+      alert = res.body.alerts.find((a) => a.deviceId === id && !a.resolvedAt);
+      if (!alert) await sleep(300);
+    }
     assert.ok(alert && alert.severity === 'critical' && alert.kind === 'offline', 'offline alert: ' + JSON.stringify(res.body));
     assert.strictEqual(res.body.summary.critical, 1);
     res = await call('POST', '/api/alerts/' + alert.id + '/ack');

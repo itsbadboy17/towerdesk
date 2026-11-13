@@ -96,6 +96,7 @@
                             <select id="rs-source">
                                 <option value="none">Not connected</option>
                                 <option value="demo">Demo data (sample subscribers)</option>
+                                <option value="sas4">SAS Radius 4 (manager login)</option>
                                 <option value="mikrotik">MikroTik NAS (PPPoE / Hotspot)</option>
                                 <option value="freeradius">FreeRADIUS (SQL)</option>
                             </select>
@@ -316,6 +317,7 @@
             var HINTS = {
                 none: 'Pick a source to start pulling subscribers.',
                 demo: 'Sample subscribers for a walkthrough — no server needed.',
+                sas4: 'Enter the address you open SAS Radius 4 at (for example sas.example.com or http://10.0.0.5) and a manager login. TowerDesk only reads the online sessions; it changes nothing in SAS.',
                 mikrotik: 'TowerDesk logs in to the router over the API and lists active PPPoE / Hotspot sessions (read-only).',
                 freeradius: 'Reads sessions from a FreeRADIUS SQL database (not bundled in this portable build yet).'
             };
@@ -324,6 +326,9 @@
                 document.querySelector('[data-rs="conn"]').hidden = (src === 'none' || src === 'demo');
                 document.querySelector('[data-rs="login"]').hidden = (src === 'none' || src === 'demo');
                 document.querySelector('[data-rs="nas"]').hidden = (src === 'none' || src === 'demo');
+                // SAS 4 is reached by its web address (which carries any port), not host + port.
+                $('rs-port').closest('.form-group').hidden = (src === 'sas4');
+                $('rs-host').placeholder = src === 'sas4' ? 'e.g. sas.example.com' : 'e.g. 10.90.0.1';
                 $('rs-hint').textContent = HINTS[src] || '';
             }
             function openSettings() {

@@ -18,27 +18,47 @@ let running = false;
 let timer = null;
 let lastRun = null;
 let pruneCounter = 0;
+let downNets = new Set(); // networks where nothing answers right now
+
+// "10.118.82.7" -> "10.118.82.x"; a hostname is its own group.
+function netKey(ip) {
+  const m = /^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$/.exec(String(ip || '').trim());
+  return m ? m[1] + '.x' : String(ip || '').toLowerCase();
+}
 
 function pushEvent(device, online) {
   events.unshift({ t: new Date().toISOString(), id: device.id, name: device.name, ip: device.ip, online });
   if (events.length > MAX_EVENTS) events.length = MAX_EVENTS;
 }
 
-async function checkOne(device) {
-  let r;
+async function probe(device) {
   try {
-    r = await transports.reachable(device);
+    return await transports.reachable(device);
   } catch (e) {
-    r = { online: false };
+    return { online: false };
   }
+}
+
+// `networkDown` = nothing at all answered this round (typically the VPN to the tower is closed).
+// That says nothing about any single device, so its state becomes "unknown": no offline event,
+// no alert, no downtime recorded — one banner covers it instead of an alert per device.
+async function applyResult(device, r, networkDown) {
   const now = Date.now();
   let s = state.get(device.id);
   if (!s) {
     // Seed the live sparkline from persisted history so a restart doesn't start blank.
     const seed = history.recent(device.id, HISTORY);
-    s = { samples: seed, online: null, since: now };
+    s = { samples: seed, online: null, since: now, downStreak: 0 };
     state.set(device.id, s);
   }
+  if (networkDown) {
+    if (s.online !== null) { s.online = null; s.since = now; }
+    s.downStreak = 0;
+    metrics.pause(device.id);
+    alerts.networkUnreachable(device.id);
+    return;
+  }
+  s.downStreak = r.online ? 0 : s.downStreak + 1;
   if (s.online !== null && s.online !== r.online) pushEvent(device, r.online);
   if (s.online !== r.online) {
     s.since = now;
@@ -48,7 +68,7 @@ async function checkOne(device) {
   s.online = r.online;
   s.samples.push({ t: now, online: r.online, ms: r.online && Number.isFinite(r.latencyMs) ? r.latencyMs : null });
   if (s.samples.length > HISTORY) s.samples.shift();
-  alerts.evaluate(device, { online: r.online, recentLatencies: s.samples.slice(-6).map((x) => x.ms) });
+  alerts.evaluate(device, { online: r.online, downStreak: s.downStreak, recentLatencies: s.samples.slice(-6).map((x) => x.ms) });
   // Traffic/CPU only while the device answers; drop the session while it's down.
   let rxBps = null, txBps = null, cpu = null;
   if (r.online) {
@@ -81,7 +101,22 @@ async function tick() {
     for (const id of state.keys()) {
       if (!ids.has(id)) { state.delete(id); alerts.forgetDevice(id); metrics.forget(id); history.forget(id); }
     }
-    await Promise.all(list.map(checkOne));
+    const results = await Promise.all(list.map(probe));
+    // Devices are grouped by network (IPv4 /24). When a network has two or more devices and
+    // none of them answers, the path to that network is down (VPN closed, uplink out) rather
+    // than every device at once — e.g. the home router still answers while the tower does not.
+    const groups = new Map();
+    list.forEach((d, i) => {
+      const k = netKey(d.ip);
+      const g = groups.get(k) || { n: 0, up: 0 };
+      g.n++; if (results[i].online) g.up++;
+      groups.set(k, g);
+    });
+    const down = new Set([...groups].filter(([, g]) => g.n >= 2 && g.up === 0).map(([k]) => k));
+    for (const k of down) if (!downNets.has(k)) pushEvent({ id: 'network', name: 'Network ' + k, ip: 'unreachable — VPN closed?' }, false);
+    for (const k of downNets) if (!down.has(k)) pushEvent({ id: 'network', name: 'Network ' + k, ip: 'reachable again' }, true);
+    downNets = down;
+    await Promise.all(list.map((d, i) => applyResult(d, results[i], down.has(netKey(d.ip)))));
     lastRun = new Date().toISOString();
     // Drop samples past the retention window every ~5 minutes (30 ticks at 10 s).
     if ((pruneCounter = (pruneCounter + 1) % 30) === 0) history.prune(list.map((d) => d.id));
@@ -141,7 +176,10 @@ function snapshot() {
       role: resolveRole(d, mx),
       provider: d.provider || null,
       peerId: d.peerId || null,
-      online: s ? s.online : (d.status ? d.status.online : null),
+      // Not checked yet in this run (just opened) -> unknown ("checking…"), not the status saved
+      // when the app was last closed.
+      online: s ? s.online : null,
+      unreachable: downNets.has(netKey(d.ip)),
       since: s ? new Date(s.since).toISOString() : null,
       latencyMs: last ? last.ms : null,
       avgLatencyMs: lat.length ? Math.round((lat.reduce((a, b) => a + b, 0) / lat.length) * 10) / 10 : null,
@@ -158,6 +196,8 @@ function snapshot() {
   return {
     intervalMs: INTERVAL_MS,
     lastRun,
+    networkDown: downNets.size > 0,
+    unreachableNetworks: [...downNets],
     summary: {
       total: list.length,
       online,

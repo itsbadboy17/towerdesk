@@ -254,6 +254,7 @@
         var auth = !!AUTH_METHODS[d.method];
         var mx = d.metrics;
         var hasData = !!(mx && !mx.error && !mx.waiting && mx.interfaces && mx.interfaces.length);
+        if (d.unreachable) return { key: 'unknown', label: 'Unreachable', badge: 'warning', hint: 'Nothing on this device\'s network answers — the VPN may be closed. Its real status is unknown.' };
         if (online === false) return { key: 'offline', label: 'Offline', badge: 'critical', hint: 'No reply to ping or the management port.' };
         if (online === null || online === undefined) return { key: 'unknown', label: 'Checking…', badge: 'warning', hint: 'Not checked yet.' };
         if (test && test.ok === false) return { key: 'failed', label: 'Login failed', badge: 'warning', hint: (test.error || 'The chosen connection did not work') + ' — the device answers ping, but this method/login is not working. Fix it or run Auto-detect.' };

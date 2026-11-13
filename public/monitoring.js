@@ -199,7 +199,7 @@
         if (!keys.length) { keys.push(['Now', ms(d.latencyMs)]); keys.push(['Uptime', d.uptimePct === null ? '–' : d.uptimePct + '%']); }
         var top = mx.interfaces && mx.interfaces[0];
         if (top && top.rxBps != null && keys.length < 4) keys.push(['Traffic', bps(top.rxBps)]);
-        keys.push([state === 'offline' ? 'Down' : 'Up', d.since ? ago(d.since) : '–']);
+        keys.push([state === 'offline' ? 'Down' : (state === 'online' ? 'Up' : 'Unknown'), d.since ? ago(d.since) : '–']);
         var statline = keys.slice(0, 4).map(function (k) { return '<div><dt>' + esc(k[0]) + '</dt><dd>' + esc(k[1]) + '</dd></div>'; }).join('');
         return '<article class="live-card compact ' + state + '" data-id="' + esc(d.id) + '" tabindex="0" role="button">' +
             '<header class="live-card-head">' +
@@ -253,9 +253,9 @@
         if (r.snr != null) strip += cell('SNR', r.snr + ' dB');
         if (r.txRate != null || r.rxRate != null) strip += cell('PHY tx/rx', (r.txRate || '–') + '/' + (r.rxRate || '–'));
         if (cap != null) strip += cell('Capacity', cap + '%');
-        strip += cell(state === 'offline' ? 'Down for' : 'Up for', d.since ? ago(d.since) : '–');
+        strip += cell(state === 'offline' ? 'Down for' : (state === 'online' ? 'Up for' : 'Unknown for'), d.since ? ago(d.since) : '–');
         var mid = '<div class="bh-mid"><div class="bh-state ' + (state === 'online' ? 'ok' : state) + '">' +
-            (state === 'offline' ? 'link down' : (state === 'online' ? 'connected' : 'checking…')) + '</div>' +
+            (state === 'offline' ? 'link down' : (state === 'online' ? 'connected' : (d.unreachable ? 'unreachable' : 'checking…'))) + '</div>' +
             '<div class="bh-wire ' + state + '"></div>' +
             '<div class="muted">' + esc([linkTxt, r.freq, signalTxt].filter(Boolean).join(' · ')) + '</div>' +
             '<div class="bh-ends ' + (peer ? 'both' : 'one') + '">' + (peer ? 'Both ends monitored' : 'Slave end only') + '</div></div>';
@@ -374,7 +374,7 @@
                 ? linkEnd('far', peer.name, (dIsMaster ? 'Slave' : 'Master') + ' · ' + modelOf(peer), peer.ip, far, true, peer.id)
                 : linkEnd('far', r.remoteName || det.remote || 'Upstream', 'Master' + (r.remoteModel ? ' · ' + r.remoteModel : ''), '', far, false, '')) +
             '<div class="link-mid">' +
-                '<div class="bh-state ' + (state === 'online' ? 'ok' : state) + '">' + (state === 'offline' ? 'link down' : (state === 'online' ? 'connected' : 'checking…')) + '</div>' +
+                '<div class="bh-state ' + (state === 'online' ? 'ok' : state) + '">' + (state === 'offline' ? 'link down' : (state === 'online' ? 'connected' : (d.unreachable ? 'unreachable' : 'checking…'))) + '</div>' +
                 '<div class="link-beam ' + state + '"><span></span></div>' +
                 (total ? '<div class="link-total">' + esc(total) + '</div><div class="muted">total traffic</div>' : '') +
                 '<div class="muted link-facts">' + esc(facts.join(' · ')) + '</div>' +
@@ -465,6 +465,11 @@
 
     function render(data) {
         lastData = data;
+        var nb = $('net-banner');
+        if (nb) {
+            nb.hidden = !data.networkDown;
+            $('net-banner-nets').textContent = (data.unreachableNetworks || []).length ? ' (' + data.unreachableNetworks.join(', ') + ')' : '';
+        }
         renderProviderTabs(data.devices);
         var shown = selectedProvider === 'all' ? data.devices : data.devices.filter(function (d) { return provKey(d) === selectedProvider; });
         var s = { total: shown.length, online: shown.filter(function (d) { return d.online === true; }).length, offline: shown.filter(function (d) { return d.online === false; }).length };
