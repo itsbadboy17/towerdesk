@@ -98,3 +98,7 @@
 - QA round 2: 705/705 — QA PASSED. (705 = 14 routes incl. the new /topology.)
 - Version 0.1.3; portable zip rebuilt and checked (no data folder, no .git).
 - The hold on per-change QA is lifted for this release; it was run because the user asked for QA + release.
+
+## 0.1.4
+- Updater defaults to the project repository (itsbadboy17/towerdesk), now public, so no repo name or token has to be entered. Still only contacted when Check for updates is pressed.
+- Git history rewritten to a GitHub no-reply author address before publishing; the old private repo is kept as towerdesk-private.
