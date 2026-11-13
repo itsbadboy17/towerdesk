@@ -39,10 +39,14 @@ function isNewer(candidate, base) {
 function loadConfig() {
   try { return JSON.parse(fs.readFileSync(CFG, 'utf8')); } catch (e) { return {}; }
 }
+// The project's own repository: used when the operator has not set another source, so nobody
+// has to type it. Still only contacted when "Check for updates" is pressed.
+const DEFAULT_REPO = 'itsbadboy17/towerdesk';
 // Public view: the access token is never returned, only whether one is saved.
 function getConfig() {
   const c = loadConfig();
-  return { repo: c.repo || '', manifestUrl: c.manifestUrl || '', channel: c.channel || 'release', hasToken: !!c.token };
+  const repo = c.repo || (c.manifestUrl ? '' : DEFAULT_REPO);
+  return { repo, manifestUrl: c.manifestUrl || '', channel: c.channel || 'release', hasToken: !!c.token };
 }
 // A blank token keeps the saved one; clearToken removes it. Stored encrypted at rest.
 function setConfig(input) {
