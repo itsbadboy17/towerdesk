@@ -521,7 +521,7 @@
         $('attention-count').textContent = items.length ? items.length + (items.length === 1 ? ' item' : ' items') : '';
         $('attention-list').innerHTML = items.length
             ? items.slice(0, ATT_MAX).map(function (it) {
-                return '<li class="' + it.sev + '"><button type="button" data-id="' + esc(it.id) + '"><span class="att-dot" aria-hidden="true"></span><span class="att-what">' + esc(it.what) + '</span><span class="att-why">' + esc(it.why) + '</span></button></li>';
+                return '<li class="' + it.sev + '"><a class="att-link" href="/monitoring?open=' + encodeURIComponent(it.id) + (DEMO ? '&demo=1' : '') + '" data-id="' + esc(it.id) + '"><span class="att-dot" aria-hidden="true"></span><span class="att-what">' + esc(it.what) + '</span><span class="att-why">' + esc(it.why) + '</span></a></li>';
             }).join('') + (items.length > ATT_MAX ? '<li class="att-ok">and ' + (items.length - ATT_MAX) + ' more</li>' : '')
             : '<li class="att-ok">Nothing needs attention — every reachable device, link and customer radio looks fine.</li>';
     }
@@ -658,8 +658,9 @@
     var attList = document.getElementById('attention-list');
     if (attList) {
         attList.addEventListener('click', function (e) {
-            var btn = e.target.closest('button[data-id]');
-            if (btn) openDetail(btn.dataset.id);
+            // Links (so they also work opened in a new tab); a plain click opens the card in place.
+            var row = e.target.closest('a[data-id]');
+            if (row && !e.ctrlKey && !e.metaKey && !e.shiftKey) { e.preventDefault(); openDetail(row.dataset.id); }
         });
     }
 

@@ -92,3 +92,9 @@
 - Tests: test/tools.js (21 assertions) added; history, subscribers and links tests extended. npm test passes.
 - Playwright QA NOT run: the run was blocked in this session. tests/qa/helpers.js already lists /topology. The mandatory QA loop and the 0.1.3 release are still to do.
 - Not verified on real hardware: SAS 4 (incl. index/user field names), MikroTik registration, traceroute output on a live network.
+
+## 0.1.3 — QA PASSED, released
+- QA round 1: 699/705, 6 failures, all in click-everything (/monitoring x5, /sas x1): the "Needs attention" rows were buttons, so the test opened the device card and stalled behind it (and started a ping). Fix: rows are links that open the card in place; exporting an empty subscriber list no longer starts a download.
+- QA round 2: 705/705 — QA PASSED. (705 = 14 routes incl. the new /topology.)
+- Version 0.1.3; portable zip rebuilt and checked (no data folder, no .git).
+- The hold on per-change QA is lifted for this release; it was run because the user asked for QA + release.

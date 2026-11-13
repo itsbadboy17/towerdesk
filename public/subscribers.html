@@ -371,6 +371,7 @@
                 if (tr && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openSub(tr.dataset.id); }
             });
             $('sub-export').addEventListener('click', function () {
+                if (!shownList.length) { $('list-note').textContent = 'Nothing to export yet'; return; }
                 window.TowerDesk.exportCsv('subscribers.csv',
                     ['Status', 'Name', 'Username', 'Plan', 'IP', 'MAC', 'Sector', 'Radio', 'Signal (dBm)', 'CCQ (%)', 'Session', 'Downloaded (bytes)', 'Uploaded (bytes)', 'Live down (bps)', 'Live up (bps)', 'Expires', 'Phone'],
                     shownList.map(function (r) {
