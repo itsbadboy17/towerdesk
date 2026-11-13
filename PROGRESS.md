@@ -80,3 +80,15 @@
 - `/` now redirects to `/monitoring` (the sample Overview stays at `/dashboard`).
 - Monitoring: "Needs attention" card above Live Devices — offline devices, failed logins, weak backhaul signal (<= -70 dBm), link >= 85% capacity, CPU >= 85%, and customer radios with signal <= -73 dBm or CCQ < 70% (named by SAS user when matched). Skips devices on an unreachable network. Click an item to open that device. Thresholds are the ATT constants in monitoring.js.
 - npm test passes. Playwright QA NOT run (on hold until the site is finished).
+
+## Batch: tools, subscribers, history, Topology, Overview, Arabic (not yet QA'd or released)
+- Tools: "Open device page" link, Ping / Traceroute (src/tools.js; host validated with the existing isValidHost and passed as one execFile argument, no shell), and "Export to Excel" (CSV with BOM, built in the browser) for the subscriber list and sector registration tables.
+- Backup and restore (src/backup.js, Settings page): one JSON file with data/*.json + secret.key; restore validates, keeps a copy of what it replaces in data/before-restore/, and needs a restart. The file contains the key next to the encrypted passwords — the UI says to keep it private.
+- Subscribers: detail card (click a row), top users, mismatch lists (radios with no SAS user / online users with no radio), and offline SAS 4 accounts via index/user (cached 5 min; falls back to online-only with a note).
+- Station signal history: station_samples table in history.db, one sample per radio every 5 min while the app is open; click a station row in the registration table to see it.
+- Topology page (/topology, nav link injected by app.js) and a real Overview page at / (live totals, needs attention, uplinks, sectors, top users, recent changes). Overview is back in the sidebar.
+- Shared client logic moved to public/insights.js (pairing + attention rules) and TowerDesk.fmt / exportCsv / netTools in app.js — monitoring.js now uses these instead of its own copies.
+- Arabic: public/i18n.js (about 240 phrases + patterns), loaded only when Arabic is chosen; translates in place and restores on switching back. Device names, usernames and technical terms are left as they are. Coverage is the visible pages' main labels, not every sentence.
+- Tests: test/tools.js (21 assertions) added; history, subscribers and links tests extended. npm test passes.
+- Playwright QA NOT run: the run was blocked in this session. tests/qa/helpers.js already lists /topology. The mandatory QA loop and the 0.1.3 release are still to do.
+- Not verified on real hardware: SAS 4 (incl. index/user field names), MikroTik registration, traceroute output on a live network.

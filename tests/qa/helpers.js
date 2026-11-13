@@ -16,6 +16,7 @@ export const routes = [
   "/plans",
   "/remote",
   "/settings",
+  "/topology",
 ];
 
 export const waitForPageStable = async (page) => {

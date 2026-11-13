@@ -83,6 +83,17 @@
         after.parentNode.parentNode.insertBefore(li, after.parentNode.nextSibling);
     }
 
+    // Arabic interface text lives in /i18n.js and is fetched only when Arabic is chosen.
+    function translate() {
+        var i18n = window.TowerDesk.i18n;
+        if (i18n) { i18n.apply(root.lang); return; }
+        if (root.lang !== 'ar' || document.getElementById('td-i18n')) return;
+        var s = document.createElement('script');
+        s.id = 'td-i18n';
+        s.src = '/i18n.js';
+        document.head.appendChild(s); // applies itself once loaded
+    }
+
     function init() {
         var body = document.body;
         addNavLinks();
@@ -119,6 +130,7 @@
             lang.addEventListener('change', function () {
                 applyLang(lang.value);
                 writePref('lang', lang.value);
+                translate();
             });
             right.insertBefore(lang, right.firstChild);
 
@@ -234,6 +246,8 @@
             pollAlerts();
             setInterval(pollAlerts, 15000);
         }
+
+        translate();
 
         // Scrollable table regions must be reachable by keyboard.
         document.querySelectorAll('.table-wrap').forEach(function (wrap) {
