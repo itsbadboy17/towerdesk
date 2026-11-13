@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Topology - TowerDesk ISP Dashboard</title>
+    <link rel="stylesheet" href="/app.css">
+    <script src="/app.js"></script>
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="brand">Tower<span class="mark">Desk</span></div>
+        <nav aria-label="Main">
+        <div class="nav-section">
+            <h4>Network</h4>
+            <ul>
+                <li><a href="/"><span class="nav-icon" aria-hidden="true">🏠</span>Overview</a></li>
+                <li><a href="/monitoring"><span class="nav-icon" aria-hidden="true">📡</span>Monitoring</a></li>
+                <li><a href="/map"><span class="nav-icon" aria-hidden="true">🗺️</span>Tower Map</a></li>
+                <li><a href="/alerts"><span class="nav-icon" aria-hidden="true">🚨</span>Alerts</a></li>
+                <li><a href="/remote"><span class="nav-icon" aria-hidden="true">🖥️</span>Remote Actions</a></li>
+                <li><a href="/add-device"><span class="nav-icon" aria-hidden="true">➕</span>Add Device</a></li>
+            </ul>
+        </div>
+        <div class="nav-section">
+            <h4>Customers</h4>
+            <ul>
+                <li><a href="/sas"><span class="nav-icon" aria-hidden="true">👥</span>SAS<span class="nav-count">200</span></a></li>
+                <li><a href="/plans"><span class="nav-icon" aria-hidden="true">📋</span>Plans</a></li>
+                <li><a href="/vouchers"><span class="nav-icon" aria-hidden="true">🎫</span>Vouchers</a></li>
+                <li><a href="/billing"><span class="nav-icon" aria-hidden="true">💳</span>Billing</a></li>
+                <li><a href="/invoices"><span class="nav-icon" aria-hidden="true">🧾</span>Invoices</a></li>
+                <li><a href="/tickets"><span class="nav-icon" aria-hidden="true">🛠️</span>Tickets</a></li>
+            </ul>
+        </div>
+        </nav>
+        <div class="user-card">
+            <div class="user-info">
+                <div class="avatar-sm">AD</div>
+                <div>
+                    <div class="user-name">Admin User</div>
+                    <div class="user-role">Super Admin</div>
+                </div>
+            </div>
+            <div class="user-actions">
+                <a class="nav-link-btn" href="/settings"><span class="nav-icon" aria-hidden="true">⚙️</span>Settings</a>
+                <button class="nav-link-btn" type="button"><span class="nav-icon" aria-hidden="true">🚪</span>Sign Out</button>
+            </div>
+        </div>
+    </aside>
+
+    <header class="topbar">
+        <div class="left">
+            <div class="org-select">cards.admin.cr ▾</div>
+            <div class="plan-select">HRINS ▾</div>
+        </div>
+        <div class="right">
+            <a class="icon-btn" href="/alerts" aria-label="Alerts" title="Alerts">🔔</a>
+            <div class="avatar">TD</div>
+        </div>
+    </header>
+
+    <main class="main">
+        <header class="content-header">
+            <h1>Topology</h1>
+            <div class="controls">
+                <span class="live-pill" id="live-pill"><span class="live-dot"></span><span id="live-text">Connecting…</span></span>
+            </div>
+        </header>
+
+        <div class="source-banner warn" id="net-banner" role="status" hidden><strong>Can't reach the tower network<span id="net-banner-nets"></span>.</strong> Nothing on it answered — if you connect through a VPN, check that it is open.</div>
+
+        <div class="card">
+            <div class="card-header"><h3>Network tree</h3><span class="card-actions" id="topo-note">Uplinks, devices, sectors and customer radios</span></div>
+            <div class="card-body">
+                <div class="topo" id="topo"><p class="muted">Loading…</p></div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/insights.js"></script>
+    <script>
+        (function () {
+            'use strict';
+            var F = window.TowerDesk.fmt, I = window.TowerDesk.insights, esc = F.esc;
+            var DEMO = location.search.indexOf('demo') >= 0;
+            var Q = DEMO ? '&demo=1' : '';
+            var $ = function (id) { return document.getElementById(id); };
+            var sasByMac = {}, sasAt = 0, openSectors = {};
+
+            function dot(d) {
+                var cls = d.unreachable || d.online === null || d.online === undefined ? 'unknown' : (d.online ? 'up' : 'down');
+                return '<span class="topo-dot ' + cls + '" aria-hidden="true"></span><span class="sr-only">' + (cls === 'up' ? 'Online' : cls === 'down' ? 'Offline' : 'Unknown') + ' — </span>';
+            }
+            function link(d, label) { return '<a class="topo-name" href="/monitoring?open=' + encodeURIComponent(d.id) + Q + '">' + esc(label || d.name) + '</a>'; }
+            function facts(list) { list = list.filter(Boolean); return list.length ? ' <span class="muted topo-facts">' + esc(list.join(' · ')) + '</span>' : ''; }
+
+            function uplinkNode(d, devices) {
+                var r = (d.metrics || {}).radio || {};
+                var peer = I.peerOf(d, devices);
+                var far = peer ? peer.name : (r.remoteName || 'Upstream');
+                var t = I.trafficBps(d);
+                return '<li>' + dot(d) + link(d, far + ' ⇄ ' + d.name) +
+                    facts([peer ? 'both ends monitored' : 'slave end only', r.signal != null ? r.signal + ' dBm' : '', d.online ? F.bps(t) : '', r.distance != null ? r.distance + ' km' : '']) + '</li>';
+            }
+            function deviceNode(d) {
+                var mx = d.metrics || {};
+                return '<li>' + dot(d) + link(d) + facts([d.ip, d.online && mx.interfaces && mx.interfaces.length ? F.bps(I.trafficBps(d)) : '', mx.cpu ? 'CPU ' + mx.cpu.now + '%' : '']) + '</li>';
+            }
+            function sectorNode(d) {
+                var mx = d.metrics || {};
+                var st = mx.stations || [];
+                var head = dot(d) + link(d) + facts([d.ip, st.length + ' radio' + (st.length === 1 ? '' : 's'), d.online ? F.bps(I.trafficBps(d)) : '']);
+                if (!st.length) return '<li>' + head + '</li>';
+                var kids = st.map(function (c) {
+                    var s = sasByMac[I.macKey(c.mac)];
+                    var weak = (c.signal != null && c.signal <= I.ATT.staSignal) || (c.ccq != null && c.ccq < I.ATT.staCcq);
+                    return '<li><span class="topo-dot ' + (weak ? 'warn' : 'up') + '" aria-hidden="true"></span><span class="topo-name">' + esc(s ? s.username : (c.name || c.mac)) + '</span>' +
+                        facts([s && c.name ? c.name : '', c.signal != null ? c.signal + ' dBm' : '', c.ccq != null ? 'CCQ ' + c.ccq + '%' : '', F.bps((c.rxBps || 0) + (c.txBps || 0))]) + '</li>';
+                }).join('');
+                return '<li><details data-sector="' + esc(d.id) + '"' + (openSectors[d.id] ? ' open' : '') + '><summary>' + head + '</summary><ul>' + kids + '</ul></details></li>';
+            }
+            function branch(title, items, html) {
+                return '<li class="topo-branch"><span class="topo-branch-title">' + esc(title) + ' <span class="muted">(' + items.length + ')</span></span>' +
+                    (items.length ? '<ul>' + html + '</ul>' : '') + '</li>';
+            }
+
+            function render(data) {
+                var nb = $('net-banner');
+                nb.hidden = !data.networkDown;
+                $('net-banner-nets').textContent = (data.unreachableNetworks || []).length ? ' (' + data.unreachableNetworks.join(', ') + ')' : '';
+                var devices = data.devices || [];
+                if (!devices.length) { $('topo').innerHTML = '<p class="muted">No devices yet. <a href="/add-device">Add a device</a> and it will appear here.</p>'; return; }
+                Array.prototype.forEach.call(document.querySelectorAll('#topo details'), function (el) { openSectors[el.dataset.sector] = el.open; });
+                var byName = function (a, b) { return a.name.localeCompare(b.name); };
+                var uplinks = devices.filter(function (d) { return d.role === 'backhaul' && !I.isFarEnd(d, devices); }).sort(byName);
+                var sectors = devices.filter(function (d) { return d.role === 'sector'; }).sort(byName);
+                var others = devices.filter(function (d) { return d.role !== 'backhaul' && d.role !== 'sector'; }).sort(byName);
+                $('topo').innerHTML = '<ul class="topo-root"><li><span class="topo-branch-title">Tower</span><ul>' +
+                    branch('Uplinks', uplinks, uplinks.map(function (d) { return uplinkNode(d, devices); }).join('')) +
+                    branch('Routers and other devices', others, others.map(deviceNode).join('')) +
+                    branch('Sectors', sectors, sectors.map(sectorNode).join('')) +
+                    '</ul></li></ul>';
+                $('topo-note').textContent = devices.length + ' devices · grouped by role';
+                if (Date.now() - sasAt > 30000 && sectors.some(function (d) { return ((d.metrics || {}).stations || []).length; })) {
+                    sasAt = Date.now();
+                    I.loadSasByMac(DEMO).then(function (r) { sasByMac = r.byMac; }).catch(function () { /* SAS optional */ });
+                }
+            }
+
+            function poll() {
+                fetch('/api/monitor' + (DEMO ? '?demo=1' : ''))
+                    .then(function (r) {
+                        if (r.status === 401) { location.href = '/login?next=/topology'; throw new Error('login'); }
+                        if (!r.ok) throw new Error('HTTP ' + r.status);
+                        return r.json();
+                    })
+                    .then(function (d) { render(d); $('live-pill').className = 'live-pill ok'; $('live-text').textContent = 'Live'; })
+                    .catch(function (e) { if (e.message !== 'login') { $('live-pill').className = 'live-pill bad'; $('live-text').textContent = 'Disconnected — retrying'; } });
+            }
+            poll();
+            setInterval(function () { if (!document.hidden) poll(); }, 10000);
+        })();
+    </script>
+</body>
+</html>

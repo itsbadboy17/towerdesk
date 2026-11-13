@@ -47,10 +47,11 @@
         logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/>',
         sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
         moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/>',
-        menu: '<path d="M4 6h16M4 12h16M4 18h16"/>'
+        menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+        topology: '<rect x="9" y="2.5" width="6" height="5" rx="1.2"/><rect x="2.5" y="16.5" width="6" height="5" rx="1.2"/><rect x="15.5" y="16.5" width="6" height="5" rx="1.2"/><path d="M12 7.5V12M5.5 16.5V12h13v4.5"/>'
     };
     var NAV_ICON = {
-        '/': 'overview', '/monitoring': 'monitoring', '/map': 'map', '/alerts': 'alerts',
+        '/': 'overview', '/monitoring': 'monitoring', '/topology': 'topology', '/map': 'map', '/alerts': 'alerts',
         '/remote': 'remote', '/add-device': 'add', '/sas': 'users', '/plans': 'plans',
         '/vouchers': 'voucher', '/billing': 'billing', '/invoices': 'invoice', '/tickets': 'ticket'
     };
@@ -72,8 +73,19 @@
         if (bell) { bell.innerHTML = svgIcon(ICONS.bell); bell.classList.add('icon-btn'); }
     }
 
+    // Pages added after the sidebar markup was written are linked from here, so the thirteen page
+    // files do not each need editing.
+    function addNavLinks() {
+        var after = document.querySelector('.nav-section a[href="/monitoring"]');
+        if (!after || document.querySelector('.nav-section a[href="/topology"]')) return;
+        var li = document.createElement('li');
+        li.innerHTML = '<a href="/topology"><span class="nav-icon" aria-hidden="true"></span>Topology</a>';
+        after.parentNode.parentNode.insertBefore(li, after.parentNode.nextSibling);
+    }
+
     function init() {
         var body = document.body;
+        addNavLinks();
         applyIcons();
         var sidebar = document.querySelector('.sidebar');
         var topbar = document.querySelector('.topbar');

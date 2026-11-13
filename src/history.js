@@ -43,6 +43,12 @@ function open() {
       ' latency REAL, rx INTEGER, tx INTEGER, cpu REAL);'
     );
     db.exec('CREATE INDEX IF NOT EXISTS idx_samples_dev_t ON samples (device_id, t);');
+    // Signal/CCQ of each customer radio over time (one row every few minutes per radio).
+    db.exec(
+      'CREATE TABLE IF NOT EXISTS station_samples (' +
+      ' mac TEXT NOT NULL, sector_id TEXT, t INTEGER NOT NULL, signal REAL, ccq REAL, rx INTEGER, tx INTEGER);'
+    );
+    db.exec('CREATE INDEX IF NOT EXISTS idx_station_mac_t ON station_samples (mac, t);');
   } catch (e) {
     db = null;
   }
@@ -82,6 +88,43 @@ function recent(deviceId, limit) {
   } catch (e) { return []; }
 }
 
+// ---- Customer-radio (station) history ----
+// Recorded at most once every STATION_EVERY_MS per radio, so a busy sector does not flood the
+// file: 60 radios come to about 17,000 rows a day.
+const STATION_EVERY_MS = Number(process.env.TOWERDESK_STATION_MS) || 5 * 60 * 1000;
+const lastStation = new Map(); // mac -> time of the last stored sample
+function macKey(m) { return String(m || '').toLowerCase().replace(/[^0-9a-f]/g, ''); }
+
+function recordStations(sectorId, stations) {
+  const d = open();
+  if (!d || !Array.isArray(stations)) return 0;
+  const now = Date.now();
+  let stored = 0;
+  try {
+    const ins = d.prepare('INSERT INTO station_samples (mac, sector_id, t, signal, ccq, rx, tx) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    stations.forEach((st) => {
+      const key = macKey(st.mac);
+      if (key.length !== 12 || now - (lastStation.get(key) || 0) < STATION_EVERY_MS) return;
+      lastStation.set(key, now);
+      ins.run(key, String(sectorId || ''), now, n(st.signal), n(st.ccq), n(st.rxBps), n(st.txBps));
+      stored++;
+    });
+  } catch (e) { /* best-effort */ }
+  return stored;
+}
+
+// Oldest-first samples for one radio within the last `windowMs` (default: the retention window).
+function stationHistory(mac, windowMs) {
+  const d = open();
+  const key = macKey(mac);
+  if (!d || key.length !== 12) return [];
+  try {
+    return d.prepare('SELECT t, signal, ccq, rx, tx FROM station_samples WHERE mac = ? AND t >= ? ORDER BY t ASC LIMIT 5000')
+      .all(key, Date.now() - (windowMs || RETENTION_MS))
+      .map((r) => ({ t: Number(r.t), signal: r.signal === null ? null : Number(r.signal), ccq: r.ccq === null ? null : Number(r.ccq), rx: r.rx === null ? null : Number(r.rx), tx: r.tx === null ? null : Number(r.tx) }));
+  } catch (e) { return []; }
+}
+
 // Uptime percentage over the last `windowMs` (default 24h) for a device.
 function uptimePct(deviceId, windowMs) {
   const d = open();
@@ -114,6 +157,7 @@ function prune(keepIds) {
   if (!d) return;
   try {
     d.prepare('DELETE FROM samples WHERE t < ?').run(Date.now() - RETENTION_MS);
+    d.prepare('DELETE FROM station_samples WHERE t < ?').run(Date.now() - RETENTION_MS);
     if (Array.isArray(keepIds) && keepIds.length) {
       const placeholders = keepIds.map(() => '?').join(',');
       d.prepare('DELETE FROM samples WHERE device_id NOT IN (' + placeholders + ')').run(...keepIds.map(String));
@@ -129,6 +173,7 @@ function forget(deviceId) {
 
 function close() {
   if (db) { try { db.close(); } catch (e) { /* ignore */ } db = null; ready = false; }
+  lastStation.clear();
 }
 
-module.exports = { enabled, record, recent, uptimePct, count, prune, forget, close, RETENTION_MS };
+module.exports = { enabled, record, recent, uptimePct, count, prune, forget, close, recordStations, stationHistory, RETENTION_MS };

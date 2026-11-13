@@ -7,6 +7,7 @@
     var MON_URL = DEMO ? '/api/monitor?demo=1' : '/api/monitor';
     var selectedProvider = (function () { try { return localStorage.getItem('td-provider') || 'all'; } catch (e) { return 'all'; } })();
     var $ = function (id) { return document.getElementById(id); };
+    var I = window.TowerDesk.insights;
     var lastOk = 0;
     var openOnLoad = (/[?&]open=([^&]+)/.exec(location.search) || [])[1];
     if (openOnLoad) openOnLoad = decodeURIComponent(openOnLoad);
@@ -137,7 +138,7 @@
     // SAS/RADIUS sessions are matched to stations by MAC address: when the customer's PPPoE user
     // is dialled on the CPE radio itself, the MAC the sector sees is the one SAS records.
     var sas = { byMac: {}, loadedAt: 0, configured: false, loading: false };
-    function macKey(m) { return String(m || '').toLowerCase().replace(/[^0-9a-f]/g, ''); }
+    var macKey = I.macKey;
     function loadSas() {
         if (sas.loading || Date.now() - sas.loadedAt < 30000) return;
         sas.loading = true;
@@ -170,7 +171,7 @@
                 ? '<strong>' + esc(s.username) + '</strong><div class="muted">' + esc(s.plan || '') + (s.online === false ? ' · session offline' : '') + (s.station && s.station.near ? ' · ≈ MAC one step off' : '') + '</div>'
                 : '<span class="muted">' + (sas.configured ? 'Not in SAS' : '—') + '</span>';
             var rate = (c.txRate != null || c.rxRate != null) ? (c.txRate != null ? c.txRate : '–') + '/' + (c.rxRate != null ? c.rxRate : '–') : '–';
-            return '<tr><td>' + esc(c.name || c.ip || c.mac) + (c.platform ? '<div class="muted">' + esc(c.platform) + '</div>' : '') + '</td>' +
+            return '<tr class="row-click" data-sta-mac="' + esc(c.mac || '') + '" tabindex="0" title="Show this radio\'s signal history"><td>' + esc(c.name || c.ip || c.mac) + (c.platform ? '<div class="muted">' + esc(c.platform) + '</div>' : '') + '</td>' +
                 '<td class="mono">' + esc(c.mac || '–') + (c.ip ? '<div class="muted">' + esc(c.ip) + '</div>' : '') + '</td>' +
                 '<td>' + user + '</td>' +
                 '<td class="mono">' + (c.signal != null ? esc(c.signal) + ' dBm' : '–') + '</td>' +
@@ -184,6 +185,50 @@
         return '<p class="muted reg-note">' + esc(rows.length) + ' registered · ' + esc(note) + ' <button type="button" class="link-btn" data-export-reg>Export to Excel</button></p>' +
             '<div class="reg-wrap"><table class="iface-table reg-table"><thead><tr><th>Station</th><th>MAC / IP</th><th>SAS user</th><th>Signal</th><th>CCQ</th><th>Rate tx/rx</th><th>↓ To client</th><th>↑ From client</th></tr></thead><tbody>' +
             body + '</tbody></table></div>';
+    }
+
+    // Signal history of one customer radio, shown in a row under it. Only recorded while the app
+    // is open, so the line has gaps for the hours it was closed.
+    function signalChart(samples) {
+        var pts = samples.filter(function (s) { return s.signal !== null; });
+        if (pts.length < 2) return '';
+        var W = 640, H = 90, pad = 6;
+        var vals = pts.map(function (s) { return s.signal; });
+        var lo = Math.min.apply(null, vals) - 2, hi = Math.max.apply(null, vals) + 2;
+        var t0 = pts[0].t, span = Math.max(1, pts[pts.length - 1].t - t0);
+        var d = '', prevT = null;
+        pts.forEach(function (s) {
+            var x = (pad + ((s.t - t0) / span) * (W - pad * 2)).toFixed(1);
+            var y = (pad + (1 - (s.signal - lo) / (hi - lo)) * (H - pad * 2)).toFixed(1);
+            // More than 20 minutes between samples = the app was closed: break the line.
+            d += (prevT !== null && s.t - prevT < 20 * 60 * 1000 ? 'L' : 'M') + x + ',' + y;
+            prevT = s.t;
+        });
+        return '<svg class="traffic-chart sta-chart" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" role="img" aria-label="Signal history"><path class="rx-line" d="' + d + '"/></svg>';
+    }
+    function toggleStationHistory(tr) {
+        var next = tr.nextElementSibling;
+        if (next && next.classList.contains('sta-history')) { next.remove(); return; }
+        var body = tr.parentNode;
+        Array.prototype.forEach.call(body.querySelectorAll('.sta-history'), function (x) { x.remove(); });
+        var row = document.createElement('tr');
+        row.className = 'sta-history';
+        row.innerHTML = '<td colspan="8"><p class="muted">Loading signal history…</p></td>';
+        body.insertBefore(row, tr.nextSibling);
+        var cell = row.firstChild;
+        fetch('/api/history/station/' + encodeURIComponent(tr.dataset.staMac))
+            .then(function (r) { return r.json(); })
+            .then(function (j) {
+                var pts = (j.samples || []).filter(function (s) { return s.signal !== null; });
+                if (!j.enabled) { cell.innerHTML = '<p class="muted">History is not being recorded on this install.</p>'; return; }
+                if (pts.length < 2) { cell.innerHTML = '<p class="muted">Not enough history yet — a point is saved every 5 minutes while TowerDesk is open.</p>'; return; }
+                var vals = pts.map(function (s) { return s.signal; });
+                var avg = Math.round(vals.reduce(function (a, b) { return a + b; }, 0) / vals.length);
+                var hours = Math.round((pts[pts.length - 1].t - pts[0].t) / 360000) / 10;
+                cell.innerHTML = '<div class="sta-history-head"><strong>Signal over the last ' + esc(hours >= 48 ? Math.round(hours / 24) + ' days' : hours + ' h') + '</strong>' +
+                    '<span class="muted">best ' + esc(Math.max.apply(null, vals)) + ' · average ' + esc(avg) + ' · worst ' + esc(Math.min.apply(null, vals)) + ' dBm · ' + pts.length + ' points</span></div>' + signalChart(pts);
+            })
+            .catch(function () { cell.innerHTML = '<p class="muted">Could not load the history.</p>'; });
     }
 
     function exportRegistration(id) {
@@ -234,19 +279,9 @@
     }
     // When both radios of a link are managed, the server pairs them (peerId). The pair is shown
     // as ONE link: the "primary" end keeps the card, the other is folded into it as the far end.
-    function peerOf(d) {
-        if (!d || !d.peerId || !lastData || d.role !== 'backhaul') return null;
-        var p = lastData.devices.find(function (x) { return x.id === d.peerId; });
-        return p && p.role === 'backhaul' ? p : null;
-    }
-    function masterRank(d) { var m = ((d.metrics || {}).radio || {}).mode; return m && /^(ap|master)/i.test(String(m)) ? 1 : 0; }
-    // True for the end that is folded into its peer's card (the master/AP side when known).
-    function isFarEnd(d) {
-        var p = peerOf(d);
-        if (!p) return false;
-        var a = masterRank(d), b = masterRank(p);
-        return a !== b ? a > b : String(p.id) < String(d.id);
-    }
+    // (The pairing rules live in insights.js so the Overview and Topology pages agree.)
+    function peerOf(d) { return lastData ? I.peerOf(d, lastData.devices) : null; }
+    function isFarEnd(d) { return lastData ? I.isFarEnd(d, lastData.devices) : false; }
     function modelOf(d) { var det = (d.lastTest && d.lastTest.details) || {}; return det.model || TYPE_LABELS[d.type] || d.type; }
 
     function backhaulCard(d) {
@@ -445,6 +480,8 @@
             var other = e.target.closest('[data-open-id]');
             if (other) { openDetail(other.dataset.openId); return; }
             if (e.target.closest('[data-export-reg]')) { exportRegistration(detailId); return; }
+            var staRow = e.target.closest('tr[data-sta-mac]');
+            if (staRow && staRow.dataset.staMac) { toggleStationHistory(staRow); return; }
             if (e.target === m || e.target.closest('.close-btn')) closeDetail();
         });
         document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDetail(); });
@@ -470,36 +507,9 @@
         if (m) m.style.display = 'none';
     }
 
-    // ----- "Needs attention": the few things worth looking at first -----
-    // Thresholds are deliberately simple and conservative; devices whose network is unreachable
-    // are skipped (their state is unknown, and the banner already says so).
-    var ATT = { linkSignal: -70, linkCapacity: 85, staSignal: -73, staCcq: 70, cpu: 85, max: 8 };
-    function attentionItems(devices) {
-        var out = [];
-        var add = function (sev, id, what, why, rank) { out.push({ sev: sev, id: id, what: what, why: why, rank: rank }); };
-        devices.forEach(function (d) {
-            if (d.unreachable || d.online === null || d.online === undefined) return;
-            if (d.online === false) { add('critical', d.id, d.name, 'offline' + (d.since ? ' for ' + ago(d.since) : ''), 0); return; }
-            var mx = d.metrics || {};
-            var r = mx.radio || {};
-            if (d.lastTest && d.lastTest.ok === false) add('warning', d.id, d.name, 'answers, but the login is not working', 1);
-            if (mx.cpu && mx.cpu.now >= ATT.cpu) add('warning', d.id, d.name, 'CPU at ' + mx.cpu.now + '%', 4);
-            if (d.role === 'backhaul' && !isFarEnd(d)) {
-                if (r.signal != null && r.signal <= ATT.linkSignal) add('warning', d.id, d.name, 'weak link signal, ' + r.signal + ' dBm', 2);
-                var cap = (r.throughput != null && r.rxRate) ? Math.round((r.throughput / r.rxRate) * 100) : null;
-                if (cap != null && cap >= ATT.linkCapacity) add('warning', d.id, d.name, 'link at ' + cap + '% of its capacity', 2);
-            }
-            (mx.stations || []).forEach(function (c) {
-                var bad = [];
-                if (c.signal != null && c.signal <= ATT.staSignal) bad.push(c.signal + ' dBm');
-                if (c.ccq != null && c.ccq < ATT.staCcq) bad.push('CCQ ' + c.ccq + '%');
-                if (!bad.length) return;
-                var s = sas.byMac[macKey(c.mac)];
-                add('warning', d.id, (s ? s.username : (c.name || c.mac)) + ' on ' + d.name, 'weak radio link: ' + bad.join(', '), 3);
-            });
-        });
-        return out.sort(function (a, b) { return a.rank - b.rank; });
-    }
+    // ----- "Needs attention" (rules shared with the Overview page: insights.js) -----
+    var ATT_MAX = 8;
+    function attentionItems(devices) { return I.attention(lastData ? lastData.devices : devices, sas.byMac).filter(function (it) { return devices.some(function (d) { return d.id === it.id; }); }); }
     function renderAttention(devices) {
         var cardEl = $('attention-card');
         if (!cardEl) return;
@@ -510,9 +520,9 @@
         var items = attentionItems(devices);
         $('attention-count').textContent = items.length ? items.length + (items.length === 1 ? ' item' : ' items') : '';
         $('attention-list').innerHTML = items.length
-            ? items.slice(0, ATT.max).map(function (it) {
+            ? items.slice(0, ATT_MAX).map(function (it) {
                 return '<li class="' + it.sev + '"><button type="button" data-id="' + esc(it.id) + '"><span class="att-dot" aria-hidden="true"></span><span class="att-what">' + esc(it.what) + '</span><span class="att-why">' + esc(it.why) + '</span></button></li>';
-            }).join('') + (items.length > ATT.max ? '<li class="att-ok">and ' + (items.length - ATT.max) + ' more</li>' : '')
+            }).join('') + (items.length > ATT_MAX ? '<li class="att-ok">and ' + (items.length - ATT_MAX) + ' more</li>' : '')
             : '<li class="att-ok">Nothing needs attention — every reachable device, link and customer radio looks fine.</li>';
     }
 

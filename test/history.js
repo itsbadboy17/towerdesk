@@ -50,5 +50,15 @@ history.record('dev-c', { online: true, latencyMs: 1 });
 history.prune(['dev-a']);
 ok('prune keeps only listed devices', history.count('dev-c') === 0 && history.count('dev-a') === 11);
 
+// Customer-radio history: one sample per radio per interval, looked up by MAC in any format.
+const sta = [{ mac: 'AA:BB:CC:00:00:01', signal: -61, ccq: 93, rxBps: 1000, txBps: 2000 }, { mac: 'AA:BB:CC:00:00:02', signal: -70, ccq: 80 }, { mac: 'bad' }];
+ok('stations stored once each', history.recordStations('sec-1', sta) === 2);
+ok('repeat within the interval is skipped', history.recordStations('sec-1', sta) === 0);
+const sh = history.stationHistory('aa-bb-cc-00-00-01');
+ok('station history by MAC', sh.length === 1 && sh[0].signal === -61 && sh[0].ccq === 93 && sh[0].tx === 2000);
+ok('unknown radio has no history', history.stationHistory('AA:BB:CC:00:00:99').length === 0 && history.stationHistory('nope').length === 0);
+history.close();
+ok('station history persists across restart', history.stationHistory('AA:BB:CC:00:00:02')[0].signal === -70);
+
 history.close();
 console.log('History store tests passed.');

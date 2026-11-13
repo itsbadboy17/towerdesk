@@ -25,10 +25,13 @@ app.use(auth.middleware);
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 // Overview page (the dashboard)
-// The Overview page still shows sample data, so the app opens on the live Monitoring page.
-// The sample Overview stays reachable at /dashboard.
+// Overview: live totals, what needs attention, links, sectors and top users.
 app.get('/', (req, res) => {
-  res.redirect('/monitoring');
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
+app.get('/topology', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'topology.html'));
 });
 
 // Routes for different pages (placeholder)
@@ -534,6 +537,11 @@ app.get('/api/history/:id', (req, res) => {
     uptime24hPct: history.uptimePct(d.id, 24 * 3600 * 1000),
     samples: history.recent(d.id, limit)
   });
+});
+
+// Signal / CCQ history of one customer radio, by MAC address.
+app.get('/api/history/station/:mac', (req, res) => {
+  res.json({ enabled: history.enabled(), mac: req.params.mac, samples: history.stationHistory(req.params.mac) });
 });
 
 // Self-updater (portable build). Checks a GitHub repo / manifest the operator configures and

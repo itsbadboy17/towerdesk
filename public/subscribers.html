@@ -159,6 +159,16 @@
             </div>
         </div>
 
+        <div class="card" id="top-card" hidden>
+            <div class="card-header"><h3>Top users right now</h3><span class="card-actions">By live download</span></div>
+            <div class="card-body"><ol class="top-users" id="top-users"></ol></div>
+        </div>
+
+        <div class="card" id="mismatch-card" hidden>
+            <div class="card-header"><h3>Radios and users that don't match</h3><span class="card-actions" id="mismatch-count"></span></div>
+            <div class="card-body" id="mismatch-body"></div>
+        </div>
+
         <div class="filter-bar">
             <select class="sub-filter" id="sub-filter" aria-label="Filter subscribers">
                 <option value="all">All</option>
@@ -169,7 +179,7 @@
         </div>
 
         <div class="card">
-            <div class="card-header"><h3>Subscriber Sessions</h3><span class="card-actions" id="list-note">Live RADIUS data</span></div>
+            <div class="card-header"><h3>Subscriber Sessions</h3><span class="card-actions"><span id="list-note">Live RADIUS data</span> · <button type="button" class="link-btn" id="sub-export">Export to Excel</button></span></div>
             <div class="card-body">
                 <div class="table-wrap">
                     <table>
@@ -191,6 +201,13 @@
             </div>
         </div>
     </main>
+
+    <div class="modal-overlay" id="sub-modal">
+        <div class="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="sub-modal-title">
+            <div class="modal-header"><strong id="sub-modal-title">Subscriber</strong><button class="close-btn" type="button" aria-label="Close">×</button></div>
+            <div class="modal-body" id="sub-modal-body"></div>
+        </div>
+    </div>
 
     <script>
         (function () {
@@ -260,6 +277,108 @@
                     '<div class="mono" style="color:var(--text-muted)">' + esc(st.name || '') + (st.name ? ' · ' : '') + esc(st.mac) + (st.near ? ' (≈ MAC one step off)' : '') + '</div>';
             }
 
+            var shownList = [], openId = null;
+            var demoQ = DEMO ? '&demo=1' : '';
+
+            // Busiest subscribers right now, with a bar scaled to the heaviest one.
+            function renderTop() {
+                var top = (data.subscribers || []).filter(function (r) { return r.online && r.liveDownBps > 0; })
+                    .sort(function (a, b) { return b.liveDownBps - a.liveDownBps; }).slice(0, 6);
+                $('top-card').hidden = !top.length;
+                if (!top.length) return;
+                var max = top[0].liveDownBps;
+                $('top-users').innerHTML = top.map(function (r) {
+                    var st = r.station;
+                    return '<li><button type="button" class="top-row" data-id="' + esc(r.id) + '">' +
+                        '<span class="top-name">' + esc(r.name) + ' <span class="muted mono">' + esc(r.username) + '</span></span>' +
+                        '<span class="top-where muted">' + esc(st ? st.sectorName : (r.nas || '')) + '</span>' +
+                        '<span class="top-rate mono">↓ ' + esc(bps(r.liveDownBps)) + '</span>' +
+                        '<span class="top-bar"><span style="width:' + Math.max(3, Math.round((r.liveDownBps / max) * 100)) + '%"></span></span>' +
+                        '</button></li>';
+                }).join('');
+            }
+
+            // Radios registered on a sector that no SAS user owns, and users online with no known
+            // radio. Only meaningful once TowerDesk can read stations from at least one sector.
+            function renderMismatch() {
+                var m = data.match || {};
+                var radios = m.unmatchedStations || [];
+                var users = (data.subscribers || []).filter(function (r) { return r.online && !r.station; });
+                var show = m.stations > 0 && (radios.length || users.length);
+                $('mismatch-card').hidden = !show;
+                if (!show) return;
+                $('mismatch-count').textContent = radios.length + ' radio' + (radios.length === 1 ? '' : 's') + ' · ' + users.length + ' user' + (users.length === 1 ? '' : 's');
+                var html = '';
+                if (radios.length) {
+                    html += '<h4 class="detail-sec">Radios with no SAS user (' + radios.length + ')</h4><ul class="mismatch-list">' +
+                        radios.slice(0, 12).map(function (s) {
+                            return '<li><a href="/monitoring?open=' + encodeURIComponent(s.sectorId) + demoQ + '"><strong>' + esc(s.name || s.mac) + '</strong></a> <span class="muted">on ' + esc(s.sectorName) + '</span> <span class="mono muted">' + esc(s.mac) + (s.signal !== null ? ' · ' + esc(s.signal) + ' dBm' : '') + '</span></li>';
+                        }).join('') + (radios.length > 12 ? '<li class="muted">and ' + (radios.length - 12) + ' more</li>' : '') + '</ul>';
+                }
+                if (users.length) {
+                    html += '<h4 class="detail-sec">Online users with no known radio (' + users.length + ')</h4><ul class="mismatch-list">' +
+                        users.slice(0, 12).map(function (r) {
+                            return '<li><button type="button" class="link-btn" data-id="' + esc(r.id) + '">' + esc(r.username) + '</button> <span class="mono muted">' + esc(r.mac || 'no MAC reported') + (r.framedIp ? ' · ' + esc(r.framedIp) : '') + '</span></li>';
+                        }).join('') + (users.length > 12 ? '<li class="muted">and ' + (users.length - 12) + ' more</li>' : '') + '</ul>';
+                }
+                $('mismatch-body').innerHTML = html;
+            }
+
+            // Everything about one subscriber in one place.
+            function detailHtml(r) {
+                var st = r.station;
+                var rows = [
+                    ['Username', r.username], ['Plan', r.plan + (r.rateDown ? ' (' + rate(r.rateDown, r.rateUp) + ')' : '')],
+                    ['Status', r.online ? 'Online' : 'Offline'], ['Account', r.enabled === false ? 'Disabled in SAS' : ''],
+                    ['IP address', r.framedIp], ['MAC address', r.mac],
+                    ['Session', r.online ? r.sessionText : ''], ['Downloaded', r.bytesDown !== null && r.bytesDown !== undefined ? bytes(r.bytesDown) : ''],
+                    ['Uploaded', r.bytesUp !== null && r.bytesUp !== undefined ? bytes(r.bytesUp) : ''],
+                    ['Live speed', r.online ? '↓ ' + bps(r.liveDownBps) + ' · ↑ ' + bps(r.liveUpBps) : ''],
+                    ['Expires', r.expiration], ['Phone', r.phone],
+                    ['Last seen', !r.online && r.lastSeen ? new Date(r.lastSeen).toLocaleString() : '']
+                ].filter(function (x) { return x[1]; });
+                var radio = st
+                    ? '<h4 class="detail-sec">On the tower</h4><dl class="kv detail-kv">' +
+                        '<dt>Sector</dt><dd>' + esc(st.sectorName) + '</dd>' +
+                        '<dt>Radio</dt><dd>' + esc(st.name || '—') + ' <span class="mono muted">' + esc(st.mac) + (st.near ? ' (≈ MAC one step off)' : '') + '</span></dd>' +
+                        (st.signal !== null ? '<dt>Signal</dt><dd>' + esc(st.signal) + ' dBm</dd>' : '') +
+                        (st.ccq !== null ? '<dt>CCQ</dt><dd>' + esc(st.ccq) + '%</dd>' : '') +
+                        (st.txRate !== null || st.rxRate !== null ? '<dt>Rate tx/rx</dt><dd>' + esc(st.txRate === null ? '–' : st.txRate) + '/' + esc(st.rxRate === null ? '–' : st.rxRate) + ' Mbps</dd>' : '') +
+                        '</dl><div class="detail-actions"><a class="btn-secondary btn-sm" href="/monitoring?open=' + encodeURIComponent(st.sectorId) + demoQ + '">Open this sector</a></div>'
+                    : '<h4 class="detail-sec">On the tower</h4><p class="muted">' + (r.online ? 'No radio on a monitored sector has this MAC address.' : 'Not connected right now.') + '</p>';
+                return '<div class="detail-top"><div><h3>' + esc(r.name) + '</h3><div class="muted mono">' + esc(r.username) + '</div></div>' +
+                    (r.online ? '<span class="status-badge healthy">● Online</span>' : '<span class="status-badge offline">● Offline</span>') + '</div>' +
+                    (r.framedIp ? '<div class="detail-actions">' + window.TowerDesk.netTools(r.framedIp) + '</div>' : '') +
+                    '<dl class="kv detail-kv">' + rows.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') + '</dl>' + radio;
+            }
+            function openSub(id) {
+                var r = (data.subscribers || []).find(function (x) { return x.id === id; });
+                if (!r) return;
+                openId = id;
+                $('sub-modal-body').innerHTML = detailHtml(r);
+                $('sub-modal').style.display = 'flex';
+                $('sub-modal').querySelector('.close-btn').focus();
+            }
+            function closeSub() { openId = null; $('sub-modal').style.display = 'none'; }
+            $('sub-modal').addEventListener('click', function (e) { if (e.target === $('sub-modal') || e.target.closest('.close-btn')) closeSub(); });
+            document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSub(); });
+            document.querySelector('.main').addEventListener('click', function (e) {
+                var el = e.target.closest('tr.row-click, .top-row, .mismatch-list button[data-id]');
+                if (el && el.dataset.id) openSub(el.dataset.id);
+            });
+            tbody.addEventListener('keydown', function (e) {
+                var tr = e.target.closest('tr.row-click');
+                if (tr && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openSub(tr.dataset.id); }
+            });
+            $('sub-export').addEventListener('click', function () {
+                window.TowerDesk.exportCsv('subscribers.csv',
+                    ['Status', 'Name', 'Username', 'Plan', 'IP', 'MAC', 'Sector', 'Radio', 'Signal (dBm)', 'CCQ (%)', 'Session', 'Downloaded (bytes)', 'Uploaded (bytes)', 'Live down (bps)', 'Live up (bps)', 'Expires', 'Phone'],
+                    shownList.map(function (r) {
+                        var st = r.station || {};
+                        return [r.online ? 'Online' : 'Offline', r.name, r.username, r.plan, r.framedIp, r.mac, st.sectorName || r.nas, st.name, st.signal, st.ccq, r.online ? r.sessionText : '', r.bytesDown, r.bytesUp, r.liveDownBps, r.liveUpBps, r.expiration, r.phone];
+                    }));
+            });
+
             function render() {
                 var q = search.value.trim().toLowerCase();
                 var f = filter.value;
@@ -279,8 +398,12 @@
                 });
                 list.sort(function (a, b) { return (b.online ? 1 : 0) - (a.online ? 1 : 0) || (b.liveDownBps || 0) - (a.liveDownBps || 0); });
 
+                shownList = list;
+                renderTop();
+                renderMismatch();
+                if (openId) { var cur = (data.subscribers || []).find(function (x) { return x.id === openId; }); if (cur && !$('sub-modal-body').querySelector('.net-tools-out:not([hidden])')) $('sub-modal-body').innerHTML = detailHtml(cur); }
                 tbody.innerHTML = list.length ? list.map(function (r) {
-                    return '<tr>' +
+                    return '<tr class="row-click" data-id="' + esc(r.id) + '" tabindex="0">' +
                         '<td>' + (r.online
                             ? '<span class="status-badge healthy">● Online</span>'
                             : '<span class="status-badge offline">● Offline</span>') + '</td>' +

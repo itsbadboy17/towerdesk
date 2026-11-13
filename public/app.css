@@ -110,7 +110,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 /* Pages that still show sample data only are kept out of the sidebar until they are wired to
    real data (they stay reachable by address). Remove a line here to bring a page back. */
-.nav-section li:has(> a[href="/"]),
 .nav-section li:has(> a[href="/map"]),
 .nav-section li:has(> a[href="/remote"]),
 .nav-section li:has(> a[href="/plans"]),
@@ -471,6 +470,42 @@ tbody tr:hover { background: var(--bg-subtle); }
 .link-hero.offline .la-dish { stroke: var(--danger); }
 .link-hero.offline .la-feed { fill: var(--danger); }
 .link-end-name { font-weight: 700; font-size: 1.02rem; margin-top: 6px; overflow-wrap: anywhere; }
+/* Topology tree. */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.topo ul { list-style: none; }
+.topo-root ul { margin-inline-start: 10px; padding-inline-start: 16px; border-inline-start: 1px solid var(--border); }
+.topo li { padding: 5px 0; overflow-wrap: anywhere; }
+.topo-branch-title { font-weight: 700; }
+.topo-branch > .topo-branch-title { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.topo-name { font-weight: 600; }
+.topo-facts { font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.topo-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-inline-end: 8px; background: var(--text-muted); }
+.topo-dot.up { background: var(--success); }
+.topo-dot.down { background: var(--danger); }
+.topo-dot.warn { background: var(--warning, #b45309); }
+.topo summary { cursor: pointer; }
+.topo details > ul { margin-top: 2px; }
+/* Overview: attention rows are links there; top users are not clickable. */
+.attention-list .att-link { display: flex; align-items: baseline; gap: 10px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); color: var(--text-main); text-decoration: none; }
+.attention-list .att-link:hover { border-color: var(--accent); }
+.top-row.static { cursor: default; }
+.top-row.static:hover { border-color: var(--border); }
+/* Station signal history row in the registration table. */
+.sta-history td { background: var(--surface-2, rgba(127,127,127,0.06)); padding: 12px 14px; }
+.sta-history-head { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; margin-bottom: 6px; }
+.sta-chart { height: 90px; width: 100%; }
+/* SAS page: clickable rows, top users, mismatch lists. */
+tr.row-click { cursor: pointer; }
+tr.row-click:hover td, tr.row-click:focus-visible td { background: var(--bg-hover); }
+.top-users { list-style: none; display: grid; gap: 6px; }
+.top-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; gap: 4px 12px; align-items: baseline; width: 100%; text-align: start; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); color: var(--text-main); font: inherit; cursor: pointer; }
+.top-row:hover { border-color: var(--accent); }
+.top-name { font-weight: 600; overflow-wrap: anywhere; }
+.top-where { overflow-wrap: anywhere; }
+.top-bar { grid-column: 1 / -1; height: 4px; border-radius: 4px; background: var(--accent-soft); overflow: hidden; }
+.top-bar span { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+.mismatch-list { list-style: none; display: grid; gap: 6px; margin-bottom: 8px; }
+.mismatch-list li { overflow-wrap: anywhere; }
 /* Ping / traceroute tools and small action rows. */
 .net-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .net-tools-out { flex: 1 1 100%; margin: 4px 0 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2, rgba(127,127,127,0.06)); font-size: 0.8rem; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; direction: ltr; text-align: left; }

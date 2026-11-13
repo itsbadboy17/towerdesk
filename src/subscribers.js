@@ -236,7 +236,41 @@ async function sas4Subs(cfg) {
       };
     });
     sas4State.prev = seen;
-    return { subscribers: subs, note: null };
+    // The full account list (for offline subscribers, real names and expiry). It can be thousands
+    // of rows, so it is re-read every 5 minutes at most; if it cannot be read, the online
+    // sessions are still shown.
+    let note = null;
+    if (!sas4State.users || sas4State.usersKey !== key || now - sas4State.usersAt > 5 * 60 * 1000) {
+      try {
+        sas4State.users = (await sas4State.session.users()).map(sas4.mapUser);
+        sas4State.usersKey = key; sas4State.usersAt = now;
+      } catch (e) {
+        if (sas4State.usersKey !== key) sas4State.users = null;
+        note = 'Showing online sessions only — the full SAS 4 account list could not be read.';
+      }
+    }
+    if (sas4State.users) {
+      const byUser = new Map(sas4State.users.map((u) => [u.username, u]));
+      const onlineNames = new Set();
+      subs.forEach((s) => {
+        onlineNames.add(s.username);
+        const u = byUser.get(s.username);
+        if (!u) return;
+        if (u.name && s.name === s.username) s.name = u.name;
+        if (s.plan === 'SAS 4') s.plan = u.plan;
+        s.expiration = u.expiration; s.phone = u.phone; s.enabled = u.enabled;
+      });
+      sas4State.users.forEach((u) => {
+        if (onlineNames.has(u.username)) return;
+        subs.push({
+          id: u.id, username: u.username, name: u.name, plan: u.plan, rateDown: null, rateUp: null, online: false,
+          framedIp: null, mac: null, nas: cfg.nas || 'SAS 4', sessionStart: null, sessionSeconds: 0, sessionText: '—',
+          bytesDown: null, bytesUp: null, liveDownBps: 0, liveUpBps: 0, signal: null,
+          lastSeen: u.lastOnline, expiration: u.expiration, phone: u.phone, enabled: u.enabled
+        });
+      });
+    }
+    return { subscribers: subs, note };
   } catch (e) {
     return { subscribers: [], note: e.message };
   }

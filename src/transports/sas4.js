@@ -107,6 +107,39 @@ class Sas4Session {
     }
     return rows;
   }
+
+  // Every account (paged), online or not — used to show offline subscribers too.
+  async users() {
+    const rows = [];
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const j = await this.post('index/user', {
+        page, count: PAGE_SIZE, sortBy: 'id', direction: 'asc', search: '',
+        columns: ['id', 'username', 'firstname', 'lastname', 'expiration', 'phone', 'last_online', 'name']
+      });
+      const data = Array.isArray(j.data) ? j.data : [];
+      rows.push(...data);
+      if (data.length < PAGE_SIZE || page >= (Number(j.last_page) || 1)) break;
+    }
+    return rows;
+  }
+}
+
+// Pure: one index/user row -> account details. `name` is the profile name in SAS 4's user list;
+// `profile_details` (returned regardless of the columns asked for) carries it too.
+function mapUser(row) {
+  const pd = row.profile_details && typeof row.profile_details === 'object' ? row.profile_details : {};
+  const full = [row.firstname, row.lastname].filter(Boolean).join(' ').trim();
+  return {
+    id: 'sas4-u' + (row.id !== undefined ? row.id : row.username),
+    username: row.username || '',
+    name: full || row.username || '',
+    plan: pd.name || row.name || row.profile_name || 'SAS 4',
+    online: row.online_status === 1 || row.online_status === true || row.online_status === '1',
+    enabled: !(row.enabled === 0 || row.enabled === false || row.enabled === '0'),
+    expiration: row.expiration || null,
+    phone: row.phone || null,
+    lastOnline: row.last_online || null
+  };
 }
 
 function n(v) { const x = Number(v); return Number.isFinite(x) ? x : null; }
@@ -130,4 +163,4 @@ function mapSession(row) {
   };
 }
 
-module.exports = { Sas4Session, mapSession, encrypt, decrypt, baseUrls, API_PASSPHRASE };
+module.exports = { Sas4Session, mapSession, mapUser, encrypt, decrypt, baseUrls, API_PASSPHRASE };

@@ -92,6 +92,15 @@ function ok(name, cond) {
           : [{ id: 12, username: 'sara@net', user_profile_name: '10M', framedipaddress: '10.8.0.12', callingstationid: 'AA:BB:CC:00:00:02', acctsessiontime: 60, acctoutputoctets: 1, acctinputoctets: 1 }];
         return send(200, { current_page: body.page, last_page: 2, data: rows });
       }
+      if (req.url === '/admin/api/index.php/api/index/user') {
+        if (req.headers.authorization !== 'Bearer tok-' + stats.logins) return send(401, {});
+        stats.userReads = (stats.userReads || 0) + 1;
+        return send(200, { current_page: 1, last_page: 1, data: [
+          { id: 1, username: 'ali@net', firstname: 'Ali', lastname: 'Hasan', online_status: 1, enabled: 1, expiration: '2027-01-01 00:00:00', profile_details: { name: '20M' } },
+          { id: 2, username: 'sara@net', firstname: 'Sara', lastname: '', online_status: 1, enabled: 1 },
+          { id: 3, username: 'omar@net', firstname: 'Omar', lastname: 'Zaid', online_status: 0, enabled: 1, expiration: '2026-12-01 00:00:00', phone: '0770', profile_details: { name: '10M' } }
+        ] });
+      }
       send(404, {});
     });
   });
@@ -106,7 +115,10 @@ function ok(name, cond) {
   ok('sas4 config hides password', cfgSaved.hasSecret === true && JSON.stringify(cfgSaved).indexOf(SAS_PASS) === -1);
   ok('sas4 password encrypted at rest', fs.readFileSync(path.join(tmp, 'radius.json'), 'utf8').indexOf(SAS_PASS) === -1);
   sr = await subs.list({});
-  ok('sas4 lists both pages', sr.subscribers.length === 2 && sr.note === null && sr.summary.online === 2);
+  ok('sas4 lists both pages', sr.subscribers.filter((x) => x.online).length === 2 && sr.note === null && sr.summary.online === 2);
+  const omar = sr.subscribers.find((x) => x.username === 'omar@net');
+  ok('sas4 offline account listed', sr.subscribers.length === 3 && omar && omar.online === false && omar.name === 'Omar Zaid' && omar.plan === '10M' && omar.phone === '0770' && sr.summary.offline === 1);
+  ok('sas4 online row gets the real name', sr.subscribers.find((x) => x.username === 'ali@net').name === 'Ali Hasan');
   const ali = sr.subscribers.find((x) => x.username === 'ali@net');
   ok('sas4 session fields', ali.plan === '20M' && ali.framedIp === '10.8.0.11' && ali.mac === 'AA:BB:CC:00:00:01' && ali.sessionText === '1h 1m' && ali.online === true);
   ok('sas4 first read has no live rate yet', ali.liveDownBps === null);
@@ -115,6 +127,7 @@ function ok(name, cond) {
   const ali2 = sr.subscribers.find((x) => x.username === 'ali@net');
   ok('sas4 live rate from counter growth', ali2.liveDownBps > 1e6 && ali2.liveUpBps === 0);
   ok('sas4 reuses one login', stats.logins === 1);
+  ok('sas4 account list is cached between polls', stats.userReads === 1);
   ok('sas4 result never contains the password', JSON.stringify(sr).indexOf(SAS_PASS) === -1);
   fake.close();
   sr = await subs.list({});

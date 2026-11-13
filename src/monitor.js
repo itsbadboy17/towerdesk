@@ -81,6 +81,7 @@ async function applyResult(device, r, networkDown) {
       txBps = mx.interfaces.reduce((a, i) => a + (i.txBps || 0), 0);
     }
     if (mx && mx.cpu && typeof mx.cpu.now === 'number') cpu = mx.cpu.now;
+    if (mx && mx.stations) history.recordStations(device.id, mx.stations); // signal/CCQ per customer radio
   } else {
     metrics.pause(device.id);
   }

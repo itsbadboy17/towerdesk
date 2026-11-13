@@ -67,7 +67,12 @@ function attachStations(subscribers, devices) {
     used.add(cands[0].key);
     near++;
   });
-  return { stations: stations.length, matched: subs.filter((s) => s.station).length, near };
+  // The two kinds of mismatch worth a look: a radio on a sector that no SAS user owns (an
+  // unknown or unbilled device), and a user who is online with no known radio (connected some
+  // other way, or on a sector TowerDesk cannot read stations from).
+  const unmatchedStations = stations.filter((e) => !used.has(e.key)).map((e) => view(e, false));
+  const usersWithoutRadio = subs.filter((s) => s.online && !s.station).length;
+  return { stations: stations.length, matched: subs.filter((s) => s.station).length, near, unmatchedStations, usersWithoutRadio };
 }
 
 module.exports = { attachStations, macKey, isNear };
