@@ -99,4 +99,5 @@
         else if (e.target.id === 'pv-brand') state.brand = e.target.value;
     });
     renderTemplates();
+    try { var qs = new URLSearchParams(location.search); if (qs.get('ip')) $('pv-ip').value = qs.get('ip'); if (qs.get('brand') === 'mikrotik') { $('pv-brand').value = 'mikrotik'; state.brand = 'mikrotik'; } } catch (e) { /* optional */ }
 })();

@@ -184,3 +184,10 @@ Not done: the phone app (left out on purpose); airOS radios cannot report neighb
 - Never invents a setting the radio lacks; the admin password and other keys are not on the allowed list. Typed passwords are not stored; held in memory only during the undo window.
 - UNVERIFIED on real hardware: the airOS key names (radio.1.mode, aaa.1.wpa.psk, ...) come from knowledge of system.cfg, not from the owner's radios (they were unreachable when checked). Test on a spare radio before switching writing on.
 - MikroTik: preview only. Planned next: reach a router that has no IP by its MAC through another MikroTik (SSH + /tool mac-telnet, fixed script), then add it and continue to setup.
+## Reach a MikroTik by MAC through another MikroTik (features branch)
+- public/macreach-model.js: validation + the fixed command script (+ revert script). Every address/route/firewall rule TowerDesk adds carries the comment "TowerDesk setup".
+- src/transports/mikrotik-mac.js: prompt-driven driver: SSH to the relay, /tool mac-telnet <mac>, login, type the commands, wait for the prompt each time; handles unreachable MAC, missing tool, wrong factory login, forced password change, refused commands, silent routers.
+- src/macreach.js: plan (read-only: asks the relay over the API whether it sees the MAC and whether the address is taken) and apply (same admin "allow writing" switch as Set up a radio; verifies the new router on its API; removes what it added if that fails).
+- UNVERIFIED on real hardware: RouterOS prompt/banner text and the exact mac-telnet behaviour across versions. Tested only against a fake router (25 checks).
+- Needs: relay = a MikroTik added with the API and with SSH enabled; new router on the same switch/VLAN.
+- Topology "seen, not added": a MikroTik with no IP gets a "Set up by MAC" button (real-data mode).

@@ -64,6 +64,25 @@
         <header class="content-header"><h1>Set up a radio</h1></header>
         <p class="muted pv-lead">Type a radio's IP address, say what it will be, and TowerDesk shows exactly what would change before anything is written. Customer radios, sectors and point-to-point links are supported. MikroTik is a preview for now.</p>
 
+        <div class="card" id="mr-card"><div class="card-header"><h3>A MikroTik with no IP yet?</h3><span class="card-actions">Reach it by MAC address</span></div><div class="card-body">
+            <p class="muted">Plug the new MikroTik into the same switch as one you already have. That MikroTik (the <strong>relay</strong>) can see it by its MAC address and log in to it, even without an IP. TowerDesk gives it an address, turns on its API and sets its name. Then you add it and set up its radio below.</p>
+            <div class="pv-grid">
+                <div class="form-group"><label for="mr-relay">Relay MikroTik</label><select id="mr-relay"><option value="">Loading…</option></select><span class="live-error mr-err" id="mr-relay-e"></span></div>
+                <div class="form-group"><label for="mr-mac">New router's MAC address</label><input id="mr-mac" list="mr-macs" type="text" placeholder="4C:5E:0C:8A:1F:88" autocomplete="off"><datalist id="mr-macs"></datalist><span class="live-error mr-err" id="mr-mac-e"></span></div>
+                <div class="form-group"><label for="mr-fuser">Its factory username</label><input id="mr-fuser" type="text" placeholder="admin" autocomplete="off"><span class="live-error mr-err" id="mr-fuser-e"></span></div>
+                <div class="form-group"><label for="mr-fpass">Its factory password</label><input id="mr-fpass" type="password" autocomplete="new-password"><span class="muted pv-hint">Blank on many models. Newer ones print a unique password on the label.</span><span class="live-error mr-err" id="mr-fpass-e"></span></div>
+                <div class="form-group"><label for="mr-ip">Address to give it</label><input id="mr-ip" type="text" placeholder="10.118.82.40" autocomplete="off"><span class="live-error mr-err" id="mr-ip-e"></span></div>
+                <div class="form-group"><label for="mr-prefix">Network size</label><input id="mr-prefix" type="text" placeholder="24" autocomplete="off"><span class="live-error mr-err" id="mr-prefix-e"></span></div>
+                <div class="form-group"><label for="mr-gw">Gateway <span class="muted">(optional)</span></label><input id="mr-gw" type="text" placeholder="10.118.82.1" autocomplete="off"><span class="muted pv-hint">Needed if you reach TowerDesk through a VPN.</span><span class="live-error mr-err" id="mr-gw-e"></span></div>
+                <div class="form-group"><label for="mr-name">Name <span class="muted">(optional)</span></label><input id="mr-name" type="text" placeholder="HRINS-Sm40" autocomplete="off"><span class="live-error mr-err" id="mr-name-e"></span></div>
+                <div class="form-group"><label for="mr-newpass">New admin password <span class="muted">(optional)</span></label><input id="mr-newpass" type="password" autocomplete="new-password"><span class="live-error mr-err" id="mr-newpass-e"></span></div>
+                <div class="form-group"><label for="mr-if">Port that faces the switch</label><input id="mr-if" type="text" placeholder="ether1" autocomplete="off"><span class="muted pv-hint">The address goes on this port. The default firewall only allows the API on ports inside its LAN bridge.</span><span class="live-error mr-err" id="mr-if-e"></span></div>
+                <div class="form-group"><label for="mr-api">Allow the API from <span class="muted">(optional)</span></label><input id="mr-api" type="text" placeholder="10.118.82.0/24" autocomplete="off"><span class="muted pv-hint">Adds a firewall rule so TowerDesk can reach the API.</span><span class="live-error mr-err" id="mr-api-e"></span></div>
+            </div>
+            <div class="form-actions"><button type="button" class="btn-secondary" id="mr-preview">Preview</button></div>
+            <div id="mr-out"></div>
+        </div></div>
+
         <div class="card"><div class="card-header"><h3>1. Which radio?</h3></div><div class="card-body">
             <div class="pv-grid">
                 <div class="form-group"><label for="pv-ip">IP address</label><input id="pv-ip" type="text" placeholder="192.168.1.20" autocomplete="off"></div>
@@ -83,5 +102,6 @@
 
     <script src="/provision-model.js"></script>
     <script src="/provision-page.js"></script>
+    <script src="/macreach-page.js"></script>
 </body>
 </html>

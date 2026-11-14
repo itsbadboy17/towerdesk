@@ -1112,3 +1112,5 @@ html[dir="rtl"] #scan-list select { background-position: left 10px center; }
 .pv-problems { margin: 10px 0 0 18px; display: grid; gap: 4px; color: var(--warning); }
 .pv-off { margin: 10px 0; padding: 10px 14px; border: 1px dashed var(--warning); border-radius: 8px; }
 .pv-live { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-soft); }
+
+.mr-path { padding: 10px 14px; border: 1px dashed var(--border); border-radius: 8px; background: var(--bg-subtle); margin-bottom: 10px; }

@@ -105,7 +105,7 @@ function analyse(devices, observations, macsById) {
     if (!d && r.name) d = devices.find((x) => nameKey(x.name) === nameKey(r.name));
     if (d) return { key: d.id, id: d.id, name: d.name, ip: d.ip, known: true };
     const key = r.mac ? 'mac:' + r.mac : r.ip ? 'ip:' + r.ip : 'name:' + nameKey(r.name);
-    const u = unknown[key] || (unknown[key] = { key, id: null, name: r.name || r.ip || r.mac, ip: r.ip || macIp[r.mac] || '', mac: r.mac || '', platform: r.platform || '', known: false, seenBy: [], via: r.via });
+    const u = unknown[key] || (unknown[key] = { key, id: null, name: r.name || r.ip || r.mac, ip: r.ip || macIp[r.mac] || '', mac: r.mac || '', platform: r.platform || '', known: false, seenBy: [], seenById: [], via: r.via });
     if (r.platform && !u.platform) u.platform = r.platform;
     if (r.name && (!u.name || u.name === u.ip || u.name === u.mac)) u.name = r.name;
     return u;
@@ -124,7 +124,7 @@ function analyse(devices, observations, macsById) {
       const e = entityFor(r);
       if (e.id === o.deviceId) return;
       seenDirect.add(e.key);
-      if (!e.known) { if (!e.seenBy.includes(byId[o.deviceId].name)) e.seenBy.push(byId[o.deviceId].name); e.port = r.remotePort || ''; }
+      if (!e.known) { if (!e.seenBy.includes(byId[o.deviceId].name)) e.seenBy.push(byId[o.deviceId].name); if (!e.seenById.includes(o.deviceId)) e.seenById.push(o.deviceId); e.port = r.remotePort || ''; }
       const g = grp(o.deviceId, r.localPort);
       if (!g.members.has(e.key)) g.members.set(e.key, { entity: e, via: r.via, remotePort: r.remotePort, direct: true });
       g.collectorSees = true;
@@ -226,7 +226,7 @@ function analyse(devices, observations, macsById) {
 
   const unknownList = Object.keys(unknown).map((k) => {
     const u = unknown[k];
-    return { key: u.key, name: u.name, ip: u.ip, mac: u.mac, platform: u.platform, kind: kindOf(u.platform, u.name) || 'device', typeHint: typeHint(u.platform), seenBy: u.seenBy, port: u.port || '' };
+    return { key: u.key, name: u.name, ip: u.ip, mac: u.mac, platform: u.platform, kind: kindOf(u.platform, u.name) || 'device', typeHint: typeHint(u.platform), seenBy: u.seenBy, seenById: u.seenById || [], port: u.port || '' };
   }).sort((a, b) => (a.kind === 'switch' ? 0 : 1) - (b.kind === 'switch' ? 0 : 1) || a.name.localeCompare(b.name));
 
   Object.keys(nearby).forEach((id) => nearby[id].sort((a, b) => (a.kind === 'direct' ? 0 : 1) - (b.kind === 'direct' ? 0 : 1) || a.name.localeCompare(b.name)));

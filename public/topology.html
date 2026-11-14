@@ -246,7 +246,7 @@
                 if (unk.length) {
                     html += '<details class="nb-unknown"' + (unk.length <= 4 ? ' open' : '') + '><summary>Seen on your network, not added (' + unk.length + ')</summary><ul>' + unk.map(function (u) {
                         return '<li><span><strong>' + esc(u.name || u.mac || u.ip) + '</strong> <span class="muted">' + esc([u.kind === 'switch' ? 'Switch' : '', u.platform, u.ip, u.mac, u.seenBy && u.seenBy.length ? 'seen by ' + u.seenBy.join(', ') : ''].filter(Boolean).join(' · ')) + '</span></span>' +
-                            (CAN_EDIT ? '<a class="btn-secondary btn-sm" href="' + esc(addUrl(u)) + '">Add</a>' : '') + '</li>';
+                            (CAN_EDIT ? (!u.ip && u.mac && u.typeHint === 'mikrotik' ? '<a class="btn-secondary btn-sm" href="/provision?mac=' + encodeURIComponent(u.mac) + '&via=' + encodeURIComponent((u.seenById || [])[0] || '') + '&name=' + encodeURIComponent(u.name || '') + '" title="It has no IP yet: reach it by its MAC address through a MikroTik that can see it">Set up by MAC</a>' : '<a class="btn-secondary btn-sm" href="' + esc(addUrl(u)) + '">Add</a>') : '') + '</li>';
                     }).join('') + '</ul></details>';
                 }
                 el.innerHTML = html;

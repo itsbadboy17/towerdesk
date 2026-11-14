@@ -218,7 +218,8 @@ function neighborObservations() {
       { via: 'mndp', mac: '74:4d:28:00:00:01', ip: '10.90.1.1', name: 'Sector North', platform: 'Ubiquiti', remotePort: '', localPort: 'ether2' },
       { via: 'mndp', mac: '74:4d:28:00:00:02', ip: '10.90.1.2', name: 'Sector West', platform: 'Ubiquiti', remotePort: '', localPort: 'ether2' },
       { via: 'mndp', mac: '74:4d:28:00:00:03', ip: '10.90.1.3', name: 'Sector South', platform: 'Ubiquiti', remotePort: '', localPort: 'ether2' },
-      { via: 'mndp', mac: '4c:5e:0c:00:00:09', ip: '10.90.1.9', name: 'Sector East', platform: 'MikroTik', remotePort: '', localPort: 'ether2' }
+      { via: 'mndp', mac: '4c:5e:0c:00:00:09', ip: '10.90.1.9', name: 'Sector East', platform: 'MikroTik', remotePort: '', localPort: 'ether2' },
+      { via: 'mndp', mac: '4c:5e:0c:aa:bb:01', ip: '', name: 'MikroTik', platform: 'MikroTik', remotePort: '', localPort: 'ether2' }
     ]
   }];
 }
