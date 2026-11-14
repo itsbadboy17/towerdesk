@@ -631,9 +631,20 @@ function neighborView(demo) {
   (monitor.snapshot().devices || []).forEach((d) => { if (d.metrics && d.metrics.macs) macs[d.id] = d.metrics.macs; });
   const obs = neighbors.observations();
   const at = obs.map((o) => o.at).filter(Boolean).sort().pop() || null;
-  return Object.assign({ demo: false, scannedAt: at, scanned: obs.length, canScan: list.filter(neighbors.canScan).length }, neighbors.analyse(list, obs, macs));
+  return Object.assign({ demo: false, scannedAt: at, scanned: obs.length, canScan: list.filter(neighbors.canScan).length, autoConnect: neighbors.settings().autoConnect }, neighbors.analyse(list, obs, macs));
 }
 app.get('/api/neighbors', (req, res) => res.json(neighborView(req.query && req.query.demo === '1')));
+// Connect the devices to what the scan shows (unless switched off). Never moves a device the owner placed by hand.
+function connectFromScan() {
+  if (!neighbors.settings().autoConnect) return [];
+  const applied = neighbors.autoConnect(devices.list(), neighborView(false).suggestions, devices.setLayout);
+  applied.forEach((a) => { try { monitor.note({ kind: 'device', id: a.id, name: a.name, text: a.name + ': connected to ' + a.parentName + ' (from the neighbour scan)' }); } catch (e) { /* optional */ } });
+  return applied;
+}
+app.post('/api/neighbors/settings', (req, res) => {
+  const b = req.body || {};
+  res.json(neighbors.setSettings({ autoConnect: typeof b.autoConnect === 'boolean' ? b.autoConnect : undefined }));
+});
 // Every few hours the routers and switches are asked again (read-only), and a change in what is next to what is
 // written to the Recent changes list. Off in demo mode and when nothing can be scanned.
 const NEIGHBOR_EVERY_MS = 6 * 3600 * 1000;
@@ -645,6 +656,7 @@ async function scheduledNeighborScan() {
     const before = neighborView(false).suggestions;
     await neighbors.scan(list, devices, { snmp: require('./src/transports/snmp'), mikrotik: require('./src/transports/mikrotik') });
     const after = neighborView(false).suggestions;
+    connectFromScan();
     const name = (id) => (list.find((d) => d.id === id) || {}).name;
     neighbors.diffSuggestions(before, after, (id) => (id === 'internet' ? 'the internet' : name(id))).forEach((c) => {
       try { monitor.note({ kind: 'device', id: c.id, name: name(c.id) || c.id, text: name(c.id) + ': ' + c.text }); } catch (e) { /* optional */ }
@@ -656,7 +668,8 @@ app.post('/api/neighbors/scan', async (req, res) => {
   if (req.query && req.query.demo === '1') return res.json(Object.assign({ report: [] }, neighborView(true)));
   try {
     const report = await neighbors.scan(devices.list(), devices, { snmp: require('./src/transports/snmp'), mikrotik: require('./src/transports/mikrotik') }, req.body && req.body.id ? String(req.body.id) : undefined);
-    res.json(Object.assign({ report }, neighborView(false)));
+    const applied = connectFromScan();
+    res.json(Object.assign({ report, applied }, neighborView(false)));
   } catch (e) { res.status(500).json({ error: 'The scan failed' }); }
 });
 

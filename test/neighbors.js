@@ -136,5 +136,59 @@ check('nothing read means no suggestions and no crash', () => { const E = N.anal
 check('only routers and switches with an API or SNMP login can be scanned', () => { assert.ok(N.canScan({ method: 'snmp' })); assert.ok(N.canScan({ method: 'mikrotik' })); assert.ok(!N.canScan({ method: 'airos' })); assert.ok(!N.canScan({ method: 'ping' })); });
 check('a cheap switch name is recognised', () => { assert.strictEqual(N.kindOf('', 'Switch'), 'switch'); assert.strictEqual(N.kindOf('cisco WS-C2960', 'x'), 'switch'); assert.strictEqual(N.kindOf('MikroTik', 'HRINS-Sm21'), ''); });
 
+// ---- per interface, and connecting automatically
+function portFixture() {
+  const devs = [
+    { id: 'gw', name: 'Gateway', ip: '10.0.0.1', type: 'mikrotik' },
+    { id: 'slave', name: 'Slave', ip: '10.0.0.3', type: 'mikrotik' },
+    { id: 'sw', name: 'Cisco-SW', ip: '10.0.0.4', type: 'switch', parentId: 'slave' },
+    { id: 's1', name: 'Sector1', ip: '10.0.0.31', type: 'mikrotik' },
+    { id: 'new', name: 'HRINS-New', ip: '10.0.0.40', type: 'mikrotik' }
+  ];
+  const mac = { gw: 'aa:00:00:00:00:01', slave: 'aa:00:00:00:00:03', sw: 'aa:00:00:00:00:04', s1: 'aa:00:00:00:00:05', new: 'aa:00:00:00:00:06' };
+  const macs = {}; Object.keys(mac).forEach((k) => { macs[k] = [mac[k]]; });
+  const row = (id, local, remote) => ({ via: 'cdp', mac: mac[id], ip: devs.find((d) => d.id === id).ip, name: devs.find((d) => d.id === id).name, platform: id === 'sw' ? 'Cisco IOS' : 'MikroTik', remotePort: remote, localPort: local });
+  const obs = [
+    { deviceId: 'sw', gateway: '10.0.0.1', arp: [], selfMacs: [], rows: [row('slave', 'Et0/0', 'ether2'), row('s1', 'Et0/1', 'ether1'), row('new', 'Et1/0', 'ether1')],
+      fdb: [{ mac: mac.gw, port: 'Et0/0' }, { mac: mac.slave, port: 'Et0/0' }, { mac: mac.s1, port: 'Et0/1' }, { mac: mac.new, port: 'Et1/0' }] },
+    { deviceId: 'new', gateway: '10.0.0.1', arp: [], selfMacs: [], rows: [row('sw', 'ether1', 'Ethernet1/0')], fdb: [] },
+    { deviceId: 'slave', gateway: '10.0.0.1', arp: [], selfMacs: [], rows: [], fdb: [{ mac: mac.gw, port: 'ether1' }, { mac: mac.sw, port: 'ether2' }, { mac: mac.s1, port: 'ether2' }, { mac: mac.new, port: 'ether2' }] }
+  ];
+  return { devs, obs, macs };
+}
+check('each interface says what it leads to, with the far end\'s port', () => {
+  const f = portFixture(), r = N.analyse(f.devs, f.obs, f.macs);
+  const sw = r.ports.sw, at = (p) => sw.filter((x) => x.port === p);
+  assert.strictEqual(at('Et0/0')[0].toId, 'slave'); assert.strictEqual(at('Et0/0')[0].role, 'up'); assert.strictEqual(at('Et0/0').length, 1, 'the gateway far behind that port is not listed');
+  assert.strictEqual(at('Et0/1')[0].toId, 's1'); assert.strictEqual(at('Et0/1')[0].role, 'down'); assert.strictEqual(at('Et0/1')[0].toPort, 'ether1');
+  assert.strictEqual(at('Et1/0')[0].toId, 'new'); assert.strictEqual(at('Et1/0')[0].role, 'down');
+  const nw = r.ports.new[0]; assert.strictEqual(nw.port, 'ether1'); assert.strictEqual(nw.toId, 'sw'); assert.strictEqual(nw.toPort, 'Et1/0'); // the switch's own name for the port wins over how the radio spells it assert.strictEqual(nw.role, 'up');
+});
+check('the MikroTik interface-name is kept as the neighbour\'s port', () => {
+  const t = N.fromMikrotikTables({ neighbors: [{ interface: 'ether1', 'interface-name': 'Ethernet1/0', identity: 'Cisco-SW', 'mac-address': 'AA:00:00:00:00:04' }] });
+  assert.strictEqual(t.rows[0].remotePort, 'Ethernet1/0'); assert.strictEqual(t.rows[0].localPort, 'ether1');
+});
+check('auto-connect fills empty devices, root first, and leaves hand-made choices alone', () => {
+  const list = [
+    { id: 'a', name: 'A', parentId: null }, { id: 'b', name: 'B', parentId: null }, { id: 'c', name: 'C', parentId: 'x', parentSource: 'manual' },
+    { id: 'd', name: 'D', parentId: 'x' }, { id: 'e', name: 'E', parentId: 'a', parentSource: 'auto' }, { id: 'x', name: 'X', parentId: null }
+  ];
+  const sug = { a: { parentId: 'internet' }, b: { parentId: 'a' }, c: { parentId: 'a' }, d: { parentId: 'a' }, e: { parentId: 'b' }, x: { parentId: null, needsAdding: true } };
+  const calls = [];
+  const out = N.autoConnect(list, sug, (id, o) => { calls.push(id); assert.strictEqual(o.source, 'auto'); return { device: {} }; });
+  assert.deepStrictEqual(calls, ['a', 'b', 'e'], 'parents first; manual and old parents untouched');
+  assert.strictEqual(out.length, 3); assert.strictEqual(out[0].parentName, 'the internet');
+});
+check('auto-connect skips what is already right and what setLayout refuses', () => {
+  const list = [{ id: 'a', name: 'A', parentId: null }, { id: 'b', name: 'B', parentId: null }];
+  const out = N.autoConnect(list, { a: { parentId: 'b', already: true }, b: { parentId: 'a' } }, (id) => ({ error: 'That would make a loop' }));
+  assert.deepStrictEqual(out, []);
+});
+check('auto-connect can be switched off and on', () => {
+  assert.strictEqual(N.settings().autoConnect, true);
+  assert.strictEqual(N.setSettings({ autoConnect: false }).autoConnect, false); assert.strictEqual(N.settings().autoConnect, false);
+  assert.strictEqual(N.setSettings({ autoConnect: true }).autoConnect, true);
+});
+
 if (fails) { console.log('\n' + fails + ' neighbour test(s) failed'); process.exit(1); }
 console.log('Neighbour tests passed.');

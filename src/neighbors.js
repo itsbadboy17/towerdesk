@@ -6,7 +6,9 @@ const fs = require('fs');
 const path = require('path');
 const { dataDir } = require('./paths');
 
+const { portKey } = require('../public/topo-model');
 const FILE = path.join(dataDir(), 'neighbors.json');
+const SETTINGS_FILE = path.join(dataDir(), 'neighbors-settings.json');
 
 // ---------------- tiny helpers ----------------
 function normMac(v) {
@@ -52,7 +54,7 @@ function fromMikrotikTables(t) {
   t = t || {};
   const rows = (t.neighbors || []).map((r) => ({
     via: 'mndp', mac: normMac(r['mac-address']), ip: normIp(r.address || r.address4), name: clean(r.identity, 80), platform: clean(r.platform || r.board, 80),
-    remotePort: '', localPort: clean(String(r.interface || '').split(',')[0], 40)
+    remotePort: clean(r['interface-name'] || '', 60), localPort: clean(String(r.interface || '').split(',')[0], 40)
   }));
   return finishRows(rows, {
     arp: (t.arp || []).map((a) => ({ ip: a.address, mac: a['mac-address'] })),
@@ -260,13 +262,49 @@ function analyse(devices, observations, macsById) {
   // A suggestion whose parent is a not-yet-added switch still helps: remember what to add first.
   Object.keys(suggestions).forEach((id) => { const s = suggestions[id]; if (!s.parentId) s.needsAdding = true; });
 
+  // ---- per interface: what each port of a device leads to (neighbour rows and MAC tables, both ends)
+  const parentOf = (id) => { const s = suggestions[id]; return s && s.parentId ? s.parentId : (byId[id] || {}).parentId || null; };
+  const ports = {};
+  const addPort = (id, p) => {
+    if (!id || !byId[id] || !p.port) return;
+    const l = ports[id] || (ports[id] = []);
+    p.pk = portKey(p.port);
+    const hit = l.find((x) => x.pk === p.pk && x.key === p.key);
+    if (hit) { if (!hit.toPort && p.toPort) hit.toPort = p.toPort; return; }
+    l.push(p);
+  };
+  Object.keys(groups).forEach((k) => {
+    const g = groups[k], cid = g.collector;
+    g.members.forEach((m) => {
+      const e = m.entity;
+      let role = 'peer';
+      if (e.known) { if (parentOf(cid) === e.id) role = 'up'; else if (parentOf(e.id) === cid) role = 'down'; }
+      if (!m.direct && role === 'peer') return; // something far away on a busy port: not what this port connects to
+      addPort(cid, { port: g.port, key: e.key, toId: e.id || null, to: e.name, toIp: e.ip || '', known: !!e.known, toPort: m.remotePort || '', role, via: m.via });
+      if (m.direct && e.known && m.remotePort) {
+        addPort(e.id, { port: m.remotePort, key: cid, toId: cid, to: byId[cid].name, toIp: byId[cid].ip || '', known: true, toPort: g.port, role: role === 'up' ? 'down' : role === 'down' ? 'up' : 'peer', via: m.via });
+      }
+    });
+  });
+  // Several devices on one shared wire all see each other; they are not what the port is cabled to. When a device
+  // has at least one clear up/down link, only those are kept.
+  Object.keys(ports).forEach((id) => { if (ports[id].some((p) => p.role !== 'peer')) ports[id] = ports[id].filter((p) => p.role !== 'peer'); });
+  // the far end's port name, when that device told us about the same link
+  Object.keys(ports).forEach((id) => ports[id].forEach((p) => {
+    if (p.toPort || !p.toId || !ports[p.toId]) return;
+    const back = ports[p.toId].find((x) => x.toId === id && x.toPort && portKey(x.toPort) === p.pk) || ports[p.toId].find((x) => x.toId === id);
+    if (back) p.toPort = back.port;
+  }));
+  const rank = { up: 0, down: 1, peer: 2 };
+  Object.keys(ports).forEach((id) => ports[id].sort((a, b) => a.port.localeCompare(b.port, undefined, { numeric: true }) || rank[a.role] - rank[b.role]));
+
   const unknownList = Object.keys(unknown).map((k) => {
     const u = unknown[k];
     return { key: u.key, name: u.name, ip: u.ip, mac: u.mac, platform: u.platform, kind: kindOf(u.platform, u.name) || 'device', typeHint: typeHint(u.platform), seenBy: u.seenBy, seenById: u.seenById || [], port: u.port || '' };
   }).sort((a, b) => (a.kind === 'switch' ? 0 : 1) - (b.kind === 'switch' ? 0 : 1) || a.name.localeCompare(b.name));
 
   Object.keys(nearby).forEach((id) => nearby[id].sort((a, b) => (a.kind === 'direct' ? 0 : 1) - (b.kind === 'direct' ? 0 : 1) || a.name.localeCompare(b.name)));
-  return { gateway: gateway || '', gatewayId: gwDev ? gwDev.id : null, nearby, suggestions, unknown: unknownList };
+  return { gateway: gateway || '', gatewayId: gwDev ? gwDev.id : null, nearby, suggestions, ports, unknown: unknownList };
 }
 
 // Per port of a switch: how many devices it has learnt behind that port, and the neighbours it sees there.
@@ -295,6 +333,36 @@ function diffSuggestions(before, after, nameOf) {
     out.push({ id, text: 'is now seen next to ' + label(a) + ' (before: ' + label(b) + ')' });
   });
   return out;
+}
+
+// ---------------- connecting automatically ----------------
+// After a scan the devices are connected to what their neighbours show. A device the owner placed by hand
+// (or that already had a parent before TowerDesk did this) is never moved; only empty ones and ones TowerDesk
+// itself connected earlier are. Closest to the internet first, so a parent is in place before its children.
+// setLayout is devices.setLayout (it refuses loops). Returns what was changed.
+function autoConnect(list, suggestions, setLayout) {
+  const byId = {}; (list || []).forEach((d) => { byId[d.id] = d; });
+  suggestions = suggestions || {};
+  const depth = (id) => { let n = 0, cur = id; const seen = {}; while (suggestions[cur] && suggestions[cur].parentId && suggestions[cur].parentId !== 'internet' && !seen[cur]) { seen[cur] = 1; cur = suggestions[cur].parentId; n++; } return n; };
+  const todo = Object.keys(suggestions).filter((id) => {
+    const s = suggestions[id], d = byId[id];
+    return d && s.parentId && !s.already && (!d.parentId || d.parentSource === 'auto');
+  }).sort((a, b) => depth(a) - depth(b));
+  const applied = [];
+  todo.forEach((id) => {
+    const s = suggestions[id], d = byId[id];
+    const r = setLayout(id, { parentId: s.parentId, source: 'auto' });
+    if (r && r.device) applied.push({ id, name: d.name, parentId: s.parentId, parentName: s.parentId === 'internet' ? 'the internet' : (byId[s.parentId] || {}).name || s.parentName || '', from: d.parentId || null });
+  });
+  return applied;
+}
+function settings() { try { const v = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')); return { autoConnect: !(v && v.autoConnect === false) }; } catch (e) { return { autoConnect: true }; } }
+function setSettings(s) {
+  const cur = settings();
+  if (s && typeof s.autoConnect === 'boolean') cur.autoConnect = s.autoConnect;
+  fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(cur));
+  return cur;
 }
 
 // ---------------- store (data/neighbors.json) ----------------
@@ -344,4 +412,4 @@ async function scan(deviceList, devices, transports, only) {
   return report;
 }
 
-module.exports = { diffSuggestions, portMeta, normMac, normIp, nameKey, kindOf, typeHint, fromSnmpTables, fromMikrotikTables, analyse, observations, put, forget, canScan, scan, collect };
+module.exports = { autoConnect, settings, setSettings, diffSuggestions, portMeta, normMac, normIp, nameKey, kindOf, typeHint, fromSnmpTables, fromMikrotikTables, analyse, observations, put, forget, canScan, scan, collect };

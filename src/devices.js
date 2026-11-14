@@ -173,6 +173,7 @@ function setLayout(id, input) {
       }
     }
     d.parentId = pid;
+    d.parentSource = inp.source === 'auto' ? 'auto' : 'manual';
   }
   save(list);
   return { device: publicView(d) };

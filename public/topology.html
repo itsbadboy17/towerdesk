@@ -216,6 +216,7 @@
                 else if (s && s.parentId) html += '<div class="nb-sug"><div><strong>Suggestion:</strong> it plugs into <b>' + esc(nbName(s.parentId) || s.parentName) + '</b>.</div><div class="muted">' + esc(s.reason) + '</div>' +
                     (CAN_EDIT ? '<button type="button" class="btn-primary btn-sm" data-act="nb-use" data-parent="' + esc(s.parentId) + '">Use this</button>' : '') + '</div>';
                 else if (s) html += '<div class="nb-sug warn"><div><strong>Suggestion:</strong> it plugs into <b>' + esc(s.parentName) + '</b>, which is not added to TowerDesk yet.</div><div class="muted">' + esc(s.reason) + '</div>' + nbAddButton(s.parentName) + '</div>';
+                html += portsHtml(n);
                 var near = (NB.nearby && NB.nearby[n.id]) || [];
                 if (near.length) {
                     html += '<div class="nb-near"><strong>Seen next to it (' + near.length + ')</strong><ul>' + near.slice(0, 10).map(function (x) {
@@ -225,6 +226,28 @@
                     }).join('') + '</ul>' + (near.length > 10 ? '<p class="muted">and ' + (near.length - 10) + ' more</p>' : '') + '</div>';
                 } else if (NB.scanned) html += '<p class="muted nb-none">No neighbours seen for this device yet. Only routers and switches that TowerDesk can log in to (MikroTik API or SNMP) report them.</p>';
                 return html;
+            }
+            // Every interface of the device, and where it leads (read from the neighbour tables).
+            function portsHtml(n) {
+                var mine = (NB && NB.ports && NB.ports[n.id]) || [];
+                var ifs = ((n.d.metrics || {}).interfaces || []).filter(function (i) { return i && i.name; });
+                var rows = [], seen = {};
+                ifs.forEach(function (i) {
+                    var links = mine.filter(function (p) { return p.pk === T.portKey(i.name); });
+                    seen[T.portKey(i.name)] = 1;
+                    rows.push({ name: i.name, up: i.up, links: links });
+                });
+                mine.forEach(function (p) { if (!seen[p.pk]) { seen[p.pk] = 1; rows.push({ name: p.port, up: null, links: mine.filter(function (q) { return q.pk === p.pk; }) }); } });
+                if (!rows.length) return '';
+                var roleTxt = { up: 'towards the internet', down: 'below it', peer: 'next to it' };
+                var body = rows.map(function (r) {
+                    var cell = r.links.length ? r.links.map(function (p) {
+                        var who = p.known ? '<button type="button" class="name-btn" data-act="nb-jump" data-id="' + esc(p.toId) + '">' + esc(p.to) + '</button>' : '<span class="nb-new">' + esc(p.to) + '</span> <span class="nb-chip">not added</span>';
+                        return who + (p.toPort ? ' <span class="muted">port ' + esc(p.toPort) + '</span>' : '') + ' <span class="nb-chip">' + esc(roleTxt[p.role] || '') + '</span>';
+                    }).join('<br>') : '<span class="muted">' + (NB && NB.scanned ? 'nothing seen' : 'not scanned yet') + '</span>';
+                    return '<tr><td class="mono">' + (r.up === null ? '' : r.up ? '🟢 ' : '⚫ ') + esc(r.name) + '</td><td>' + cell + '</td></tr>';
+                }).join('');
+                return '<div class="nb-ports"><strong>Interfaces and what they connect to</strong><table class="iface-table"><thead><tr><th>Interface</th><th>Connected to</th></tr></thead><tbody>' + body + '</tbody></table></div>';
             }
             function nbApplicable() {
                 if (!NB) return [];
@@ -241,6 +264,7 @@
                 var apply = nbApplicable();
                 var html = '<div class="nb-head"><div><strong>What is next to what</strong><div class="muted">' + esc(nbMsg || status) + '</div></div><div class="nb-actions">' +
                     (CAN_EDIT || DEMO ? '<button type="button" class="btn-secondary btn-sm" data-act="nb-scan"' + (nbBusy ? ' disabled' : '') + '>' + (nbBusy ? 'Scanning…' : 'Scan neighbours') + '</button>' : '') +
+                    (CAN_EDIT && NB ? '<label class="nb-auto" title="After each scan, connect devices to what their neighbours show. Devices you placed yourself are never moved."><input type="checkbox" data-act="nb-auto"' + (NB.autoConnect !== false ? ' checked' : '') + '> Connect automatically</label>' : '') +
                     (CAN_EDIT && apply.length ? '<button type="button" class="btn-primary btn-sm" data-act="nb-apply">Use all ' + apply.length + ' suggestion' + (apply.length === 1 ? '' : 's') + '</button>' : '') + '</div></div>';
                 var unk = (NB && NB.unknown) || [];
                 if (unk.length) {
@@ -266,7 +290,10 @@
                     NB = j;
                     var bad = (j.report || []).filter(function (x) { return !x.ok; });
                     nbMsg = (j.report || []).length ? 'Read ' + (j.report.length - bad.length) + ' of ' + j.report.length + (bad.length ? '. Could not read: ' + bad.map(function (x) { return x.name + ' (' + x.error + ')'; }).join(', ') : '.') : '';
+                    var ap = j.applied || [];
+                    if (ap.length) nbMsg += ' Connected ' + ap.length + ' device' + (ap.length === 1 ? '' : 's') + ': ' + ap.slice(0, 6).map(function (a) { return a.name + ' → ' + a.parentName; }).join(', ') + (ap.length > 6 ? '…' : '') + '.';
                     renderNbPanel(); renderEditor();
+                    if (ap.length && typeof poll === 'function') poll();
                 }).catch(function () { nbBusy = false; nbMsg = 'Could not reach TowerDesk.'; renderNbPanel(); });
             }
 
@@ -498,6 +525,7 @@
                     return;
                 }
                 if (act.dataset.act === 'nb-scan') { if (!nbBusy) scanNb(); return; }
+                if (act.dataset.act === 'nb-auto') { fetch('/api/neighbors/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ autoConnect: !!act.checked }) }).then(function () { if (NB) NB.autoConnect = !!act.checked; }); return; }
                 if (act.dataset.act === 'nb-jump') { selectNode(act.dataset.id); return; }
                 if (act.dataset.act === 'nb-use' || act.dataset.act === 'nb-apply') {
                     var batch = [];

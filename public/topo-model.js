@@ -258,5 +258,10 @@
         return { state: 'up', text: 'Nothing looks wrong on this path.' };
     }
 
-    return { ATT: ATT, siteKey: siteKey, groupSites: groupSites, healthOf: healthOf, siteSummary: siteSummary, buildGraph: buildGraph, layout: layout, candidates: candidates, search: search, chain: chain, keyOf: keyOf };
+    // The same port is spelled differently by different tables (Et0/0, Ethernet0/0, bridge1/ether2, ether2): one key for all.
+    function portKey(name) {
+        return String(name || '').toLowerCase().replace(/^bridge\d*\//, '').replace(/^gigabitethernet/, 'gi').replace(/^fastethernet/, 'fa').replace(/^tengigabitethernet/, 'te').replace(/^ethernet/, 'et').replace(/\s+/g, '');
+    }
+
+    return { portKey: portKey, ATT: ATT, siteKey: siteKey, groupSites: groupSites, healthOf: healthOf, siteSummary: siteSummary, buildGraph: buildGraph, layout: layout, candidates: candidates, search: search, chain: chain, keyOf: keyOf };
 });

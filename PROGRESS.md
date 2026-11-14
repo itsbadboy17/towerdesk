@@ -206,3 +206,7 @@ Not done: the phone app (left out on purpose); airOS radios cannot report neighb
   It also starts the pretend SAS (scripts/mock-sas4.js) unless switched off. Settings > Lab data (admin): folder, port, start/stop.
 - Port safety: a TowerDesk on the lab port that does not say it is the lab is never opened as lab data.
 - Tested: test/lab.js (11 checks) and by hand: Real > Lab > Real in the browser against the GNS3 lab.
+## Scan neighbours now connects the devices (features branch)
+- After "Scan neighbours" (and the 6-hourly scan) devices are connected automatically to what their neighbours show, closest to the internet first. A device whose parent was set by hand (or before this existed) is never moved; only empty ones and ones TowerDesk connected itself (`parentSource: 'auto'`). Switch: "Connect automatically" next to the scan button (`/api/neighbors/settings`). Changes are written to Recent changes.
+- Selecting a device shows "Interfaces and what they connect to": each interface, link state, the device on the other end, that device's port, and whether it leads towards the internet or below. Built in `analyse().ports` from neighbour rows and MAC tables (MikroTik `interface-name` is now read as the neighbour's port). No new dependency.
+- Tested: test/neighbors.js (ports, autoConnect, setting) and by hand on the GNS3 lab (Gateway > Master > Slave > Cisco-SW > Sector1/2/HRINS-New, with ports).
