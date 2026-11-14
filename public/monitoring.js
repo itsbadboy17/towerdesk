@@ -938,6 +938,24 @@
         if (copy) { var ta = document.getElementById('tell-text'); copyText(ta.value, copy); }
     });
 
+    // Ports of a switch: link state, speed, traffic, how many devices are learnt behind it, who is plugged in.
+    function portsBlock(mx) {
+        var ports = (mx && mx.ports) || [];
+        if (!ports.length) return '<p class="muted">No ports were read yet. The switch needs SNMP (a community the saved logins know), and it can take a minute after adding.</p>';
+        var up = ports.filter(function (p) { return p.up; }).length;
+        var rows = ports.map(function (p) {
+            var state = p.adminUp === false ? '<span class="status-badge warning">Switched off</span>' : p.up ? '<span class="status-badge healthy">● Up</span>' : '<span class="status-badge">○ Nothing plugged in</span>';
+            var who = (p.neighbors || []).map(function (n) { return '<div>' + esc(n.name) + (n.platform ? ' <span class="muted">' + esc(n.platform) + '</span>' : '') + (n.ip ? ' <span class="muted mono">' + esc(n.ip) + '</span>' : '') + '</div>'; }).join('');
+            return '<tr class="' + (p.up ? '' : 'port-down') + '"><td><strong>' + esc(p.name) + '</strong>' + (p.alias ? '<div class="muted">' + esc(p.alias) + '</div>' : '') + '</td><td>' + state + '</td>' +
+                '<td class="mono">' + (p.speedMbps ? (p.speedMbps >= 1000 ? p.speedMbps / 1000 + ' Gbps' : p.speedMbps + ' Mbps') : '–') + '</td>' +
+                '<td class="mono">' + (p.rxBps != null ? '↓ ' + esc(bps(p.rxBps)) : '–') + '</td><td class="mono">' + (p.txBps != null ? '↑ ' + esc(bps(p.txBps)) : '–') + '</td>' +
+                '<td class="mono">' + (p.macCount != null ? p.macCount : '–') + '</td><td>' + (who || '<span class="muted">–</span>') + '</td>' +
+                '<td class="mono' + (p.errors ? ' port-err' : '') + '">' + (p.up ? (p.errors || 0) : '–') + '</td></tr>';
+        }).join('');
+        return '<p class="muted">' + up + ' of ' + ports.length + ' ports have a cable plugged in. "Devices behind it" counts what the switch has learnt on that port (a sector counts all its customers). Errors that keep growing usually mean a bad cable or a speed mismatch.</p>' +
+            '<div class="table-wrap"><table class="ports-table"><thead><tr><th>Port</th><th>Link</th><th>Speed</th><th>In</th><th>Out</th><th>Devices behind it</th><th>Plugged into</th><th>Errors</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+    }
+
     function detailBody(d) {
         var cs = window.TowerDesk.connState(d);
         var det = (d.lastTest && d.lastTest.details) || {};
@@ -955,10 +973,12 @@
         ].concat(d.lastTest && !d.lastTest.ok ? [['Last test', lastTest]] : []).filter(function (x) { return x[1]; });
         var mxk = d.metrics && d.metrics.kind;
         var isSta = d.online !== false && mxk === 'stations', isOnu = d.online !== false && mxk === 'onus';
-        var tabbed = isSta || isOnu;
-        var tab = !tabbed ? 'overview' : (detailTab === 'advisor' && !isSta ? 'overview' : detailTab);
-        var nCust = isSta ? ((d.metrics.stations || []).length || d.metrics.stationCount || 0) : (d.metrics.onuCount || (d.metrics.onus || []).length || 0);
-        var tabs = tabbed ? '<div class="d-tabs" role="tablist">' + [['overview', 'Overview']].concat(isSta ? [['advisor', 'Advisor']] : [], [['customers', (isSta ? 'Customers' : 'Fibre customers') + ' (' + nCust + ')']]).map(function (x) {
+        var isSw = d.online !== false && mxk === 'switch';
+        var tabbed = isSta || isOnu || isSw;
+        var tab = !tabbed ? 'overview' : ((detailTab === 'advisor' && !isSta) || (detailTab === 'ports' && !isSw) || (detailTab === 'customers' && isSw) ? 'overview' : detailTab);
+        var nCust = isSta ? ((d.metrics.stations || []).length || d.metrics.stationCount || 0) : isOnu ? (d.metrics.onuCount || (d.metrics.onus || []).length || 0) : 0;
+        var nPorts = isSw ? (d.metrics.ports || []).length : 0;
+        var tabs = tabbed ? '<div class="d-tabs" role="tablist">' + [['overview', 'Overview']].concat(isSta ? [['advisor', 'Advisor']] : [], isSw ? [['ports', 'Ports (' + nPorts + ')']] : [['customers', (isSta ? 'Customers' : 'Fibre customers') + ' (' + nCust + ')']]).map(function (x) {
             return '<button type="button" role="tab" class="d-tab' + (tab === x[0] ? ' active' : '') + '" aria-selected="' + (tab === x[0]) + '" data-dtab="' + x[0] + '">' + esc(x[1]) + '</button>';
         }).join('') + '</div>' : '';
         var overview = (d.role === 'backhaul' ? linkHero(d) : '') +
@@ -966,7 +986,8 @@
             '<h4 class="detail-sec">Live</h4>' + statGrid(d) +
             '<h4 class="detail-sec">Latency, last 10 minutes</h4>' + latencyChart(d.history) +
             (d.online === false ? '' : '<h4 class="detail-sec">Traffic' + (mxk === 'stations' ? '' : ' &amp; ' + (mxk === 'clients' ? 'clients' : 'interfaces')) + '</h4>' + metricsBlock(d.metrics));
-        var pane = tab === 'advisor' ? advisorBlock(d)
+        var pane = tab === 'ports' ? portsBlock(d.metrics)
+            : tab === 'advisor' ? advisorBlock(d)
             : tab === 'customers' ? (isSta ? registrationBlock(d.metrics) : onuBlock(d.metrics))
             : overview;
         return '<div class="detail-top">' +
@@ -1019,10 +1040,11 @@
         var isLink = d.role === 'backhaul';
         var isSector = !!(d.metrics && d.metrics.kind === 'stations');
         var isOlt = !!(d.metrics && d.metrics.kind === 'onus');
+        var isSwitchKind = !!(d.metrics && d.metrics.kind === 'switch');
         if (isSector || isOlt) loadSas();
         if (isSector) { if (adv.id !== id) adv = blankAdv(id); loadHistory(); }
-        m.querySelector('.detail-modal').classList.toggle('wide', isLink || isSector || isOlt);
-        m.querySelector('.modal-header strong').textContent = isLink ? 'Link detail' : (isSector ? 'Sector detail' : (isOlt ? 'OLT detail' : 'Device detail'));
+        m.querySelector('.detail-modal').classList.toggle('wide', isLink || isSector || isOlt || isSwitchKind);
+        m.querySelector('.modal-header strong').textContent = isLink ? 'Link detail' : (isSector ? 'Sector detail' : (isOlt ? 'OLT detail' : (isSwitchKind ? 'Switch detail' : 'Device detail')));
         document.getElementById('detail-modal-body').innerHTML = detailBody(d);
         m.style.display = 'flex';
     }

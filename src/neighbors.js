@@ -233,6 +233,19 @@ function analyse(devices, observations, macsById) {
   return { gateway: gateway || '', gatewayId: gwDev ? gwDev.id : null, nearby, suggestions, unknown: unknownList };
 }
 
+// Per port of a switch: how many devices it has learnt behind that port, and the neighbours it sees there.
+// `parsed` is the result of fromSnmpTables / fromMikrotikTables for that switch. { portName: { macCount, neighbors: [...] } }
+function portMeta(parsed) {
+  const out = {};
+  const slot = (n) => out[n] || (out[n] = { macCount: 0, neighbors: [] });
+  ((parsed && parsed.fdb) || []).forEach((f) => { if (f.port) slot(f.port).macCount++; });
+  ((parsed && parsed.rows) || []).forEach((r) => {
+    if (!r.localPort) return;
+    slot(r.localPort).neighbors.push({ name: r.name || r.ip || r.mac, ip: r.ip || '', mac: r.mac || '', platform: r.platform || '', port: r.remotePort || '', via: r.via });
+  });
+  return out;
+}
+
 // ---------------- store (data/neighbors.json) ----------------
 function load() { try { const v = JSON.parse(fs.readFileSync(FILE, 'utf8')); return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; } }
 function save(all) {
@@ -280,4 +293,4 @@ async function scan(deviceList, devices, transports, only) {
   return report;
 }
 
-module.exports = { normMac, normIp, nameKey, kindOf, typeHint, fromSnmpTables, fromMikrotikTables, analyse, observations, put, forget, canScan, scan, collect };
+module.exports = { portMeta, normMac, normIp, nameKey, kindOf, typeHint, fromSnmpTables, fromMikrotikTables, analyse, observations, put, forget, canScan, scan, collect };

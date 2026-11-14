@@ -74,6 +74,18 @@ check('MikroTik API rows are read like SNMP rows', () => {
   const m = N.fromMikrotikTables({ neighbors: [{ identity: 'Sw1', platform: 'Cisco', 'mac-address': '00:1D:46:3D:9F:8C', address: '', interface: 'ether2' }], arp: [{ address: '10.0.0.1', 'mac-address': '70:69:5A:2B:BD:C0' }], hosts: [{ 'mac-address': '70:69:5A:2B:BD:C0', 'on-interface': 'ether1' }], gateway: '10.0.0.1', selfMacs: ['08:00:00:00:00:01'] });
   assert.strictEqual(m.rows[0].localPort, 'ether2'); assert.strictEqual(m.gateway, '10.0.0.1'); assert.strictEqual(m.fdb[0].port, 'ether1'); assert.strictEqual(m.selfMacs[0], '08:00:00:00:00:01');
 });
+check('a switch port summary counts the devices behind each port and lists what is plugged in', () => {
+  const parsed = N.fromSnmpTables({
+    mndp: [{ ip: '10.0.0.21', mac: Buffer.from('744d285fadc4', 'hex'), platform: 'MikroTik', identity: 'HRINS-Sm21', ifIndex: 3 }],
+    lldp: [], cdp: [{ ifIndex: '3', addr: '10.0.0.5', deviceId: 'core-sw', port: 'Gi0/1', platform: 'cisco WS-C2960' }],
+    ifNames: { 3: 'Gi0/3' }, fdb: [{ mac: Buffer.from('aabbcc000001', 'hex'), port: 'Gi0/3' }, { mac: Buffer.from('aabbcc000002', 'hex'), port: 'Gi0/3' }, { mac: Buffer.from('aabbcc000003', 'hex'), port: 'Gi0/9' }]
+  });
+  const pm = N.portMeta(parsed);
+  assert.strictEqual(pm['Gi0/3'].macCount, 2); assert.strictEqual(pm['Gi0/9'].macCount, 1);
+  assert.ok(pm['Gi0/3'].neighbors.some((n) => n.name === 'HRINS-Sm21' && n.ip === '10.0.0.21'));
+  assert.ok(pm['Gi0/3'].neighbors.some((n) => n.name === 'core-sw' && n.port === 'Gi0/1'));
+});
+check('a port summary for a device with no tables is empty', () => assert.deepStrictEqual(N.portMeta(null), {}));
 check('nothing read means no suggestions and no crash', () => { const E = N.analyse(devices, [], {}); assert.deepStrictEqual(E.suggestions, {}); assert.deepStrictEqual(E.unknown, []); });
 check('only routers and switches with an API or SNMP login can be scanned', () => { assert.ok(N.canScan({ method: 'snmp' })); assert.ok(N.canScan({ method: 'mikrotik' })); assert.ok(!N.canScan({ method: 'airos' })); assert.ok(!N.canScan({ method: 'ping' })); });
 check('a cheap switch name is recognised', () => { assert.strictEqual(N.kindOf('', 'Switch'), 'switch'); assert.strictEqual(N.kindOf('cisco WS-C2960', 'x'), 'switch'); assert.strictEqual(N.kindOf('MikroTik', 'HRINS-Sm21'), ''); });

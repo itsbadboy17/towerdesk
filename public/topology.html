@@ -120,6 +120,7 @@
                 if (d.role === 'sector') return 'Sector';
                 if (d.role === 'backhaul') return 'Backhaul';
                 if (mx.onuCount != null || d.type === 'olt') return 'OLT';
+                if (d.type === 'switch') return 'Switch';
                 if (d.type === 'mikrotik' || d.type === 'tplink' || d.type === 'cisco') return 'Router';
                 return '';
             }

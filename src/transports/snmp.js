@@ -155,4 +155,40 @@ async function readNeighborTables({ host, port = 161, community = 'public', vers
   }
 }
 
-module.exports = { test, readInterfaces, readNeighborTables, vendorFromObjectId };
+// ifType values of real Ethernet ports (not VLANs, loopbacks or the CPU): ethernetCsmacd, fastEther,
+// fastEtherFX, gigabitEthernet.
+const PHYSICAL_IF_TYPES = new Set([6, 62, 69, 117]);
+
+// The physical ports of a switch: name (Fa0/12, Gi0/1, ether3), the label the owner gave it, whether the
+// cable is up, the negotiated speed and error counts. Traffic comes from readInterfaces. Read-only.
+async function readSwitchPorts({ host, port = 161, community = 'public', version = '2c', timeout = 4000 }) {
+  const session = snmp.createSession(host, community || 'public', {
+    port, version: version === '1' ? snmp.Version1 : snmp.Version2c, timeout, retries: 0
+  });
+  session.on('error', () => {});
+  const txt = (b) => (Buffer.isBuffer(b) ? b.toString('utf8') : (b === undefined || b === null ? '' : String(b))).replace(/[\u0000-\u001f]+/g, ' ').trim().slice(0, 80);
+  try {
+    const [x, t] = await Promise.all([
+      tableColumns(session, '1.3.6.1.2.1.31.1.1', [1, 15, 18]).catch(() => ({})),
+      tableColumns(session, '1.3.6.1.2.1.2.2', [2, 3, 5, 7, 8, 14, 20])
+    ]);
+    return Object.keys(t).filter((idx) => PHYSICAL_IF_TYPES.has(Number(t[idx][3]))).map((idx) => {
+      const xi = x[idx] || {};
+      const hs = Number(xi[15]);
+      const bps = Number(t[idx][5]);
+      return {
+        idx,
+        name: txt(xi[1]) || txt(t[idx][2]) || 'port' + idx,
+        alias: txt(xi[18]),
+        adminUp: Number(t[idx][7]) !== 2,
+        up: Number(t[idx][8]) === 1,
+        speedMbps: hs > 0 ? hs : (bps > 0 && bps < 4294967295 ? Math.round(bps / 1e6) : null),
+        errors: (Number(t[idx][14]) || 0) + (Number(t[idx][20]) || 0)
+      };
+    });
+  } finally {
+    session.close();
+  }
+}
+
+module.exports = { test, readInterfaces, readNeighborTables, readSwitchPorts, vendorFromObjectId };

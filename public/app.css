@@ -1,7 +1,7 @@
-/* TowerDesk shared stylesheet â€” used by every page (linked from each HTML file). */
+/* TowerDesk shared stylesheet — used by every page (linked from each HTML file). */
 
 :root {
-    /* Warm-graphite neutrals with a signal-teal accent â€” a network-operations look, not default-blue SaaS. */
+    /* Warm-graphite neutrals with a signal-teal accent — a network-operations look, not default-blue SaaS. */
     --bg-body: #f4f4f2;
     --bg-sidebar: #ffffff;
     --bg-card: #ffffff;
@@ -367,7 +367,7 @@ tbody tr:hover { background: var(--bg-subtle); }
 .plan-price span { font-size: 0.9rem; color: var(--text-muted); font-weight: 500; }
 .plan-desc { color: var(--text-muted); font-size: 0.85rem; }
 .plan-features { list-style: none; display: grid; gap: 6px; font-size: 0.88rem; margin: 6px 0 12px; flex: 1; }
-.plan-features li::before { content: "âœ“ "; color: var(--success); font-weight: 700; }
+.plan-features li::before { content: "✓ "; color: var(--success); font-weight: 700; }
 .plan-btn { justify-content: center; }
 
 /* ---------- Monitoring ---------- */
@@ -775,8 +775,8 @@ html[dir="rtl"] td.mono, html[dir="rtl"] div.mono, html[dir="rtl"] dd.mono, html
 
 /* Links that open another page look like buttons, not blue underlined text. */
 .card-actions a { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text-main); font-size: 0.78rem; font-weight: 600; text-decoration: none; white-space: nowrap; }
-.card-actions a::after { content: "â€º"; font-size: 1.05rem; line-height: 1; color: var(--accent); }
-html[dir="rtl"] .card-actions a::after { content: "â€¹"; }
+.card-actions a::after { content: "›"; font-size: 1.05rem; line-height: 1; color: var(--accent); }
+html[dir="rtl"] .card-actions a::after { content: "‹"; }
 .card-actions a:hover { background: var(--bg-hover); border-color: var(--accent); }
 .card-actions a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
@@ -938,8 +938,8 @@ details.conn-box > summary::-webkit-details-marker { display: none; }
 details.conn-box .conn-sum { min-width: 0; overflow-wrap: anywhere; }
 details.conn-box .conn-sum strong { margin-inline-end: 6px; }
 details.conn-box .conn-change { flex: none; font-size: 0.85rem; font-weight: 650; color: var(--accent); }
-details.conn-box .conn-change::after { content: " â–¾"; }
-details.conn-box[open] .conn-change::after { content: " â–´"; }
+details.conn-box .conn-change::after { content: " ▾"; }
+details.conn-box[open] .conn-change::after { content: " ▴"; }
 details.conn-box .conn-inner { padding: 0 14px 14px; }
 
 /* ==== Design A, shared layer: readable sizes, real touch targets, a clear first thing on each page ==== */
@@ -1028,3 +1028,8 @@ html[data-role="viewer"] [data-needs="edit"], html[data-role="tech"] [data-needs
 .nt-steps { margin: 8px 0 0 18px; display: grid; gap: 4px; }
 .nt-events { display: grid; gap: 4px; margin: 8px 0; }
 #report-dialog textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
+
+/* Switch ports */
+.ports-table td { vertical-align: top; }
+.ports-table tr.port-down { opacity: 0.65; }
+.ports-table .port-err { color: var(--warning); font-weight: 700; }

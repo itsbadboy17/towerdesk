@@ -7,7 +7,7 @@ const storage = require('./storage');
 const { dataDir } = require('./paths');
 
 const FILE = path.join(dataDir(), 'devices.json');
-const TYPES = ['mikrotik', 'cisco', 'ubnt', 'mimosa', 'tplink', 'onu', 'olt', 'other'];
+const TYPES = ['mikrotik', 'cisco', 'switch', 'ubnt', 'mimosa', 'tplink', 'onu', 'olt', 'other'];
 
 function load() {
   try {

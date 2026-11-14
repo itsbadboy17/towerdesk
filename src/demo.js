@@ -156,11 +156,26 @@ function build() {
           cpu: null, memPct: null, uptime: '88d', signal: null, ccq: null, stations: null, stationCount: null, clients: null, clientCount: null,
           onus: onus, onuCount: onus.length, onuOnline: onus.filter((o) => o.online).length, oltLabel: 'Huawei GPON', waiting: false, error: null } });
     })(),
-    device({ id: 'd2', provider: 'HRINS core', name: 'Fiber ONU', type: 'onu', ip: '10.90.0.9', method: 'ping', loc: 'Cabinet', online: true, days: 29, lat: 2, summary: 'Replies to ping (2 ms)', details: {}, metrics: null })
+    device({ id: 'd2', provider: 'HRINS core', name: 'Fiber ONU', type: 'onu', ip: '10.90.0.9', method: 'ping', loc: 'Cabinet', online: true, days: 29, lat: 2, summary: 'Replies to ping (2 ms)', details: {}, metrics: null }),
+    // A Cisco Catalyst between the core router and the sectors: ports, what is learnt behind each, who is plugged in.
+    (function () {
+      const P = (name, alias, up, speed, rx, tx, macs, nb) => ({ name, alias, up, adminUp: true, speedMbps: up ? speed : null, errors: up && name === 'Gi0/3' ? 14 : 0, rxBps: up ? rx : null, txBps: up ? tx : null, macCount: macs, neighbors: nb || [] });
+      const ports = [
+        P('Gi0/1', 'Uplink to Core router', true, 1000, 168e6, 52e6, 41, [{ name: 'Core router', ip: '10.90.0.1', mac: '', platform: 'MikroTik RB5009', port: 'sfp-sfpplus1', via: 'lldp' }]),
+        P('Gi0/2', 'Sector North', true, 1000, 22e6, 61e6, 7, [{ name: 'Sector North', ip: '10.90.1.1', mac: '', platform: 'Ubiquiti', port: 'eth0', via: 'mndp' }]),
+        P('Gi0/3', 'Sector West', true, 100, 9e6, 28e6, 6, [{ name: 'Sector West', ip: '10.90.1.2', mac: '', platform: 'Ubiquiti', port: 'eth0', via: 'mndp' }]),
+        P('Gi0/4', '', false, 1000, 0, 0, 0),
+        P('Gi0/5', 'Spare', false, 1000, 0, 0, 0),
+        P('Fa0/6', 'Office AP', true, 100, 1.2e6, 3.4e6, 3)
+      ];
+      return device({ id: 'sw1', provider: 'HRINS core', name: 'Tower switch', type: 'cisco', ip: '10.90.0.3', method: 'snmp', loc: 'Tower roof', online: true, days: 120, lat: 1, summary: 'Cisco WS-C2960-24TT-L',
+        details: { model: 'WS-C2960-24TT-L', description: 'Cisco IOS Software, C2960 Software' },
+        metrics: { source: 'SNMP', kind: 'switch', radio: null, ports, interfaces: ports.filter((p) => p.up).map((p) => iface(p.name, true, p.rxBps, p.txBps)), cpu: { now: 7, history: wave(30, 7, 3, 8, 0) }, memPct: 22, uptime: '120d', signal: null, ccq: null, stations: null, stationCount: null, clients: null, clientCount: null, waiting: false, error: null } });
+    })()
   ];
 
   // Where each demo device sits and what it connects to, so the Topology views have a shape.
-  const PARENT = { bh1: 'internet', bh2: 'internet', d1: 'bh1', s1: 'd1', s2: 'd1', s3: 'bh2', olt1: 'd1', d2: 'olt1' };
+  const PARENT = { bh1: 'internet', bh2: 'internet', d1: 'bh1', sw1: 'd1', s1: 'sw1', s2: 'sw1', s3: 'bh2', olt1: 'd1', d2: 'olt1' };
   const SITE = { s2: 'North roof', s3: 'North roof', bh2: 'North roof' };
   devices.forEach((d) => {
     if (PARENT[d.id]) d.parentId = PARENT[d.id];

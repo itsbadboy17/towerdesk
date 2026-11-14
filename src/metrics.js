@@ -87,6 +87,7 @@ async function pollMikrotik(device, s, now) {
   if (sys.cpuLoad !== undefined) push(s.cpu, sys.cpuLoad);
   s.mem = sys.totalMemory ? Math.round(((sys.totalMemory - sys.freeMemory) / sys.totalMemory) * 100) : null;
   s.uptime = sys.uptime || null;
+  if (isSwitch(device)) { await pollSwitchMikrotik(device, s, now); return; } // a switch has ports, not stations
   // Wireless registration table (a MikroTik sector). Probed once: a router with no wireless
   // menu is remembered and never asked again, so it costs nothing on plain routers.
   if (s.regCommand !== false) {
@@ -226,7 +227,9 @@ async function pollSnmp(device, s, now) {
   const opts = devices.connectionOptions(devices.get(device.id) || device);
   const ifaces = await snmp.readInterfaces({ host: opts.host, port: opts.port || 161, community: opts.community, version: device.method === 'snmp1' ? '1' : '2c' });
   applyCounters(s, ifaces, now);
-  await pollOnus(device, s, now, { host: opts.host, port: opts.port || 161, community: opts.community, version: device.method === 'snmp1' ? '1' : '2c' });
+  const conn = { host: opts.host, port: opts.port || 161, community: opts.community, version: device.method === 'snmp1' ? '1' : '2c' };
+  if (isSwitch(device)) { await pollSwitchSnmp(device, s, now, conn); return; }
+  await pollOnus(device, s, now, conn);
 }
 
 // An OLT's ONU list (optical power, temperature). Walking it is heavy, so it runs once a minute
@@ -254,6 +257,51 @@ async function pollOnus(device, s, now, conn) {
   const rank = (o) => (o.online ? (o.signal === null ? 0 : o.signal) : 1000);
   s.onus = res.onus.sort((a, b) => rank(a) - rank(b));
   s.kind = 'onus';
+}
+
+// ---- Switches (Cisco Catalyst, MikroTik CRS, anything with SNMP ports). The ports come from the same
+// interface read as everything else; the labels, speeds and errors are read with it, and the heavier
+// "what is learnt behind each port / who is plugged in" tables only every few minutes.
+const neighbors = require('./neighbors');
+const PORT_META_EVERY_MS = 5 * 60 * 1000;
+function isSwitch(device) { return device.type === 'switch' || device.type === 'cisco'; }
+
+async function pollSwitchSnmp(device, s, now, conn) {
+  s.kind = 'switch';
+  try { s.portStatic = {}; (await snmp.readSwitchPorts(conn)).forEach((p) => { s.portStatic[p.name] = p; }); } catch (e) { /* the interface read already worked; keep the last list */ }
+  if (now >= (s.portMetaNext || 0)) {
+    s.portMetaNext = now + PORT_META_EVERY_MS;
+    try { s.portMeta = neighbors.portMeta(neighbors.fromSnmpTables(await snmp.readNeighborTables(conn))); } catch (e) { /* optional */ }
+  }
+}
+async function pollSwitchMikrotik(device, s, now) {
+  s.kind = 'switch';
+  try {
+    s.portStatic = {};
+    (await s.session.run(['/interface/ethernet/print'])).forEach((r) => {
+      const sp = /([\d.]+)\s*([GM])bps/i.exec(String(r.speed || ''));
+      s.portStatic[r.name] = { name: r.name, alias: r.comment || '', adminUp: r.disabled !== 'true', up: r.running === 'true', speedMbps: sp ? Math.round(Number(sp[1]) * (/g/i.test(sp[2]) ? 1000 : 1)) : null, errors: 0 };
+    });
+  } catch (e) { /* keep the last list */ }
+  if (now >= (s.portMetaNext || 0)) {
+    s.portMetaNext = now + PORT_META_EVERY_MS;
+    try { s.portMeta = neighbors.portMeta(neighbors.fromMikrotikTables(await mikrotik.readNeighborTables(s.session))); } catch (e) { /* optional */ }
+  }
+}
+
+// What the page shows: one row per physical port, in port order.
+function portList(s) {
+  const static_ = s.portStatic || {};
+  const meta = s.portMeta || {};
+  const names = Object.keys(static_).length ? Object.keys(static_) : Object.keys(s.ifaces).filter((n) => /^(fa|gi|te|ether|sfp|port|eth)/i.test(n));
+  const key = (n) => n.replace(/\d+/g, (d) => d.padStart(4, '0'));
+  return names.sort((a, b) => (key(a) < key(b) ? -1 : 1)).map((n) => {
+    const st = static_[n] || {};
+    const ifc = s.ifaces[n] || {};
+    const m = meta[n] || {};
+    const last = (arr) => (arr && arr.length ? arr[arr.length - 1] : null);
+    return { name: n, alias: st.alias || '', up: st.up !== undefined ? st.up : (ifc.up !== undefined ? ifc.up : null), adminUp: st.adminUp !== false, speedMbps: st.speedMbps || null, errors: st.errors || 0, rxBps: last(ifc.rx), txBps: last(ifc.tx), macCount: m.macCount != null ? m.macCount : null, neighbors: (m.neighbors || []).slice(0, 4) };
+  });
 }
 
 async function poll(device) {
@@ -344,6 +392,7 @@ function snapshot(device) {
   return {
     source: isTplink(device) ? 'TP-Link web login' : isAiros(device) ? 'Ubiquiti airOS' : isMimosa(device) ? 'Mimosa' : device.method.startsWith('mikrotik') ? 'MikroTik API' : 'SNMP',
     kind: s.kind || 'interfaces',
+    ports: s.kind === 'switch' ? portList(s) : null,
     signal: s.signal !== undefined ? s.signal : null,
     ccq: s.ccq !== undefined ? s.ccq : null,
     radio: s.radio || null,
