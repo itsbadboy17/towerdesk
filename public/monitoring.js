@@ -925,7 +925,7 @@
             var body = el.querySelector('.modal-body');
             if (j.error) { body.innerHTML = '<p class="live-error">' + esc(j.error) + '</p>'; return; }
             var M = window.TowerDesk.messages;
-            body.innerHTML = '<p class="muted">' + esc(j.device.name) + ': ' + esc(j.sentence || 'no customers found') + '. TowerDesk does not send these. Each button opens <em>your</em> WhatsApp with the message ready, and you press Send there.</p>' +
+            body.innerHTML = '<p class="muted"><strong>' + esc(j.device.name) + '</strong>: ' + esc(j.sentence || 'no customers found') + '.</p><p class="muted">TowerDesk does not send these. Each button opens <em>your</em> WhatsApp with the message ready, and you press Send there.</p>' +
                 '<div class="form-row"><div class="form-group"><label for="tell-kind">What happened</label><select id="tell-kind"><option value="outage"' + (j.kind === 'outage' ? ' selected' : '') + '>A fault</option><option value="maintenance"' + (j.kind === 'maintenance' ? ' selected' : '') + '>Planned maintenance</option></select></div>' +
                 '<div class="form-group"><label for="tell-lang">Language</label><select id="tell-lang"><option value="ar"' + (j.lang === 'ar' ? ' selected' : '') + '>العربية</option><option value="en"' + (j.lang === 'en' ? ' selected' : '') + '>English</option></select></div></div>' +
                 '<div class="form-group"><label for="tell-text">Message (you can change it)</label><textarea id="tell-text" rows="4" dir="auto">' + esc(j.text) + '</textarea></div>' +
