@@ -252,6 +252,22 @@
 
     // Sector advisor and AI settings.
     var AR_ADVISOR = {
+        'Finance': 'المالية', 'Status report': 'تقرير الحالة', 'Copy text': 'انسخ النص', 'Open WhatsApp': 'افتح واتساب',
+        'Tell customers…': 'أبلغ المشتركين…', 'Tell customers': 'أبلغ المشتركين', 'Planned work?': 'أعمال مجدولة؟',
+        'Start maintenance': 'ابدأ الصيانة', 'End maintenance': 'أنهِ الصيانة', 'In maintenance': 'قيد الصيانة', 'End now': 'أنهِ الآن',
+        'Staff accounts': 'حسابات الموظفين', 'Messages': 'الرسائل', 'Add account': 'أضف حساباً', 'Username': 'اسم المستخدم',
+        'Admin': 'مدير', 'Technician': 'فني', 'Viewer': 'مشاهد', 'Notes': 'ملاحظات', 'Save note': 'احفظ الملاحظة',
+        'Ports': 'المنافذ', 'Switch detail': 'تفاصيل السويتش', 'Devices behind it': 'أجهزة خلفه', 'Plugged into': 'متصل بـ', 'Errors': 'أخطاء',
+        'Monthly revenue': 'الإيراد الشهري', 'Monthly costs': 'التكاليف الشهرية', 'Estimated profit': 'الربح التقديري',
+        'Active subscribers': 'المشتركون الفعّالون', 'Renewals in 7 days': 'تجديدات خلال 7 أيام', 'Revenue by plan': 'الإيراد حسب الباقة',
+        'Renewals coming up': 'التجديدات القادمة', 'Remind customers to renew': 'ذكّر المشتركين بالتجديد', 'Trend': 'الاتجاه',
+        'Prices and costs': 'الأسعار والتكاليف', 'Save prices and costs': 'احفظ الأسعار والتكاليف', 'Add a cost': 'أضف تكلفة',
+        'What is next to what': 'ما المجاور لماذا', 'Scan neighbours': 'افحص الأجهزة المجاورة', 'Seen next to it': 'يُرى بجانبه',
+        'Use this': 'استخدم هذا', 'Add to site': 'أضف إلى موقع', 'Back': 'السابق', 'Find the device': 'ابحث عن الجهاز',
+        'How to connect': 'طريقة الاتصال', 'Check it works': 'تحقق من عمله', 'Name it and add it': 'سمِّه وأضفه',
+        'Show everything at once': 'اعرض كل شيء مرة واحدة', 'Use the step-by-step guide': 'استخدم الدليل خطوة بخطوة',
+        'Design': 'التصميم', 'Search devices, customers, pages…': 'ابحث عن أجهزة ومشتركين وصفحات…',
+        'Overview': 'نظرة عامة', 'Customers': 'المشتركون', 'Advisor': 'المستشار', 'More readings': 'قراءات أخرى',
         'Live data': 'بيانات حية', 'Starting…': 'جارٍ البدء…', 'Ping only': 'Ping فقط', 'Wrong login': 'دخول خاطئ', 'Not answering': 'لا يستجيب',
         'Login closed': 'الدخول مغلق', 'Login failed': 'فشل الدخول', 'No live data': 'لا توجد بيانات حية',
         'Sector traffic': 'حركة القطاعات', 'Customers, all sectors': 'العملاء، كل القطاعات', 'Customer radios': 'أجهزة العملاء',

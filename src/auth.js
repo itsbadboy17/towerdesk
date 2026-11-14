@@ -190,7 +190,7 @@ function removeUser(username, actingUser) {
 }
 
 // Paths reachable without a session (the login page and what it needs).
-const PUBLIC = new Set(['/login', '/api/login', '/app.css', '/app.js', '/login.js']);
+const PUBLIC = new Set(['/login', '/api/login', '/app.css', '/app.js', '/login.js', '/design-b.css']);
 
 // Auth is enforced once a password has been set (npm run set-password),
 // unless TOWERDESK_AUTH=off is set for local automated testing.

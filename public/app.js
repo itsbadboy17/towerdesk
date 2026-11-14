@@ -17,6 +17,26 @@
     }
     applyTheme(readPref('theme'));
 
+    // ----- Design (a testing switch: A is the normal look, B is "Blueprint") -----
+    // B lives in its own stylesheet that is only loaded when chosen, so A is never affected. Remembered in
+    // this browser (td-design); a ?design=b link forces it for the page.
+    var DESIGNS = { a: 'Design A', b: 'Design B' };
+    function applyDesign(d) {
+        d = DESIGNS[d] ? d : 'a';
+        root.setAttribute('data-design', d);
+        var link = document.getElementById('td-design-css');
+        if (d === 'b' && !link) {
+            link = document.createElement('link');
+            link.id = 'td-design-css'; link.rel = 'stylesheet'; link.href = '/design-b.css';
+            document.head.appendChild(link);
+        } else if (d !== 'b' && link) link.remove();
+        return d;
+    }
+    var qd = /[?&]design=([ab])\b/.exec(location.search);
+    var design = applyDesign(qd ? qd[1] : readPref('td-design'));
+    window.TowerDesk = window.TowerDesk || {};
+    window.TowerDesk.design = design;
+
     // ----- Language / direction -----
     function applyLang(lang) {
         lang = lang === 'ar' ? 'ar' : 'en';
@@ -151,6 +171,20 @@
             });
             right.insertBefore(lang, right.firstChild);
 
+            // Design switch, right next to the language selector
+            var designSel = document.createElement('select');
+            designSel.id = 'design-selector';
+            designSel.className = 'lang-select design-select';
+            designSel.setAttribute('aria-label', 'Design');
+            designSel.title = 'Try a different look (for testing)';
+            designSel.innerHTML = Object.keys(DESIGNS).map(function (k) { return '<option value="' + k + '">' + DESIGNS[k] + '</option>'; }).join('');
+            designSel.value = design;
+            designSel.addEventListener('change', function () {
+                writePref('td-design', designSel.value);
+                applyDesign(designSel.value);
+            });
+            right.insertBefore(designSel, lang.nextSibling);
+
             // Theme toggle
             var themeBtn = document.createElement('button');
             themeBtn.type = 'button';
@@ -168,7 +202,7 @@
                 writePref('theme', next);
                 syncThemeBtn();
             });
-            right.insertBefore(themeBtn, lang.nextSibling);
+            right.insertBefore(themeBtn, designSel.nextSibling);
 
             // Real data / demo data switch, next to the language selector
             var demoBtn = document.createElement('button');

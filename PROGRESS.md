@@ -163,3 +163,18 @@
 - Device card: Connection box + POST /api/devices/:id/connect (optional "save as default"); Enable SNMP removed (read-only).
 - Advisor: channel finder, change history with go back, progress/error boxes.
 - Topology: plain-language site/diagram wording, select all in card, row click.
+
+## Features branch (uncommitted to main): staff, messages, finance, switches, wizard, designs
+Dependencies: none added. Telegram sending is the only new internet use and is off until a bot is configured.
+- Staff accounts (src/auth.js, public/staff.js): admin / technician / viewer; roles enforced server-side (canAccess), UI hides what a role cannot use. First account can only be created from the PC itself.
+- Outage impact (public/impact-model.js): what is behind a device (link diagram parents) and the customers on it; shown in Needs attention, status report and alerts.
+- Maintenance windows (src/maintenance.js): mute alerts and messages for a device or site for a set time.
+- Messages (src/notify.js, public/messages-model.js): Telegram bot (token encrypted at rest, never returned), status report, "Tell customers" with per-customer WhatsApp links (nothing is auto-sent on WhatsApp).
+- Neighbours (src/neighbors.js): MikroTik neighbour discovery, LLDP, CDP, ARP, MAC table over SNMP or the MikroTik API; suggestions for "gets its internet from"; scheduled scan every 6 h logs changes.
+- Switch ports (snmp.readSwitchPorts, metrics.portList): Cisco Catalyst / MikroTik switches, Ports tab with link state, speed, traffic, devices behind each port, who is plugged in. New device type "switch".
+- Guided Add Device (public/add-wizard.js): the same form one step at a time; remembers the choice.
+- Finance (src/finance.js, public/finance-model.js, finance.html): estimates from plan prices x active subscribers, renewals, reminders, costs, daily trend. Admin only.
+- Quick search (Ctrl+K), device notes.
+- Design switcher next to the language selector: Design A (default) and Design B "Blueprint" (public/design-b.css, loaded only when chosen).
+- Fixed: Topology site cards showed NaN; app.css symbols were corrupted by an encoding slip (repaired).
+Not done: the phone app (left out on purpose); airOS radios cannot report neighbours; Arabic covers the main new labels only; QA suite not run.

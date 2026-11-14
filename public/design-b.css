@@ -1,0 +1,110 @@
+/* Design B: "Blueprint". Loaded only when Design B is chosen (the selector next to the language selector).
+   Engineering-drawing blue, a faint drafting grid, monospace figures, square-ish corners, dashed structure lines.
+   Light = drafting paper, dark = blueprint. Everything here is an override on top of app.css. */
+
+html[data-design="b"] {
+    --bg-body: #edf2f8;
+    --bg-sidebar: #e2eaf4;
+    --bg-card: #fafcff;
+    --bg-subtle: #f1f5fb;
+    --bg-hover: #dfe8f4;
+    --text-main: #0c2340;
+    --text-muted: #435a78;
+    --accent: #1458c8;
+    --accent-hover: #0f46a0;
+    --accent-strong: #0b3a85;
+    --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+    --border: #b4c7e0;
+    --shadow: none;
+    --shadow-lg: 0 14px 30px -14px rgba(12, 35, 64, 0.35);
+    --success: #0b7a45;
+    --warning: #a65500;
+    --danger: #c02a2a;
+    --surface-2: #eaf0f8;
+    --radius: 4px;
+    --grid: rgba(20, 88, 200, 0.07);
+    --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+}
+html[data-design="b"][data-theme="dark"] {
+    --bg-body: #0b2545;
+    --bg-sidebar: #09203d;
+    --bg-card: #0f2d52;
+    --bg-subtle: #0d2848;
+    --bg-hover: #163f6e;
+    --text-main: #eaf3ff;
+    --text-muted: #9fb9d8;
+    --accent: #7dd3fc;
+    --accent-hover: #a5e1ff;
+    --accent-strong: #38bdf8;
+    --border: rgba(159, 198, 237, 0.3);
+    --shadow: none;
+    --shadow-lg: 0 18px 40px -16px rgba(0, 0, 0, 0.6);
+    --success: #6ee7a8;
+    --warning: #ffd166;
+    --danger: #ff8080;
+    --surface-2: rgba(255, 255, 255, 0.04);
+    --grid: rgba(125, 211, 252, 0.08);
+}
+
+/* The drafting grid shows in the gutters; cards stay solid so text never sits on lines. */
+html[data-design="b"] body {
+    background-color: var(--bg-body);
+    background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 24px 24px;
+    letter-spacing: 0;
+}
+
+/* Shape: small radius everywhere, structure drawn with dashed lines. */
+html[data-design="b"] .card, html[data-design="b"] .kpi-card, html[data-design="b"] .chart-card, html[data-design="b"] .device-card,
+html[data-design="b"] .modal, html[data-design="b"] .nb-panel, html[data-design="b"] .ops-box, html[data-design="b"] .site-card,
+html[data-design="b"] .topo-intro, html[data-design="b"] .staff-roles > div { border-radius: 4px; box-shadow: none; }
+html[data-design="b"] .card-header, html[data-design="b"] .chart-header { border-bottom: 1px dashed var(--border); }
+html[data-design="b"] .sidebar { border-inline-end: 1px dashed var(--border); }
+html[data-design="b"] .topbar { border-bottom: 1px dashed var(--border); }
+html[data-design="b"] .btn-primary, html[data-design="b"] .btn-secondary, html[data-design="b"] .btn-sm, html[data-design="b"] .action-btn,
+html[data-design="b"] input, html[data-design="b"] select, html[data-design="b"] textarea, html[data-design="b"] .live-pill,
+html[data-design="b"] .status-badge, html[data-design="b"] .nb-chip, html[data-design="b"] .provider-tab, html[data-design="b"] .att-link { border-radius: 4px; }
+
+/* Type: heavy headings, figures in monospace so columns of numbers line up like a log sheet. */
+html[data-design="b"] .content-header h1 { font-weight: 800; letter-spacing: -0.03em; }
+html[data-design="b"] .card-header h3 { font-weight: 750; }
+html[data-design="b"] .kpi-value, html[data-design="b"] .stat-tile .v, html[data-design="b"] .mono, html[data-design="b"] td.mono,
+html[data-design="b"] .link-total, html[data-design="b"] .bar-row .val { font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+html[data-design="b"] .kpi-card { border-top: 3px solid var(--accent); }
+html[data-design="b"] .kpi-card h3 { color: var(--text-muted); }
+
+/* Brand and navigation: a registration-mark feel instead of pills. */
+html[data-design="b"] .brand { font-family: var(--mono); letter-spacing: -0.04em; font-weight: 800; }
+html[data-design="b"] .nav-section a { border-radius: 0 4px 4px 0; border-inline-start: 3px solid transparent; }
+html[data-design="b"] .nav-section a.active { background: var(--accent-soft); border-inline-start-color: var(--accent); color: var(--text-main); }
+html[data-design="b"] .nav-section h4 { letter-spacing: 0.02em; }
+
+/* Buttons: solid ink-blue primary with readable text in both modes. */
+html[data-design="b"] .btn-primary { background: var(--accent); color: #fff; border: 1px solid var(--accent-strong); font-weight: 700; }
+html[data-design="b"][data-theme="dark"] .btn-primary { color: #05223f; }
+html[data-design="b"] .btn-primary:hover { background: var(--accent-hover); }
+html[data-design="b"] .btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--text-main); }
+html[data-design="b"] .btn-secondary:hover { background: var(--bg-hover); border-color: var(--accent); }
+html[data-design="b"] :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* The problem list: dashed warning frame, like a margin note on a drawing. */
+html[data-design="b"] .attention-card { border: 1px dashed var(--warning); }
+html[data-design="b"] .attention-list .att-link { background: var(--bg-subtle); }
+html[data-design="b"] .attention-list .att-link::after { border-radius: 3px; background: transparent; color: var(--accent); }
+
+/* Tabs and the step guide */
+html[data-design="b"] .d-tab { font-family: var(--mono); font-weight: 700; }
+html[data-design="b"] .d-tab.active { border-bottom-color: var(--accent); background: var(--accent-soft); }
+html[data-design="b"] .wz-steps li button { border-radius: 4px; font-family: var(--mono); }
+html[data-design="b"] .wz-steps .wz-n { border-radius: 3px; }
+
+/* Tables read like a parts list */
+html[data-design="b"] th { font-family: var(--mono); font-weight: 700; font-size: 0.78rem; color: var(--text-muted); }
+html[data-design="b"] tbody tr { border-bottom: 1px dashed var(--border); }
+
+/* Status colours stay loud; dots become squares so state is also readable by shape. */
+html[data-design="b"] .live-dot, html[data-design="b"] .demo-dot { border-radius: 2px; }
+html[data-design="b"] .tp-node rect { rx: 3; }
+html[data-design="b"] .tp-edge { stroke-dasharray: 5 4; }
+
+html[data-design="b"] .kpi-value { font-size: 1.55rem; white-space: nowrap; }
