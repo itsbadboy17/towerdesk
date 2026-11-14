@@ -504,6 +504,34 @@ app.post('/api/topology/layout', (req, res) => {
   res.json({ ok: errors.length === 0, done, errors });
 });
 
+// Finance (admin only): estimates from plan prices x active subscribers. SAS reports no payments.
+const finance = require('./src/finance');
+const financeModel = require('./public/finance-model.js');
+app.get('/finance', (req, res) => res.sendFile(path.join(__dirname, 'public', 'finance.html')));
+const DEMO_FINANCE = { currency: 'IQD', prices: { 'Home 10M': 15000, 'Home 20M': 25000, 'Pro 50M': 45000, 'Business 100M': 120000 }, expenses: [{ label: 'Bandwidth', monthly: 300000 }, { label: 'Power and rent', monthly: 100000 }, { label: 'Staff', monthly: 250000 }] };
+app.get('/api/finance', async (req, res) => {
+  try {
+    const demo = process.env.TOWERDESK_DEMO === '1' || (req.query && req.query.demo === '1');
+    const subs = await subscribers.list({ demo });
+    const cfg = demo ? DEMO_FINANCE : finance.config();
+    const summary = financeModel.compute(subs.subscribers || [], cfg);
+    let history;
+    if (demo) {
+      // A believable month so the trend can be seen without waiting.
+      history = Array.from({ length: 30 }, (_, i) => { const d = new Date(Date.now() - (29 - i) * 86400000); return { date: d.toISOString().slice(0, 10), revenue: Math.round(summary.revenue * (0.9 + i * 0.0035)), expenses: summary.expenses, active: Math.max(1, summary.active - (29 - i) % 5) }; });
+    } else {
+      if (subs.configured !== false && (subs.subscribers || []).length) finance.record(summary);
+      history = finance.snapshots();
+    }
+    res.json({ demo, sasConfigured: subs.configured !== false, config: cfg, summary, history, countryCode: notify.config().whatsapp.countryCode });
+  } catch (e) { res.status(500).json({ error: 'Could not work out the finance figures' }); }
+});
+app.post('/api/finance/config', (req, res) => {
+  const r = finance.setConfig(req.body || {});
+  if (r.error) return res.status(400).json(r);
+  res.json({ ok: true, config: finance.config() });
+});
+
 // Maintenance windows: mute alerts and messages for a device or a site for a set time.
 const maintenance = require('./src/maintenance');
 const notify = require('./src/notify');

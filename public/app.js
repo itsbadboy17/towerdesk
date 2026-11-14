@@ -53,7 +53,7 @@
     var NAV_ICON = {
         '/': 'overview', '/monitoring': 'monitoring', '/topology': 'topology', '/map': 'map', '/alerts': 'alerts',
         '/remote': 'remote', '/add-device': 'add', '/sas': 'users', '/plans': 'plans',
-        '/vouchers': 'voucher', '/billing': 'billing', '/invoices': 'invoice', '/tickets': 'ticket'
+        '/vouchers': 'voucher', '/billing': 'billing', '/invoices': 'invoice', '/tickets': 'ticket', '/finance': 'billing'
     };
     window.TowerDesk = window.TowerDesk || {};
     window.TowerDesk.icon = function (name) { return ICONS[name] ? svgIcon(ICONS[name]) : ''; };
@@ -85,10 +85,18 @@
     // files do not each need editing.
     function addNavLinks() {
         var after = document.querySelector('.nav-section a[href="/monitoring"]');
-        if (!after || document.querySelector('.nav-section a[href="/topology"]')) return;
-        var li = document.createElement('li');
-        li.innerHTML = '<a href="/topology"><span class="nav-icon" aria-hidden="true"></span>Topology</a>';
-        after.parentNode.parentNode.insertBefore(li, after.parentNode.nextSibling);
+        if (after && !document.querySelector('.nav-section a[href="/topology"]')) {
+            var li = document.createElement('li');
+            li.innerHTML = '<a href="/topology"><span class="nav-icon" aria-hidden="true"></span>Topology</a>';
+            after.parentNode.parentNode.insertBefore(li, after.parentNode.nextSibling);
+        }
+        // Finance sits under Customers, after SAS (shown to admins only: see the role handling below).
+        var sas = document.querySelector('.nav-section a[href="/sas"]');
+        if (sas && !document.querySelector('.nav-section a[href="/finance"]')) {
+            var fi = document.createElement('li');
+            fi.innerHTML = '<a href="/finance"><span class="nav-icon" aria-hidden="true"></span>Finance</a>';
+            sas.parentNode.parentNode.insertBefore(fi, sas.parentNode.nextSibling);
+        }
     }
 
     // Arabic interface text lives in /i18n.js and is fetched only when Arabic is chosen.

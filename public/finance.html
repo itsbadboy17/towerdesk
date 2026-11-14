@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finance - TowerDesk ISP Dashboard</title>
+    <link rel="stylesheet" href="/app.css">
+    <script src="/app.js"></script>
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="brand">Tower<span class="mark">Desk</span></div>
+        <nav aria-label="Main">
+        <div class="nav-section">
+            <h4>Network</h4>
+            <ul>
+                <li><a href="/"><span class="nav-icon" aria-hidden="true">🏠</span>Overview</a></li>
+                <li><a href="/monitoring"><span class="nav-icon" aria-hidden="true">📡</span>Monitoring</a></li>
+                <li><a href="/map"><span class="nav-icon" aria-hidden="true">🗺️</span>Tower Map</a></li>
+                <li><a href="/alerts"><span class="nav-icon" aria-hidden="true">🚨</span>Alerts</a></li>
+                <li><a href="/remote"><span class="nav-icon" aria-hidden="true">🖥️</span>Remote Actions</a></li>
+                <li><a href="/add-device"><span class="nav-icon" aria-hidden="true">➕</span>Add Device</a></li>
+            </ul>
+        </div>
+        <div class="nav-section">
+            <h4>Customers</h4>
+            <ul>
+                <li><a href="/sas"><span class="nav-icon" aria-hidden="true">👥</span>SAS<span class="nav-count">200</span></a></li>
+                <li><a href="/plans"><span class="nav-icon" aria-hidden="true">📋</span>Plans</a></li>
+                <li><a href="/vouchers"><span class="nav-icon" aria-hidden="true">🎫</span>Vouchers</a></li>
+                <li><a href="/billing"><span class="nav-icon" aria-hidden="true">💳</span>Billing</a></li>
+                <li><a href="/invoices"><span class="nav-icon" aria-hidden="true">🧾</span>Invoices</a></li>
+                <li><a href="/tickets"><span class="nav-icon" aria-hidden="true">🛠️</span>Tickets</a></li>
+            </ul>
+        </div>
+        </nav>
+        <div class="user-card">
+            <div class="user-info">
+                <div class="avatar-sm">AD</div>
+                <div>
+                    <div class="user-name">Admin User</div>
+                    <div class="user-role">Super Admin</div>
+                </div>
+            </div>
+            <div class="user-actions">
+                <a class="nav-link-btn" href="/settings"><span class="nav-icon" aria-hidden="true">⚙️</span>Settings</a>
+                <button class="nav-link-btn" type="button"><span class="nav-icon" aria-hidden="true">🚪</span>Sign Out</button>
+            </div>
+        </div>
+    </aside>
+
+    <header class="topbar">
+        <div class="left">
+            <div class="org-select">cards.admin.cr ▾</div>
+            <div class="plan-select">HRINS ▾</div>
+        </div>
+        <div class="right">
+            <a class="icon-btn" href="/alerts" aria-label="Alerts" title="Alerts">🔔</a>
+            <div class="avatar">TD</div>
+        </div>
+    </header>
+
+    <main class="main">
+        <header class="content-header">
+            <h1>Finance</h1>
+            <div class="controls"><span class="live-pill ok" id="fin-demo" hidden>Demo numbers</span></div>
+        </header>
+        <p class="muted fin-note">These are <strong>estimates</strong>: the plan prices you enter × the subscribers that are active in SAS. SAS does not report what was actually paid.</p>
+        <div class="source-banner warn" id="fin-warn" role="status" hidden></div>
+
+        <div class="kpi-grid">
+            <div class="kpi-card"><div class="kpi-head"><h3>Monthly revenue</h3></div><div class="kpi-value" id="k-rev">–</div><div class="kpi-change muted" id="k-rev-sub">&nbsp;</div></div>
+            <div class="kpi-card"><div class="kpi-head"><h3>Monthly costs</h3></div><div class="kpi-value" id="k-exp">–</div><div class="kpi-change muted" id="k-exp-sub">&nbsp;</div></div>
+            <div class="kpi-card"><div class="kpi-head"><h3>Estimated profit</h3></div><div class="kpi-value" id="k-profit">–</div><div class="kpi-change muted" id="k-profit-sub">&nbsp;</div></div>
+            <div class="kpi-card"><div class="kpi-head"><h3>Active subscribers</h3></div><div class="kpi-value" id="k-active">–</div><div class="kpi-change muted" id="k-active-sub">&nbsp;</div></div>
+            <div class="kpi-card"><div class="kpi-head"><h3>Renewals in 7 days</h3></div><div class="kpi-value" id="k-ren">–</div><div class="kpi-change muted" id="k-ren-sub">&nbsp;</div></div>
+        </div>
+
+        <div class="fin-grid">
+            <div class="card"><div class="card-header"><h3>Revenue by plan</h3></div><div class="card-body" id="by-plan"><p class="muted">Loading…</p></div></div>
+            <div class="card"><div class="card-header"><h3>Renewals coming up</h3><span class="card-actions">Subscriptions ending in the next 5 weeks</span></div><div class="card-body" id="weeks"><p class="muted">Loading…</p></div></div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h3>Remind customers to renew</h3><span class="card-actions"><label for="fin-lang" class="muted">Language </label><select id="fin-lang"><option value="ar">العربية</option><option value="en">English</option></select></span></div>
+            <div class="card-body"><p class="muted">TowerDesk sends nothing. Each button opens <em>your</em> WhatsApp with the message ready, and you press Send there.</p><div id="reminders"><p class="muted">Loading…</p></div></div>
+        </div>
+
+        <div class="card"><div class="card-header"><h3>Trend</h3><span class="card-actions">One point a day, kept from the first day you open this page</span></div><div class="card-body" id="trend"><p class="muted">Loading…</p></div></div>
+
+        <div class="card"><div class="card-header"><h3>Prices and costs</h3><span class="card-actions" id="cfg-note">Saved on this computer</span></div><div class="card-body" id="cfg"><p class="muted">Loading…</p></div></div>
+    </main>
+
+    <script src="/finance-model.js"></script>
+    <script src="/impact-model.js"></script>
+    <script src="/messages-model.js"></script>
+    <script src="/finance-page.js"></script>
+</body>
+</html>
