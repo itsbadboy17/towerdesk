@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Set up a radio - TowerDesk ISP Dashboard</title>
+    <link rel="stylesheet" href="/app.css">
+    <script src="/app.js"></script>
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="brand">Tower<span class="mark">Desk</span></div>
+        <nav aria-label="Main">
+        <div class="nav-section">
+            <h4>Network</h4>
+            <ul>
+                <li><a href="/"><span class="nav-icon" aria-hidden="true">🏠</span>Overview</a></li>
+                <li><a href="/monitoring"><span class="nav-icon" aria-hidden="true">📡</span>Monitoring</a></li>
+                <li><a href="/map"><span class="nav-icon" aria-hidden="true">🗺️</span>Tower Map</a></li>
+                <li><a href="/alerts"><span class="nav-icon" aria-hidden="true">🚨</span>Alerts</a></li>
+                <li><a href="/remote"><span class="nav-icon" aria-hidden="true">🖥️</span>Remote Actions</a></li>
+                <li><a href="/add-device"><span class="nav-icon" aria-hidden="true">➕</span>Add Device</a></li>
+            </ul>
+        </div>
+        <div class="nav-section">
+            <h4>Customers</h4>
+            <ul>
+                <li><a href="/sas"><span class="nav-icon" aria-hidden="true">👥</span>SAS<span class="nav-count">200</span></a></li>
+                <li><a href="/plans"><span class="nav-icon" aria-hidden="true">📋</span>Plans</a></li>
+                <li><a href="/vouchers"><span class="nav-icon" aria-hidden="true">🎫</span>Vouchers</a></li>
+                <li><a href="/billing"><span class="nav-icon" aria-hidden="true">💳</span>Billing</a></li>
+                <li><a href="/invoices"><span class="nav-icon" aria-hidden="true">🧾</span>Invoices</a></li>
+                <li><a href="/tickets"><span class="nav-icon" aria-hidden="true">🛠️</span>Tickets</a></li>
+            </ul>
+        </div>
+        </nav>
+        <div class="user-card">
+            <div class="user-info">
+                <div class="avatar-sm">AD</div>
+                <div>
+                    <div class="user-name">Admin User</div>
+                    <div class="user-role">Super Admin</div>
+                </div>
+            </div>
+            <div class="user-actions">
+                <a class="nav-link-btn" href="/settings"><span class="nav-icon" aria-hidden="true">⚙️</span>Settings</a>
+                <button class="nav-link-btn" type="button"><span class="nav-icon" aria-hidden="true">🚪</span>Sign Out</button>
+            </div>
+        </div>
+    </aside>
+
+    <header class="topbar">
+        <div class="left">
+            <div class="org-select">cards.admin.cr ▾</div>
+            <div class="plan-select">HRINS ▾</div>
+        </div>
+        <div class="right">
+            <a class="icon-btn" href="/alerts" aria-label="Alerts" title="Alerts">🔔</a>
+            <div class="avatar">TD</div>
+        </div>
+    </header>
+
+    <main class="main">
+        <header class="content-header"><h1>Set up a radio</h1></header>
+        <p class="muted pv-lead">Type a radio's IP address, say what it will be, and TowerDesk shows exactly what would change before anything is written. Customer radios, sectors and point-to-point links are supported. MikroTik is a preview for now.</p>
+
+        <div class="card"><div class="card-header"><h3>1. Which radio?</h3></div><div class="card-body">
+            <div class="pv-grid">
+                <div class="form-group"><label for="pv-ip">IP address</label><input id="pv-ip" type="text" placeholder="192.168.1.20" autocomplete="off"></div>
+                <div class="form-group"><label for="pv-brand">Brand</label><select id="pv-brand"><option value="airos">Ubiquiti airOS</option><option value="mikrotik">MikroTik (preview only)</option></select></div>
+                <div class="form-group"><label for="pv-user">Username</label><input id="pv-user" type="text" placeholder="ubnt" autocomplete="off"></div>
+                <div class="form-group"><label for="pv-pass">Password</label><input id="pv-pass" type="password" autocomplete="new-password"></div>
+            </div>
+            <p class="muted">The login is used for this setup only and is not saved. Ubiquiti radios need SSH switched on (Services page) so TowerDesk can keep an undo copy.</p>
+            <div class="form-actions"><button type="button" class="btn-secondary" id="pv-look">Look at it</button><span class="muted" id="pv-look-msg" role="status"></span></div>
+        </div></div>
+
+        <div class="card"><div class="card-header"><h3>2. What will it be?</h3></div><div class="card-body"><div class="pv-cards" id="pv-templates"></div></div></div>
+        <div class="card"><div class="card-header"><h3>3. The settings</h3></div><div class="card-body"><div id="pv-fields"></div>
+            <div class="form-actions"><button type="button" class="btn-primary" id="pv-preview">Preview the changes</button></div></div></div>
+        <div class="card"><div class="card-header"><h3>4. What would change</h3></div><div class="card-body"><div id="pv-out"><p class="muted">Press <strong>Preview the changes</strong>.</p></div><div id="pv-live" class="pv-live" hidden></div></div></div>
+    </main>
+
+    <script src="/provision-model.js"></script>
+    <script src="/provision-page.js"></script>
+</body>
+</html>

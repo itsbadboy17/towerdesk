@@ -74,7 +74,7 @@
     var NAV_ICON = {
         '/': 'overview', '/monitoring': 'monitoring', '/topology': 'topology', '/map': 'map', '/alerts': 'alerts',
         '/remote': 'remote', '/add-device': 'add', '/sas': 'users', '/plans': 'plans',
-        '/vouchers': 'voucher', '/billing': 'billing', '/invoices': 'invoice', '/tickets': 'ticket', '/finance': 'billing'
+        '/vouchers': 'voucher', '/billing': 'billing', '/invoices': 'invoice', '/tickets': 'ticket', '/finance': 'billing', '/provision': 'remote'
     };
     window.TowerDesk = window.TowerDesk || {};
     window.TowerDesk.icon = function (name) { return ICONS[name] ? svgIcon(ICONS[name]) : ''; };
@@ -110,6 +110,12 @@
             var li = document.createElement('li');
             li.innerHTML = '<a href="/topology"><span class="nav-icon" aria-hidden="true"></span>Topology</a>';
             after.parentNode.parentNode.insertBefore(li, after.parentNode.nextSibling);
+        }
+        var addDev = document.querySelector('.nav-section a[href="/add-device"]');
+        if (addDev && !document.querySelector('.nav-section a[href="/provision"]')) {
+            var pv = document.createElement('li');
+            pv.innerHTML = '<a href="/provision"><span class="nav-icon" aria-hidden="true"></span>Set up a radio</a>';
+            addDev.parentNode.parentNode.insertBefore(pv, addDev.parentNode.nextSibling);
         }
         // Finance sits under Customers, after SAS (shown to admins only: see the role handling below).
         var sas = document.querySelector('.nav-section a[href="/sas"]');
@@ -284,7 +290,7 @@
                 document.documentElement.setAttribute('data-role', role);
                 var hide = function (sel) { Array.prototype.forEach.call(document.querySelectorAll(sel), function (a) { var li = a.closest('li'); (li || a).hidden = true; }); };
                 if (role !== 'admin') hide('a[href="/settings"], a[href="/finance"]');
-                if (role === 'viewer') hide('a[href="/add-device"]');
+                if (role === 'viewer') hide('a[href="/add-device"], a[href="/provision"]');
                 window.TowerDesk.role = role;
                 // Quick search (Ctrl+K) on every page except the sign-in page.
                 if (location.pathname !== '/login' && !document.getElementById('td-qs')) { var qs = document.createElement('script'); qs.id = 'td-qs'; qs.src = '/quick-search.js'; document.head.appendChild(qs); }

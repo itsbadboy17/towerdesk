@@ -504,6 +504,16 @@ app.post('/api/topology/layout', (req, res) => {
   res.json({ ok: errors.length === 0, done, errors });
 });
 
+// Set up a radio from a template. Plan is read-only; apply needs the admin's "allow writing" switch (off by default).
+const provision = require('./src/provision');
+app.get('/provision', (req, res) => res.sendFile(path.join(__dirname, 'public', 'provision.html')));
+app.get('/api/provision/settings', (req, res) => res.json(provision.settings()));
+app.post('/api/provision/settings', (req, res) => res.json(provision.setAllowWrite(!!(req.body && req.body.allowWrite))));
+app.post('/api/provision/plan', async (req, res) => { try { res.json(await provision.plan(req.body)); } catch (e) { res.json({ ok: false, error: String(e.message || 'Could not read the radio').slice(0, 240) }); } });
+app.post('/api/provision/apply', async (req, res) => { try { res.json(await provision.apply(req.body)); } catch (e) { res.json({ ok: false, error: String(e.message || 'Not applied').slice(0, 240) }); } });
+['keep', 'undo'].forEach((how) => app.post('/api/provision/' + how, async (req, res) => { try { res.json(await provision[how](String((req.body && req.body.host) || ''))); } catch (e) { res.json({ ok: false, error: String(e.message || 'It did not work').slice(0, 240) }); } }));
+app.get('/api/provision/status', (req, res) => res.json(provision.status(String((req.query && req.query.host) || ''))));
+
 // Finance (admin only): estimates from plan prices x active subscribers. SAS reports no payments.
 const finance = require('./src/finance');
 const financeModel = require('./public/finance-model.js');

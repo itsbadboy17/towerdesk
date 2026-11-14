@@ -178,3 +178,9 @@ Dependencies: none added. Telegram sending is the only new internet use and is o
 - Design switcher next to the language selector: Design A (default) and Design B "Blueprint" (public/design-b.css, loaded only when chosen).
 - Fixed: Topology site cards showed NaN; app.css symbols were corrupted by an encoding slip (repaired).
 Not done: the phone app (left out on purpose); airOS radios cannot report neighbours; Arabic covers the main new labels only; QA suite not run.
+## Set up a radio (features branch)
+- public/provision-model.js: templates (sector, customer radio, PtP master/slave), strict validation, airOS key mapping, MikroTik command preview.
+- src/provision.js + airos-ssh.changeKeys: plan is READ-ONLY; apply is OFF by default (Settings > Radio setup, admin). Apply = copy + on-radio undo timer first, then write only existing allowed keys, verify, roll back on mismatch; Keep saves, Undo restores.
+- Never invents a setting the radio lacks; the admin password and other keys are not on the allowed list. Typed passwords are not stored; held in memory only during the undo window.
+- UNVERIFIED on real hardware: the airOS key names (radio.1.mode, aaa.1.wpa.psk, ...) come from knowledge of system.cfg, not from the owner's radios (they were unreachable when checked). Test on a spare radio before switching writing on.
+- MikroTik: preview only. Planned next: reach a router that has no IP by its MAC through another MikroTik (SSH + /tool mac-telnet, fixed script), then add it and continue to setup.

@@ -1099,3 +1099,16 @@ html[dir="rtl"] #scan-list select { background-position: left 10px center; }
 #scan-list select.scan-method { min-width: 190px; }
 #scan-list td { vertical-align: middle; }
 #scan-list input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
+/* Set up a radio */
+.pv-lead { margin: -4px 0 14px; }
+.pv-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.pv-cards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.pv-card { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-subtle); cursor: pointer; }
+.pv-card input { position: absolute; opacity: 0; pointer-events: none; }
+.pv-card.on { border-color: var(--accent); background: var(--accent-soft); }
+.pv-card:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pv-hint { font-size: 0.8rem; }
+.pv-cmd { padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-subtle); overflow: auto; white-space: pre-wrap; font-family: ui-monospace, Consolas, monospace; font-size: 0.85rem; }
+.pv-problems { margin: 10px 0 0 18px; display: grid; gap: 4px; color: var(--warning); }
+.pv-off { margin: 10px 0; padding: 10px 14px; border: 1px dashed var(--warning); border-radius: 8px; }
+.pv-live { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-soft); }

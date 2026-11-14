@@ -135,6 +135,15 @@
             </div>
         </div>
 
+        <div class="card" id="provision-card">
+            <div class="card-header"><h3>Radio setup</h3><span class="card-actions">Off by default</span></div>
+            <div class="card-body">
+                <p class="muted">The <strong>Set up a radio</strong> page can show a preview of a setup at any time. Actually writing a setup to a radio changes how it works and can cut you off from it, so it stays off until you switch it on here. Every write keeps a copy of the radio's settings and an undo timer that runs on the radio itself.</p>
+                <label class="conn-check"><input type="checkbox" id="prov-allow"> Allow TowerDesk to write settings to radios during setup</label>
+                <p class="muted" id="prov-msg" role="status"></p>
+            </div>
+        </div>
+
         <div class="card" id="notify-card">
             <div class="card-header"><h3>Messages</h3><span class="card-actions">Telegram alerts · WhatsApp notices · needs internet</span></div>
             <div class="card-body" id="notify-body"><p class="muted">Loading…</p></div>
@@ -368,6 +377,19 @@
         })();
     </script>
     <script src="/staff.js"></script>
+    <script>
+        (function () {
+            var box = document.getElementById('prov-allow'), msg = document.getElementById('prov-msg');
+            if (!box) return;
+            fetch('/api/provision/settings').then(function (r) { return r.json(); }).then(function (j) { box.checked = !!j.allowWrite; }).catch(function () {});
+            box.addEventListener('change', function () {
+                msg.textContent = 'Saving…';
+                fetch('/api/provision/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ allowWrite: box.checked }) })
+                    .then(function (r) { return r.json(); }).then(function (j) { box.checked = !!j.allowWrite; msg.textContent = j.allowWrite ? 'Writing is ON. Try it on a spare radio first.' : 'Writing is OFF. Setups are previews only.'; })
+                    .catch(function () { msg.textContent = 'Could not save.'; });
+            });
+        })();
+    </script>
     <script src="/notify-settings.js"></script>
 </body>
 </html>

@@ -125,6 +125,36 @@ async function change(shell, values) {
   return { frequency: whole(check['radio.1.freq']), txPower: whole(check['radio.1.txpower']) };
 }
 
+// Setting up a radio: write several settings of the running copy at once. Only keys on this list can be written,
+// only when the radio ALREADY has the key (a missing key is never added), and values are limited to a narrow
+// character set, so nothing typed can break out of the command. Not saved to flash: "Keep" does that.
+const SETUP_KEYS = new Set(['radio.1.mode', 'radio.1.freq', 'radio.1.chanbw', 'radio.1.txpower', 'wireless.1.ssid', 'wireless.1.ap', 'aaa.1.ssid', 'aaa.1.wpa.psk', 'resolv.host.1.name']);
+const SETUP_VALUE = /^[A-Za-z0-9 ._@#%+=:,!^*()-]{1,63}$/;
+function setupCommand(changes) {
+  const exprs = [];
+  Object.keys(changes).forEach((key) => {
+    const value = String(changes[key]);
+    if (!SETUP_KEYS.has(key)) throw new SshError('protocol', 'That setting cannot be changed by TowerDesk: ' + key);
+    if (!SETUP_VALUE.test(value)) throw new SshError('protocol', 'A value for ' + key + ' has characters that are not allowed.');
+    // the key is matched literally (dots escaped); the value contains none of: & \ | ' " / $ or a newline
+    exprs.push("-e 's|^" + key.replace(/\./g, '\\.') + "=.*|" + key + "=" + value + "|'");
+  });
+  if (!exprs.length) throw new SshError('protocol', 'Nothing to change.');
+  return 'sed ' + exprs.join(' ') + ' ' + CFG + ' > ' + NEWCFG + ' && cp ' + NEWCFG + ' ' + CFG + ' && rm -f ' + NEWCFG + ' && ' + APPLY + '; echo TD_APPLIED';
+}
+async function changeKeys(shell, changes) {
+  const r = await shell.run(setupCommand(changes));
+  if (!/TD_APPLIED/.test(r.out)) throw new SshError('protocol', 'The radio did not confirm the change.');
+  return parseCfg((await shell.run('cat ' + CFG)).out);
+}
+// Read-only: the radio's running settings as key -> value.
+async function readCfg(shell) {
+  const cat = await shell.run('cat ' + CFG);
+  const cfg = parseCfg(cat.out);
+  if (cat.code !== 0 || !Object.keys(cfg).length) throw new SshError('protocol', 'The radio\'s settings file could not be read.');
+  return cfg;
+}
+
 // Keep: save to flash first, and only then stop the undo job. If saving fails the job stays.
 async function keep(shell) {
   const r = await shell.run('[ -f ' + PREV + ' ] || { echo TD_GONE; exit 3; }; ' + SAVE + ' || { echo TD_SAVE_FAILED; exit 4; }; kill $(cat ' + PIDF + ') 2>/dev/null; rm -f ' + PREV + ' ' + PIDF + '; echo TD_KEPT');
@@ -141,4 +171,4 @@ async function undo(shell) {
   return { already: false };
 }
 
-module.exports = { open, preflight, schedule, change, keep, undo, parseCfg, SshError, CFG, PREV, PIDF, APPLY, SAVE };
+module.exports = { open, preflight, schedule, change, changeKeys, setupCommand, readCfg, SETUP_KEYS, keep, undo, parseCfg, SshError, CFG, PREV, PIDF, APPLY, SAVE };
