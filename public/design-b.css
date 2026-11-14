@@ -95,7 +95,7 @@ html[data-design="b"] .attention-list .att-link::after { border-radius: 3px; bac
 /* Tabs and the step guide */
 html[data-design="b"] .d-tab { font-family: var(--mono); font-weight: 700; }
 html[data-design="b"] .d-tab.active { border-bottom-color: var(--accent); background: var(--accent-soft); }
-html[data-design="b"] .wz-steps li button { border-radius: 4px; font-family: var(--mono); }
+html[data-design="b"] .wz-steps li button, html[data-design="b"] .wz-steps li .wz-chip { border-radius: 4px; font-family: var(--mono); }
 html[data-design="b"] .wz-steps .wz-n { border-radius: 3px; }
 
 /* Tables read like a parts list */

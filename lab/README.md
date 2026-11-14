@@ -11,7 +11,11 @@ Built from the images already in the GNS3 VM: MikroTik CHR 6.49.13 and Cisco IOU
 - GNS3 VM (`D:\VMs\GNS3\GNS3.vmx`): turned off `vpmc.enable` and `vhv.enable` (VMware refuses them while Windows' hypervisor is on),
   and the GNS3 VM is started with 4 GB / 4 CPUs (it was 8 GB / 6). Backup: `GNS3.vmx.bak-before-towerdesk`.
 - `%APPDATA%\GNS3\2.2\gns3_server.ini`: `[Qemu]` acceleration off. Backup: `gns3_server.ini.bak-before-towerdesk-lab`.
-- Each MikroTik node has the option `-nographic -no-kvm` (no hardware acceleration inside the VM, so they boot slowly).
+- Each MikroTik node has the option `-nographic -machine accel=tcg` (no hardware acceleration inside the VM, so they boot slowly).
+  The two MikroTik templates (CHR 6.49.13 and 7.20.8) carry the same option, so a NEW MikroTik dragged in from the device list
+  starts too. Without it GNS3 says "KVM acceleration cannot be used (/dev/kvm doesn't exist)". Any other QEMU template you
+  import needs the same option (template > Advanced > Additional settings > Options), or `enable_kvm = false` under `[Qemu]`
+  in the GNS3 VM's own `gns3_server.conf` (GNS3 VM menu > Configure), which covers every template at once.
 - The Cloud node is bridged to the VM's `eth0` (VMware host-only network VMnet1, 192.168.229.0/24). Never bridge a real adapter.
 
 ## Addresses

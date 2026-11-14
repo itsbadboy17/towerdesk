@@ -114,7 +114,7 @@
         var addDev = document.querySelector('.nav-section a[href="/add-device"]');
         if (addDev && !document.querySelector('.nav-section a[href="/provision"]')) {
             var pv = document.createElement('li');
-            pv.innerHTML = '<a href="/provision"><span class="nav-icon" aria-hidden="true"></span>Set up a radio</a>';
+            pv.innerHTML = '<a href="/provision"><span class="nav-icon" aria-hidden="true"></span>Set up a device</a>';
             addDev.parentNode.parentNode.insertBefore(pv, addDev.parentNode.nextSibling);
         }
         // Finance sits under Customers, after SAS (shown to admins only: see the role handling below).

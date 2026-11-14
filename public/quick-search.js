@@ -5,7 +5,7 @@
     var esc = window.TowerDesk.fmt.esc;
     var DEMO = !!window.TowerDesk.demo;
     var devices = null, customers = null, overlay = null, items = [], sel = 0;
-    var PAGES = [['Overview', '/'], ['Monitoring', '/monitoring'], ['Topology', '/topology'], ['Alerts', '/alerts'], ['Add Device', '/add-device'], ['Set up a radio', '/provision'], ['Subscribers (SAS)', '/sas'], ['Finance', '/finance', 'admin'], ['Settings', '/settings', 'admin']];
+    var PAGES = [['Overview', '/'], ['Monitoring', '/monitoring'], ['Topology', '/topology'], ['Alerts', '/alerts'], ['Add Device', '/add-device'], ['Set up a device', '/provision'], ['Subscribers (SAS)', '/sas'], ['Finance', '/finance', 'admin'], ['Settings', '/settings', 'admin']];
 
     function norm(s) { return String(s || '').toLowerCase(); }
     function load() {

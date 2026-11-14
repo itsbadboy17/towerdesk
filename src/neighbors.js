@@ -54,7 +54,8 @@ function fromMikrotikTables(t) {
   t = t || {};
   const rows = (t.neighbors || []).map((r) => ({
     via: 'mndp', mac: normMac(r['mac-address']), ip: normIp(r.address || r.address4), name: clean(r.identity, 80), platform: clean(r.platform || r.board, 80),
-    remotePort: clean(r['interface-name'] || '', 60), localPort: clean(String(r.interface || '').split(',')[0], 40)
+    remotePort: clean(r['interface-name'] || '', 60), localPort: clean(String(r.interface || '').split(',')[0], 40),
+    board: clean(r.board, 60), version: clean(r.version, 40)
   }));
   return finishRows(rows, {
     arp: (t.arp || []).map((a) => ({ ip: a.address, mac: a['mac-address'] })),
@@ -85,7 +86,9 @@ function finishRows(rows, t) {
 // ---------------- analysis ----------------
 // devices: [{id, name, ip, type, parentId}], observations: [{deviceId, rows, gateway, arp, fdb, selfMacs}],
 // macsById: { deviceId: [mac...] } (own MACs the monitor already read, e.g. from airOS).
-function analyse(devices, observations, macsById) {
+// Which known device an address or a MAC belongs to: each device's own address, the MACs the monitor read from it, the
+// MACs a scanned device reported as its own, and the MACs that a neighbour row or ARP ties to a known device's address.
+function ownerIndex(devices, observations, macsById) {
   devices = devices || []; observations = observations || []; macsById = macsById || {};
   const byId = {}; devices.forEach((d) => { byId[d.id] = d; });
   const byIp = {}; devices.forEach((d) => { if (normIp(d.ip)) byIp[normIp(d.ip)] = d; });
@@ -99,6 +102,12 @@ function analyse(devices, observations, macsById) {
     (o.rows || []).forEach((r) => { if (r.mac && r.ip) macIp[r.mac] = r.ip; });
   });
   Object.keys(macIp).forEach((m) => { if (!macOwner[m] && byIp[macIp[m]]) macOwner[m] = byIp[macIp[m]].id; });
+  return { byId, byIp, macOwner, macIp };
+}
+
+function analyse(devices, observations, macsById) {
+  devices = devices || []; observations = observations || []; macsById = macsById || {};
+  const { byId, byIp, macOwner, macIp } = ownerIndex(devices, observations, macsById);
 
   // One entity per box: a known device, or something only seen on the network.
   const unknown = {};
@@ -412,4 +421,4 @@ async function scan(deviceList, devices, transports, only) {
   return report;
 }
 
-module.exports = { autoConnect, settings, setSettings, diffSuggestions, portMeta, normMac, normIp, nameKey, kindOf, typeHint, fromSnmpTables, fromMikrotikTables, analyse, observations, put, forget, canScan, scan, collect };
+module.exports = { autoConnect, settings, setSettings, diffSuggestions, portMeta, normMac, normIp, nameKey, kindOf, typeHint, fromSnmpTables, fromMikrotikTables, ownerIndex, analyse, observations, put, forget, canScan, scan, collect };

@@ -512,7 +512,7 @@ app.post('/api/lab/start', async (req, res) => { try { const r = await lab.start
 app.post('/api/lab/stop', async (req, res) => { try { res.json(await lab.stop()); } catch (e) { res.status(500).json({ error: 'Could not stop the lab' }); } });
 app.post('/api/lab/config', (req, res) => { const r = lab.setConfig(req.body || {}); if (r.error) return res.status(400).json(r); res.json(r); });
 
-// Set up a radio from a template. Plan is read-only; apply needs the admin's "allow writing" switch (off by default).
+// Set up a device (page /provision). A radio from a template: plan is read-only; apply needs the admin's "allow writing" switch (off by default).
 const provision = require('./src/provision');
 app.get('/provision', (req, res) => res.sendFile(path.join(__dirname, 'public', 'provision.html')));
 app.get('/api/provision/settings', (req, res) => res.json(provision.settings()));
@@ -522,6 +522,7 @@ app.post('/api/provision/apply', async (req, res) => { try { res.json(await prov
 ['keep', 'undo'].forEach((how) => app.post('/api/provision/' + how, async (req, res) => { try { res.json(await provision[how](String((req.body && req.body.host) || ''))); } catch (e) { res.json({ ok: false, error: String(e.message || 'It did not work').slice(0, 240) }); } }));
 // Reach a MikroTik that has no IP through another MikroTik (MAC-Telnet). Plan is read-only; apply needs the same admin switch.
 const macreach = require('./src/macreach');
+app.post('/api/macreach/look', async (req, res) => { try { res.json(await macreach.look(req.body, monitorMacs())); } catch (e) { res.json({ ok: false, error: String(e.message || 'Could not read that MikroTik').slice(0, 240) }); } });
 app.post('/api/macreach/plan', async (req, res) => { try { res.json(await macreach.plan(req.body)); } catch (e) { res.json({ ok: false, error: String(e.message || 'Could not build the preview').slice(0, 240) }); } });
 app.post('/api/macreach/apply', async (req, res) => { try { res.json(await macreach.apply(req.body)); } catch (e) { res.json({ ok: false, error: String(e.message || 'It did not work').slice(0, 300) }); } });
 app.get('/api/provision/status', (req, res) => res.json(provision.status(String((req.query && req.query.host) || ''))));
@@ -619,6 +620,12 @@ app.get('/api/messages/outage/:id', async (req, res) => {
 // Neighbours: who sits next to whom, read from routers and switches (read-only), plus suggestions for the
 // link diagram. GET shows what was read last; POST /scan reads the devices again now.
 const neighbors = require('./src/neighbors');
+// The MACs the monitor already read from each device (for telling "already in TowerDesk" from "new").
+function monitorMacs() {
+  const macs = {};
+  (monitor.snapshot().devices || []).forEach((d) => { if (d.metrics && d.metrics.macs) macs[d.id] = d.metrics.macs; });
+  return macs;
+}
 function neighborView(demo) {
   if (demo) {
     const dm = require('./src/demo');
@@ -627,8 +634,7 @@ function neighborView(demo) {
     return Object.assign({ demo: true, scannedAt: new Date().toISOString(), scanned: 1, canScan: 1 }, a);
   }
   const list = devices.list();
-  const macs = {};
-  (monitor.snapshot().devices || []).forEach((d) => { if (d.metrics && d.metrics.macs) macs[d.id] = d.metrics.macs; });
+  const macs = monitorMacs();
   const obs = neighbors.observations();
   const at = obs.map((o) => o.at).filter(Boolean).sort().pop() || null;
   return Object.assign({ demo: false, scannedAt: at, scanned: obs.length, canScan: list.filter(neighbors.canScan).length, autoConnect: neighbors.settings().autoConnect }, neighbors.analyse(list, obs, macs));

@@ -75,6 +75,29 @@ function fakeShell(opts) {
   await check('the password is masked in anything shown', () => { assert.ok(!M.script(c).map(M.maskLine).join('\n').includes('N3w_pass')); assert.ok(M.script(c).map(M.maskLine).join('\n').includes('password=••••••••')); });
   await check('the undo commands remove only what carries the TowerDesk comment', () => { const r = M.revertScript(c); assert.ok(r.every((l) => l.includes('comment="TowerDesk setup"'))); assert.ok(r.length >= 3); });
 
+  // ---------- choosing the new router from what the relay sees ----------
+  const SEEN = [
+    { mac: 'aa:00:00:00:00:31', name: 'Sector1', model: 'CHR', version: '6.49.13 (long-term)', ip: '10.10.11.31', port: 'bridge1', farPort: 'ether1', mikrotik: true, knownAs: 'Sector1' },
+    { mac: 'aa:00:00:00:00:04', name: 'Cisco-SW', model: 'cisco WS-C2960', ip: '', port: 'bridge1', farPort: 'Ethernet0/1', mikrotik: false, knownAs: '' },
+    { mac: '4c:5e:0c:8a:1f:99', name: 'MikroTik', model: 'RB951Ui-2HnD', version: '7.11', ip: '192.168.88.1', port: 'ether2', farPort: 'bridge/ether3', mikrotik: true, knownAs: '' },
+    { mac: GOOD.mac, name: 'MikroTik', model: 'CHR', version: '6.49.13', ip: '', port: 'ether2', farPort: 'ether1', mikrotik: true, knownAs: '' },
+    { mac: '', name: 'has no MAC' }
+  ];
+  await check('the list to choose from puts new MikroTiks first, the one with no address before the rest', () => {
+    const l = M.candidates(SEEN);
+    assert.deepStrictEqual(l.map((x) => x.mac), ['4C:5E:0C:8A:1F:88', '4C:5E:0C:8A:1F:99', 'AA:00:00:00:00:31', 'AA:00:00:00:00:04']);
+    assert.deepStrictEqual(l.map((x) => x.can), [true, true, false, false]);
+    assert.deepStrictEqual(M.candidates(null), []);
+  });
+  await check('a device already in TowerDesk, or one that is not a MikroTik, cannot be chosen and says why', () => {
+    const l = M.candidates(SEEN);
+    assert.ok(/Already in TowerDesk as Sector1/.test(l[2].why)); assert.ok(/Not a MikroTik/.test(l[3].why)); assert.strictEqual(l[0].why, '');
+  });
+  await check('the port for the address comes from what the relay learnt (a port inside a bridge means the bridge)', () => {
+    assert.strictEqual(M.facingPort('ether1'), 'ether1'); assert.strictEqual(M.facingPort('bridge/ether3'), 'bridge');
+    ['', undefined, 'a b', 'ether1;x', 'e"1'].forEach((p) => assert.strictEqual(M.facingPort(p), '', String(p)));
+  });
+
   // ---------- the driver, against the fake router ----------
   const lines = M.script(c);
   await check('it logs in through the relay and types every command, then quits', async () => {
@@ -108,7 +131,7 @@ function fakeShell(opts) {
   const snmpOnly = devices.add({ name: 'SNMP only', type: 'mikrotik', ip: '10.118.82.19', method: 'snmp', community: 'public' }, { ok: true });
   // a fake MikroTik API for the relay and for the verification of the new router
   const api = { neighborRows: [{ address: '', 'mac-address': GOOD.mac, identity: 'MikroTik', platform: 'MikroTik', interface: 'ether2' }], arp: [], reachable: true };
-  const tablesFor = () => ({ neighbors: api.neighborRows, arp: api.arp, hosts: [], gateway: '', selfMacs: [] });
+  const tablesFor = () => ({ neighbors: api.neighborRows, arp: api.arp, hosts: [], gateway: '', selfMacs: api.selfMacs || [] });
   const mikrotik = require('../src/transports/mikrotik');
   const realRead = mikrotik.readNeighborTables;
   mikrotik.readNeighborTables = async () => tablesFor();
@@ -121,6 +144,32 @@ function fakeShell(opts) {
   const body = Object.assign({}, GOOD, { relayId: relay.id });
   useFakes({ knownMac: GOOD.mac });
 
+  await check('looking through the relay lists what it sees next to it, and types nothing', async () => {
+    const one = api.neighborRows;
+    api.neighborRows = [
+      { address: '10.118.82.19', 'mac-address': 'AA:00:00:00:00:19', identity: 'Other', platform: 'MikroTik', board: 'RB750', interface: 'ether3' },
+      { address: '', 'mac-address': 'AA:00:00:00:00:04', identity: 'Cisco-SW', platform: 'cisco WS-C2960', interface: 'ether3', 'interface-name': 'Ethernet0/1' },
+      { address: '', 'mac-address': GOOD.mac, identity: 'MikroTik', platform: 'MikroTik', board: 'CHR', version: '6.49.13 (long-term)', interface: 'ether2', 'interface-name': 'ether1' },
+      { address: '', 'mac-address': 'AA:00:00:00:00:77', identity: 'MikroTik', platform: 'MikroTik', interface: 'ether4' },
+      { address: '', 'mac-address': 'AA:00:00:00:00:18', identity: 'Relay MikroTik', platform: 'MikroTik', interface: 'ether5' }
+    ];
+    api.selfMacs = ['AA:00:00:00:00:18'];
+    shells = [];
+    try {
+      const r = await R.look({ relayId: relay.id }, { [snmpOnly.id]: ['aa:00:00:00:00:77'] });
+      assert.ok(r.ok); assert.strictEqual(r.relay.name, 'Relay MikroTik'); assert.strictEqual(shells.length, 0);
+      // the new one first; then the two already in TowerDesk (by name); then the one that is not a MikroTik; never the relay itself
+      assert.deepStrictEqual(r.found.map((x) => [x.mac, x.can]), [['4C:5E:0C:8A:1F:88', true], ['AA:00:00:00:00:77', false], ['AA:00:00:00:00:19', false], ['AA:00:00:00:00:04', false]]);
+      const n = r.found[0]; assert.strictEqual(n.port, 'ether2'); assert.strictEqual(n.farPort, 'ether1'); assert.strictEqual(n.model, 'CHR'); assert.strictEqual(n.version, '6.49.13 (long-term)'); assert.strictEqual(n.ip, '');
+      assert.ok(/SNMP only/.test(r.found[1].why), 'known by a MAC the monitor read'); assert.ok(/SNMP only/.test(r.found[2].why), 'known by its address');
+    } finally { api.neighborRows = one; api.selfMacs = []; }
+  });
+  await check('a new router is not mistaken for a device that merely has the same name', async () => {
+    devices.add({ name: 'MikroTik', type: 'mikrotik', ip: '10.118.82.50', method: 'snmp', community: 'public' }, { ok: true });
+    const r = await R.look({ relayId: relay.id }, {});
+    assert.strictEqual(r.found.length, 1); assert.strictEqual(r.found[0].name, 'MikroTik'); assert.strictEqual(r.found[0].can, true);
+  });
+  await check('looking needs a relay that is a MikroTik with the API', async () => { await assert.rejects(() => R.look({ relayId: snmpOnly.id }, {}), /MikroTik API/); await assert.rejects(() => R.look({}, {}), /Choose the MikroTik/); });
   await check('the preview needs a relay that is a MikroTik with the API', async () => { await assert.rejects(() => R.plan(Object.assign({}, body, { relayId: snmpOnly.id })), /MikroTik API/); await assert.rejects(() => R.plan(Object.assign({}, body, { relayId: 'nope' })), /Choose the MikroTik/); });
   await check('the preview says whether the relay sees the MAC and shows the commands, but types nothing', async () => {
     shells = []; const p = await R.plan(body); assert.ok(p.ok); assert.strictEqual(p.seen.interface, 'ether2'); assert.ok(p.commands.length >= 3); assert.strictEqual(shells.length, 0); assert.strictEqual(p.canApply, false); assert.strictEqual(p.writeOn, false);

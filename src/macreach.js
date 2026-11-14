@@ -1,7 +1,8 @@
 // "Reach it by MAC": give a brand-new MikroTik an address through another MikroTik that sees it.
+//   look  - READ-ONLY. Asks the relay router (over the API) what it sees next to it, so the new router is picked from a list.
 //   plan  - READ-ONLY. Checks the relay router, asks it (over the API) whether it can see that MAC, and shows the exact
 //           commands. Nothing is typed on any router.
-//   apply - only when an admin has switched writing on (the same switch as "Set up a radio"). Types the commands, then
+//   apply - only when an admin has switched writing on (the same switch as "Set up a device"). Types the commands, then
 //           checks the new router answers on its API at the new address. If it does not, the address TowerDesk added is
 //           removed again.
 // Passwords (the relay's saved login, the new router's factory login and the new password) are used in memory for this
@@ -22,25 +23,42 @@ function relayOf(id) {
   return d;
 }
 
+// A read-only look at the relay through its API: its neighbour, ARP and MAC tables. Nothing is typed on it.
+async function readRelay(relay) {
+  const o = devices.connectionOptions(relay);
+  try {
+    const session = await drivers.openApi({ host: o.host, port: o.port || undefined, username: o.username, password: o.password, secure: relay.method === 'mikrotik-ssl' });
+    try { return neighbors.fromMikrotikTables(await mikrotik.readNeighborTables(session)); } finally { session.close(); }
+  } catch (e) { throw new Error('Could not read the relay router (' + String((e && e.message) || 'error').slice(0, 80) + ').'); }
+}
+
+// What the relay sees next to it right now: the list the new router is chosen from, so nobody has to find and type a
+// MAC address. READ-ONLY. macsById: the MACs the monitor already read per device, so a neighbour that is already in
+// TowerDesk is marked as such (by its address or its MAC, never by its name: every new MikroTik is called "MikroTik").
+async function look(body, macsById) {
+  const relay = relayOf(body && body.relayId);
+  const t = await readRelay(relay);
+  const obs = neighbors.observations().filter((o) => o.deviceId !== relay.id).concat([Object.assign({ deviceId: relay.id }, t)]);
+  const ix = neighbors.ownerIndex(devices.list(), obs, macsById);
+  const rows = t.rows.filter((r) => r.mac && !t.selfMacs.includes(r.mac)).map((r) => {
+    const d = (r.ip && ix.byIp[r.ip]) || ix.byId[ix.macOwner[r.mac]] || null;
+    return { mac: r.mac, name: r.name, model: r.board || r.platform, version: r.version, ip: r.ip, port: r.localPort, farPort: r.remotePort,
+      mikrotik: neighbors.typeHint(r.platform) === 'mikrotik', knownAs: d ? d.name : '', self: !!d && d.id === relay.id };
+  }).filter((r) => !r.self);
+  return { ok: true, relay: { id: relay.id, name: relay.name, ip: relay.ip }, found: model.candidates(rows) };
+}
+
 async function plan(body) {
   body = body || {};
   const v = model.validate(body);
   if (!v.ok) return { ok: false, errors: v.errors };
   const relay = relayOf(body.relayId);
-  const o = devices.connectionOptions(relay);
-  // Read-only look through the API: does the relay see that MAC on its wires, and is the new address already taken?
-  let seen = null, conflict = null;
-  try {
-    const session = await drivers.openApi({ host: o.host, port: o.port || undefined, username: o.username, password: o.password, secure: relay.method === 'mikrotik-ssl' });
-    try {
-      const t = neighbors.fromMikrotikTables(await mikrotik.readNeighborTables(session));
-      const want = neighbors.normMac(v.clean.mac);
-      const row = t.rows.find((r) => r.mac === want);
-      seen = row ? { interface: row.localPort, identity: row.name, platform: row.platform, ip: row.ip } : false;
-      const holder = t.arp.find((a) => a.ip === v.clean.ip && a.mac !== want);
-      if (holder) conflict = 'Another device already answers at ' + v.clean.ip + '.';
-    } finally { session.close(); }
-  } catch (e) { throw new Error('Could not read the relay router (' + String((e && e.message) || 'error').slice(0, 80) + ').'); }
+  // Does the relay see that MAC on its wires, and is the new address already taken?
+  const t = await readRelay(relay);
+  const want = neighbors.normMac(v.clean.mac);
+  const row = t.rows.find((r) => r.mac === want);
+  const seen = row ? { interface: row.localPort, identity: row.name, platform: row.platform, ip: row.ip } : false;
+  let conflict = t.arp.some((a) => a.ip === v.clean.ip && a.mac !== want) ? 'Another device already answers at ' + v.clean.ip + '.' : null;
   const mine = devices.list().find((d) => d.ip === v.clean.ip);
   if (mine) conflict = conflict || 'TowerDesk already has a device at ' + v.clean.ip + ' (' + mine.name + ').';
   const writeOn = provision.settings().allowWrite;
@@ -86,7 +104,7 @@ async function revert(c, shellOpts, base) {
 }
 
 async function apply(body) {
-  if (!provision.settings().allowWrite) throw new Error('Writing to routers is switched off. An admin can switch it on in Settings (Radio setup) once you are ready to try it on a spare router.');
+  if (!provision.settings().allowWrite) throw new Error('Writing to routers is switched off. An admin can switch it on in Settings (Device setup) once you are ready to try it on a spare router.');
   body = body || {};
   const v = model.validate(body);
   if (!v.ok) throw new Error('Some of the values are not valid. Run the preview again.');
@@ -114,4 +132,4 @@ async function apply(body) {
   throw new Error('The commands were typed, but TowerDesk cannot reach the router at ' + c.ip + ' (' + check.error + '). ' + (undone ? 'The address was removed again.' : 'TowerDesk could not remove the address: check the router.') + ' If the router has the default firewall, add an API rule for your management network and try again.');
 }
 
-module.exports = { plan, apply, _use: (d) => { drivers = Object.assign({}, drivers, d); } };
+module.exports = { look, plan, apply, _use: (d) => { drivers = Object.assign({}, drivers, d); } };

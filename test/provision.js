@@ -38,6 +38,13 @@ function fakeRadio(opts) {
   await check('a MAC lock must look like a MAC', () => { assert.ok(M.validate('customer', { name: 'C1', ssid: 'X', wpaKey: 'longenough1', lockAp: 'nope' }).errors.lockAp); assert.ok(M.validate('customer', { name: 'C1', ssid: 'X', wpaKey: 'longenough1', lockAp: '78:8A:20:AA:BB:CC' }).ok); });
   await check('fields that are not part of the template are ignored', () => assert.strictEqual(M.validate('customer', Object.assign({}, GOOD, { name: 'C1' })).clean.frequency, undefined));
   await check('an unknown template is refused', () => assert.ok(M.validate('toaster', GOOD).errors._));
+  await check('everything that can be set up has its own steps, and they start by asking what it is', () => {
+    assert.deepStrictEqual(M.KINDS.map((k) => k.key), ['mac'].concat(Object.keys(M.TEMPLATES)));
+    M.KINDS.forEach((k) => { const f = M.flow(k.key); assert.strictEqual(f[0], 'kind'); assert.ok(f.length >= 4, k.key); f.forEach((s) => assert.ok(M.STEP_TITLES[s], s)); assert.ok(k.label && k.about); });
+    assert.deepStrictEqual(M.flow('mac'), ['kind', 'relay', 'pick', 'address', 'run']);
+    assert.deepStrictEqual(M.flow('customer'), ['kind', 'radio', 'settings', 'apply']);
+  });
+  await check('with nothing chosen (or something unknown) there is only the first step', () => { assert.deepStrictEqual(M.flow(''), ['kind']); assert.deepStrictEqual(M.flow('toString'), ['kind']); });
 
   const clean = M.validate('sector', GOOD).clean;
   const plan = M.airosPlan('sector', clean, CFG);

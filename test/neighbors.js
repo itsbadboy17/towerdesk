@@ -168,6 +168,17 @@ check('the MikroTik interface-name is kept as the neighbour\'s port', () => {
   const t = N.fromMikrotikTables({ neighbors: [{ interface: 'ether1', 'interface-name': 'Ethernet1/0', identity: 'Cisco-SW', 'mac-address': 'AA:00:00:00:00:04' }] });
   assert.strictEqual(t.rows[0].remotePort, 'Ethernet1/0'); assert.strictEqual(t.rows[0].localPort, 'ether1');
 });
+check('a MikroTik neighbour keeps its model and version (shown when choosing a new router to set up)', () => {
+  const t = N.fromMikrotikTables({ neighbors: [{ interface: 'ether2', identity: 'MikroTik', platform: 'MikroTik', board: 'RB951Ui-2HnD', version: '6.49.13 (long-term)', 'mac-address': '4C:5E:0C:8A:1F:88' }] });
+  assert.strictEqual(t.rows[0].board, 'RB951Ui-2HnD'); assert.strictEqual(t.rows[0].version, '6.49.13 (long-term)'); assert.strictEqual(t.rows[0].platform, 'MikroTik');
+});
+check('a MAC or an address is tied to the device that owns it (own address, monitor MACs, a scanned device\'s own MACs, ARP)', () => {
+  const devs = [{ id: 'a', name: 'A', ip: '10.0.0.1' }, { id: 'b', name: 'B', ip: '10.0.0.2' }, { id: 'c', name: 'C', ip: '10.0.0.3' }];
+  const ix = N.ownerIndex(devs, [{ deviceId: 'a', selfMacs: ['AA:00:00:00:00:01'], arp: [{ ip: '10.0.0.3', mac: 'aa:00:00:00:00:03' }], rows: [{ mac: 'aa:00:00:00:00:09', ip: '10.9.9.9' }] }], { b: ['AA-00-00-00-00-02'] });
+  assert.strictEqual(ix.byIp['10.0.0.2'].id, 'b');
+  assert.strictEqual(ix.macOwner['aa:00:00:00:00:01'], 'a'); assert.strictEqual(ix.macOwner['aa:00:00:00:00:02'], 'b'); assert.strictEqual(ix.macOwner['aa:00:00:00:00:03'], 'c');
+  assert.strictEqual(ix.macOwner['aa:00:00:00:00:09'], undefined, 'a MAC at an address nobody owns belongs to no device');
+});
 check('auto-connect fills empty devices, root first, and leaves hand-made choices alone', () => {
   const list = [
     { id: 'a', name: 'A', parentId: null }, { id: 'b', name: 'B', parentId: null }, { id: 'c', name: 'C', parentId: 'x', parentSource: 'manual' },

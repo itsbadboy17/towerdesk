@@ -80,5 +80,25 @@
     // Text the router prints when a command did not work.
     var ERROR_RE = /(failure:|bad command name|syntax error|expected end of command|invalid value|input does not match|no such item|not enough permissions|already have such address)/i;
 
-    return { validate: validate, script: script, revertScript: revertScript, maskLine: maskLine, ERROR_RE: ERROR_RE, COMMENT: COMMENT, MAC_RE: MAC_RE };
+    // What the relay sees next to it, as a list to choose the new router from, so nobody has to find and type a MAC
+    // address. rows: [{ mac, name, model, version, ip, port (the relay's port), farPort (the other device's port),
+    // mikrotik (bool), knownAs (the TowerDesk device it already is, or '') }]. Only a MikroTik that TowerDesk does not
+    // have yet can be chosen: MAC-Telnet is a MikroTik feature. New ones come first, those with no address before the rest.
+    function candidates(rows) {
+        var out = (rows || []).filter(function (r) { return r && MAC_RE.test(String(r.mac || '')); }).map(function (r) {
+            var why = r.knownAs ? 'Already in TowerDesk as ' + r.knownAs + '.' : (r.mikrotik ? '' : 'Not a MikroTik, so it cannot be reached by its MAC address.');
+            return { mac: String(r.mac).toUpperCase(), name: String(r.name || ''), model: String(r.model || ''), version: String(r.version || ''), ip: String(r.ip || ''),
+                port: String(r.port || ''), farPort: String(r.farPort || ''), mikrotik: !!r.mikrotik, knownAs: String(r.knownAs || ''), can: !why, why: why };
+        });
+        var rank = function (c) { return c.can ? (c.ip ? 1 : 0) : (c.knownAs ? 2 : 3); };
+        return out.sort(function (a, b) { return rank(a) - rank(b) || a.name.localeCompare(b.name) || a.mac.localeCompare(b.mac); });
+    }
+    // The new router's own port that faces the relay, as a name an address can be put on. A port inside a bridge is
+    // reported as "bridge/ether2": the address belongs on the bridge. '' when the name is not one TowerDesk accepts.
+    function facingPort(farPort) {
+        var p = String(farPort || '').split('/')[0].trim();
+        return IFACE_RE.test(p) ? p : '';
+    }
+
+    return { validate: validate, script: script, revertScript: revertScript, maskLine: maskLine, candidates: candidates, facingPort: facingPort, ERROR_RE: ERROR_RE, COMMENT: COMMENT, MAC_RE: MAC_RE };
 }));

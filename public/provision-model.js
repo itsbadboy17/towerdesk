@@ -30,7 +30,7 @@
         frequency: { label: 'Frequency (MHz)', hint: 'For example 5180 to 5825.', required: false, numeric: true },
         channelWidth: { label: 'Channel width (MHz)', hint: '20 or 40 are the usual choices.', required: false, numeric: true },
         txPower: { label: 'Transmit power (dBm)', hint: '0 to 30. Lower is quieter for your other radios.', required: false, numeric: true },
-        lockAp: { label: 'Lock to this sector (its MAC address, optional)', hint: 'For example 78:8A:20:AA:BB:CC. Leave empty to join any sector with that Wi-Fi name.', required: false }
+        lockAp: { label: 'Lock to this sector (its MAC address)', hint: 'For example 78:8A:20:AA:BB:CC. Leave empty to join any sector with that Wi-Fi name.', required: false }
     };
 
     // { ok, errors: { field: message }, clean: { field: value } }. A field that is not part of the template is ignored.
@@ -118,5 +118,18 @@
         return lines;
     }
 
-    return { TEMPLATES: TEMPLATES, FIELDS: FIELDS, validate: validate, airosDesired: airosDesired, airosPlan: airosPlan, mikrotikPreview: mikrotikPreview, AIROS_ALLOWED: AIROS_ALLOWED, SECRET_KEYS: SECRET_KEYS, AIROS_MODE_KEY: AIROS_MODE_KEY };
+    // ---------------- "Set up a device": what can be set up, and the steps each one takes ----------------
+    // 'mac' is a new MikroTik with no IP yet (found through a MikroTik that can see it); the others are the radio
+    // templates above, for a radio that already answers at an IP address.
+    var KINDS = [{ key: 'mac', label: 'New MikroTik router', about: 'Just plugged in, with no IP address yet. TowerDesk finds it through a MikroTik you already have, gives it an address and turns on its API.' }]
+        .concat(Object.keys(TEMPLATES).map(function (k) { return { key: k, label: TEMPLATES[k].label, about: TEMPLATES[k].about }; }));
+    var STEP_TITLES = { kind: 'What it is', relay: 'Where it is plugged in', pick: 'Which one', address: 'Its address', run: 'Check and run', radio: 'Which radio', settings: 'Its settings', apply: 'Check and apply' };
+    // The steps, in order, for one kind. Until something is chosen there is only the first step.
+    function flow(kind) {
+        if (kind === 'mac') return ['kind', 'relay', 'pick', 'address', 'run'];
+        if (Object.prototype.hasOwnProperty.call(TEMPLATES, kind)) return ['kind', 'radio', 'settings', 'apply'];
+        return ['kind'];
+    }
+
+    return { KINDS: KINDS, STEP_TITLES: STEP_TITLES, flow: flow, TEMPLATES: TEMPLATES, FIELDS: FIELDS, validate: validate, airosDesired: airosDesired, airosPlan: airosPlan, mikrotikPreview: mikrotikPreview, AIROS_ALLOWED: AIROS_ALLOWED, SECRET_KEYS: SECRET_KEYS, AIROS_MODE_KEY: AIROS_MODE_KEY };
 }));

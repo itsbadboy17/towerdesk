@@ -1036,9 +1036,10 @@ html[data-role="viewer"] [data-needs="edit"], html[data-role="tech"] [data-needs
 
 /* Guided Add Device */
 .wz-steps { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; padding: 0; }
-.wz-steps li button { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 4px 12px 4px 6px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-card); color: var(--text-muted); font-weight: 600; font-size: 0.85rem; cursor: pointer; }
+.wz-steps li button, .wz-steps li .wz-chip { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 4px 12px 4px 6px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-card); color: var(--text-muted); font-weight: 600; font-size: 0.85rem; cursor: pointer; }
+.wz-steps li .wz-chip { cursor: default; } /* a marker of where you are, not a button: the steps go in order */
 .wz-steps .wz-n { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--bg-hover); color: var(--text-main); font-size: 0.8rem; }
-.wz-steps li.on button { color: var(--text-main); border-color: var(--accent); background: var(--accent-soft); }
+.wz-steps li.on button, .wz-steps li.on .wz-chip { color: var(--text-main); border-color: var(--accent); background: var(--accent-soft); }
 .wz-steps li.on .wz-n { background: var(--accent); color: #04211e; }
 .wz-steps li.done .wz-n { background: var(--success); color: #04211e; }
 .wz-intro { margin: 0 0 14px; line-height: 1.5; }
@@ -1099,7 +1100,16 @@ html[dir="rtl"] #scan-list select { background-position: left 10px center; }
 #scan-list select.scan-method { min-width: 190px; }
 #scan-list td { vertical-align: middle; }
 #scan-list input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
-/* Set up a radio */
+/* Set up a device (one step at a time: reuses the step chips above, .wz-*) */
+#su [data-step] { margin-bottom: 14px; }
+#su-intro:focus { outline: none; }
+.pv-card.off { cursor: not-allowed; opacity: 0.6; }
+.mr-devs { display: grid; gap: 8px; }
+.mr-dev-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.mr-again { margin-top: 10px; }
+.mr-manual { margin-top: 14px; }
+.mr-manual summary { cursor: pointer; font-weight: 600; }
+.mr-manual ul { margin: 8px 0 12px; padding-inline-start: 18px; display: grid; gap: 4px; }
 .pv-lead { margin: -4px 0 14px; }
 .pv-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
 .pv-cards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
