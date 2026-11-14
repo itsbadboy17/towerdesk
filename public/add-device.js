@@ -530,7 +530,9 @@
         var tr = document.createElement('tr');
         tr.dataset.ip = f.ip;
         var label = TYPE_LABELS[f.vendor] || '';
-        var name = f.name && f.name === f.model && label ? label + ' ' + f.model : (f.name || ((label || 'Device') + ' ' + f.ip));
+        // A web page title such as "RouterOS router configuration page" is not a name: use the brand and the address.
+        var pageTitle = /configuration page|web ?fig|login|welcome|index of|router ?os router|^(home|admin)$/i.test(f.name || '');
+        var name = f.name && f.name === f.model && label ? label + ' ' + f.model : (f.name && !pageTitle ? f.name : ((label || 'Device') + ' ' + f.ip));
         var found = [label ? '<strong>' + esc(label) + '</strong>' : '<span class="muted">Unknown vendor</span>']
             .concat(f.model ? [esc(f.model) + (f.firmware ? ' · fw ' + esc(f.firmware) : '')] : [])
             .concat(f.description ? ['<span class="muted">' + esc(f.description) + '</span>'] : [])
