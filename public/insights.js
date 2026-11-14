@@ -52,7 +52,14 @@
         var add = function (sev, id, what, why, rank) { out.push({ sev: sev, id: id, what: what, why: why, rank: rank }); };
         (devices || []).forEach(function (d) {
             if (d.unreachable || d.online === null || d.online === undefined) return;
-            if (d.online === false) { add('critical', d.id, d.name, 'offline' + (d.since ? ' for ' + ago(d.since) : ''), 0); return; }
+            // Planned work: shown, but not as a fault.
+            if (d.maintenance) { add('maint', d.id, d.name, 'in maintenance until ' + new Date(d.maintenance.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + (d.maintenance.reason ? ' (' + d.maintenance.reason + ')' : ''), 5); return; }
+            if (d.online === false) {
+                // What depends on it: devices behind it in the diagram and the customers on them.
+                var IM = window.TowerDesk.impactModel, dep = IM ? IM.sentence(IM.impact(devices, d.id)) : '';
+                add('critical', d.id, d.name, 'offline' + (d.since ? ' for ' + ago(d.since) : '') + (dep ? ' · ' + dep : ''), 0);
+                return;
+            }
             var mx = d.metrics || {};
             var r = mx.radio || {};
             if (d.lastTest && d.lastTest.ok === false) {

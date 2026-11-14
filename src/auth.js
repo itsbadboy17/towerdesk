@@ -12,7 +12,8 @@ const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 const MAX_FAILS = 5;
 const LOCK_MS = 15 * 60 * 1000;
 
-const sessions = new Map(); // token -> { user, expires }
+const sessions = new Map(); // token -> { user, role, expires }
+const ROLES = ['admin', 'tech', 'viewer'];
 const failures = new Map(); // client key -> { count, until }
 
 function loadUsers() {
@@ -21,6 +22,15 @@ function loadUsers() {
   } catch (e) {
     return {};
   }
+}
+function saveUsers(users) {
+  fs.mkdirSync(path.dirname(AUTH_FILE), { recursive: true });
+  fs.writeFileSync(AUTH_FILE, JSON.stringify({ users }, null, 2), { mode: 0o600 });
+}
+// Accounts made before roles existed are admins.
+function roleOf(username) {
+  const rec = loadUsers()[username];
+  return rec ? (ROLES.includes(rec.role) ? rec.role : 'admin') : null;
 }
 
 function isConfigured() {
@@ -33,11 +43,12 @@ function hashPassword(password, salt) {
   return { salt, hash };
 }
 
-function setUser(username, password) {
+// Create or change an account (the command line uses this). An existing account keeps its role.
+function setUser(username, password, role) {
   const users = loadUsers();
-  users[username] = hashPassword(password);
-  fs.mkdirSync(path.dirname(AUTH_FILE), { recursive: true });
-  fs.writeFileSync(AUTH_FILE, JSON.stringify({ users }, null, 2), { mode: 0o600 });
+  const prev = users[username];
+  users[username] = Object.assign(hashPassword(password), { role: ROLES.includes(role) ? role : (prev && ROLES.includes(prev.role) ? prev.role : 'admin'), created: prev && prev.created ? prev.created : new Date().toISOString() });
+  saveUsers(users);
   // Existing sessions for this user are no longer valid after a password change.
   for (const [token, s] of sessions) if (s.user === username) sessions.delete(token);
 }
@@ -93,9 +104,17 @@ function login(req, res) {
   }
   failures.delete(key);
   const token = crypto.randomBytes(32).toString('hex');
-  sessions.set(token, { user: String(username), expires: Date.now() + SESSION_TTL_MS });
+  sessions.set(token, { user: String(username), role: roleOf(String(username)) || 'admin', expires: Date.now() + SESSION_TTL_MS });
   res.setHeader('Set-Cookie', `${COOKIE}=${token}; Max-Age=${SESSION_TTL_MS / 1000}; ${cookieFlags(req)}`);
   res.json({ success: true, user: String(username) });
+}
+
+// Sign someone in without a password check (used once: right after the first account is created).
+function startSession(req, res, username) {
+  const token = crypto.randomBytes(32).toString('hex');
+  sessions.set(token, { user: username, role: roleOf(username) || 'admin', expires: Date.now() + SESSION_TTL_MS });
+  res.setHeader('Set-Cookie', `${COOKIE}=${token}; Max-Age=${SESSION_TTL_MS / 1000}; ${cookieFlags(req)}`);
+  return { signedIn: true };
 }
 
 function logout(req, res) {
@@ -103,6 +122,71 @@ function logout(req, res) {
   if (token) sessions.delete(token);
   res.setHeader('Set-Cookie', `${COOKIE}=; Max-Age=0; ${cookieFlags(req)}`);
   res.json({ success: true });
+}
+
+// What each role may do. Admin: everything. Technician: devices, monitoring and the advisor, but not staff,
+// settings, saved logins, backups, updates or money. Viewer: look, ping and trace only.
+const ADMIN_PREFIX = ['/api/users', '/api/credentials', '/api/update', '/api/ai/config', '/api/radius/config', '/api/backup', '/api/restore', '/api/finance', '/api/notify'];
+const ADMIN_PAGES = new Set(['/settings', '/settings.html', '/finance', '/finance.html']);
+const VIEWER_POST_OK = [/^\/api\/logout$/, /^\/api\/tools\//];
+function canAccess(role, method, p) {
+  if (role === 'admin') return true;
+  const adminOnly = ADMIN_PAGES.has(p) || ADMIN_PREFIX.some((x) => p === x || p.startsWith(x + '/'));
+  if (adminOnly) return false;
+  if (role === 'tech') return true;
+  // Customer names and phone numbers are for staff who act on them, not for viewers.
+  if (role === 'viewer' && p.startsWith('/api/messages')) return false;
+  if (role === 'viewer') return method === 'GET' || method === 'HEAD' || VIEWER_POST_OK.some((r) => r.test(p));
+  return false;
+}
+
+// Staff accounts (never returns hashes).
+function listUsers() {
+  const users = loadUsers();
+  return Object.keys(users).sort().map((name) => ({ username: name, role: roleOf(name), created: users[name].created || null }));
+}
+function validName(n) { return /^[A-Za-z0-9._-]{2,32}$/.test(String(n || '')); }
+function adminCount(users) { return Object.keys(users).filter((n) => (ROLES.includes(users[n].role) ? users[n].role : 'admin') === 'admin').length; }
+function createUser(username, password, role) {
+  username = String(username || '').trim();
+  if (!validName(username)) return { error: 'Use 2 to 32 letters, numbers, dots, dashes or underscores for the username.' };
+  if (String(password || '').length < 8) return { error: 'The password must be at least 8 characters.' };
+  if (!ROLES.includes(role)) return { error: 'Choose a role: admin, technician or viewer.' };
+  const users = loadUsers();
+  if (users[username]) return { error: 'That username is already taken.' };
+  // The first account is always an admin, or nobody could manage the others.
+  if (!Object.keys(users).length) role = 'admin';
+  setUser(username, password, role);
+  return { ok: true, username, role };
+}
+function updateUser(username, patch) {
+  const users = loadUsers();
+  const rec = users[username];
+  if (!rec) return { error: 'No such account.' };
+  patch = patch || {};
+  if (patch.role !== undefined) {
+    if (!ROLES.includes(patch.role)) return { error: 'Choose a role: admin, technician or viewer.' };
+    const wasAdmin = roleOf(username) === 'admin';
+    if (wasAdmin && patch.role !== 'admin' && adminCount(users) <= 1) return { error: 'There must be at least one admin.' };
+    rec.role = patch.role;
+    saveUsers(users);
+    for (const [, sess] of sessions) if (sess.user === username) sess.role = patch.role;
+  }
+  if (patch.password !== undefined) {
+    if (String(patch.password).length < 8) return { error: 'The password must be at least 8 characters.' };
+    setUser(username, String(patch.password));
+  }
+  return { ok: true };
+}
+function removeUser(username, actingUser) {
+  const users = loadUsers();
+  if (!users[username]) return { error: 'No such account.' };
+  if (username === actingUser) return { error: 'You cannot delete the account you are signed in with.' };
+  if (roleOf(username) === 'admin' && adminCount(users) <= 1) return { error: 'There must be at least one admin.' };
+  delete users[username];
+  saveUsers(users);
+  for (const [token, sess] of sessions) if (sess.user === username) sessions.delete(token);
+  return { ok: true };
 }
 
 // Paths reachable without a session (the login page and what it needs).
@@ -114,10 +198,18 @@ function middleware(req, res, next) {
   if (process.env.TOWERDESK_AUTH === 'off' || !isConfigured()) return next();
   if (PUBLIC.has(req.path)) return next();
   const s = getSession(req);
-  if (s) { req.user = s.user; return next(); }
+  if (s) {
+    req.user = s.user;
+    req.role = roleOf(s.user) || s.role || 'admin';
+    if (!canAccess(req.role, req.method, req.path)) {
+      if (req.path.startsWith('/api/')) return res.status(403).json({ error: 'Your account is not allowed to do this.' });
+      return res.redirect('/');
+    }
+    return next();
+  }
   if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Login required' });
   const nextUrl = req.originalUrl && req.originalUrl !== '/' ? '?next=' + encodeURIComponent(req.originalUrl) : '';
   return res.redirect('/login' + nextUrl);
 }
 
-module.exports = { middleware, login, logout, setUser, isConfigured, getSession };
+module.exports = { verify, middleware, login, logout, startSession, setUser, isConfigured, getSession, roleOf, canAccess, listUsers, createUser, updateUser, removeUser, ROLES };

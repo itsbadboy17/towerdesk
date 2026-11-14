@@ -17,9 +17,39 @@ app.post('/api/login', auth.login);
 app.post('/api/logout', auth.logout);
 app.get('/api/session', (req, res) => {
   const s = auth.getSession(req);
-  res.json({ authRequired: auth.isConfigured() && process.env.TOWERDESK_AUTH !== 'off', user: s ? s.user : null });
+  const required = auth.isConfigured() && process.env.TOWERDESK_AUTH !== 'off';
+  // With no login configured everyone is the owner; otherwise the role comes from the account.
+  res.json({ authRequired: required, user: s ? s.user : null, role: required ? (s ? auth.roleOf(s.user) : null) : 'admin' });
 });
 app.use(auth.middleware);
+
+// Staff accounts (admin only: see src/auth.js). Passwords and hashes are never sent back.
+app.get('/api/users', (req, res) => res.json({ configured: auth.isConfigured(), me: req.user || null, users: auth.listUsers(), roles: auth.ROLES }));
+app.post('/api/users', (req, res) => {
+  const b = req.body || {};
+  const first = !auth.isConfigured();
+  if (first) {
+    // Before any login exists the page is open to the network: only the computer running TowerDesk may create the first admin.
+    const addr = String(req.socket.remoteAddress || '');
+    const local = /^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(addr) && !req.headers['x-forwarded-for'] && !req.headers['cf-connecting-ip'];
+    if (!local) return res.status(403).json({ error: 'Create the first account on the computer that runs TowerDesk.' });
+  }
+  const r = auth.createUser(b.username, b.password, b.role);
+  if (r.error) return res.status(400).json(r);
+  // Creating the very first account turns the login on: sign that person in so they are not locked out.
+  if (first) { const sess = auth.startSession(req, res, r.username); return res.json(Object.assign({ firstAccount: true }, r, sess || {})); }
+  res.json(r);
+});
+app.put('/api/users/:name', (req, res) => {
+  const r = auth.updateUser(String(req.params.name), { role: req.body && req.body.role, password: req.body && req.body.password });
+  if (r.error) return res.status(400).json(r);
+  res.json(r);
+});
+app.delete('/api/users/:name', (req, res) => {
+  const r = auth.removeUser(String(req.params.name), req.user);
+  if (r.error) return res.status(400).json(r);
+  res.json(r);
+});
 
 // Static folder for views and assets
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
@@ -472,6 +502,61 @@ app.post('/api/topology/layout', (req, res) => {
     if (r.error) errors.push({ id: c && c.id, error: r.error }); else done.push(c.id);
   });
   res.json({ ok: errors.length === 0, done, errors });
+});
+
+// Maintenance windows: mute alerts and messages for a device or a site for a set time.
+const maintenance = require('./src/maintenance');
+const notify = require('./src/notify');
+const impactModel = require('./public/impact-model.js');
+const messages = require('./public/messages-model.js');
+app.get('/api/maintenance', (req, res) => res.json({ windows: maintenance.active() }));
+app.post('/api/maintenance', (req, res) => {
+  const b = req.body || {};
+  const dev = b.id ? devices.get(String(b.id)) : null;
+  if (b.scope !== 'site' && !dev) return res.status(404).json({ error: 'Device not found' });
+  const r = maintenance.add({ scope: b.scope === 'site' ? 'site' : 'device', id: dev ? dev.id : undefined, site: b.site, hours: b.hours, reason: b.reason, name: dev ? dev.name : b.site, by: req.user || '' });
+  if (r.error) return res.status(400).json(r);
+  try { monitor.note({ kind: 'setting', id: dev ? dev.id : null, name: r.window.name, text: r.window.name + ': maintenance started' }); } catch (e) { /* optional */ }
+  res.json(r);
+});
+app.delete('/api/maintenance/:id', (req, res) => {
+  if (!maintenance.remove(String(req.params.id))) return res.status(404).json({ error: 'No such maintenance window' });
+  res.json({ ok: true });
+});
+
+// Telegram settings (admin only). The token is never sent back.
+app.get('/api/notify', (req, res) => res.json(notify.publicConfig()));
+app.post('/api/notify/config', (req, res) => {
+  const r = notify.setConfig(req.body || {});
+  if (r.error) return res.status(400).json(r);
+  res.json(Object.assign({ ok: true }, notify.publicConfig()));
+});
+app.post('/api/notify/test', async (req, res) => {
+  const r = await notify.telegramSend('✅ TowerDesk test message. If you can read this, alerts will arrive here.');
+  res.json(Object.assign({ ok: !!r.ok }, r.ok ? {} : { error: r.error }));
+});
+
+// Texts for the team and for customers. Nothing is sent from here: the page copies them or opens WhatsApp.
+app.get('/api/messages/outage/:id', async (req, res) => {
+  try {
+    const demo = req.query && req.query.demo === '1';
+    const snap = demo ? require('./src/demo').snapshot() : monitor.snapshot();
+    const d = (snap.devices || []).find((x) => x.id === req.params.id);
+    if (!d) return res.status(404).json({ error: 'Device not found' });
+    const imp = impactModel.impact(snap.devices, d.id);
+    const ids = new Set([d.id].concat(imp.devices));
+    const subs = await subscribers.list({ demo });
+    require('./src/lookup').attachStations(subs.subscribers, snap.devices);
+    const cc = notify.config().whatsapp.countryCode;
+    const kind = req.query && req.query.kind === 'maintenance' ? 'maintenance' : 'outage';
+    const lang = req.query && req.query.lang === 'en' ? 'en' : 'ar';
+    const w = d.maintenance;
+    const text = messages.customerNotice(lang, kind, { until: w ? w.until : null });
+    const customers = (subs.subscribers || []).filter((s) => s.station && ids.has(s.station.sectorId)).map((s) => ({
+      name: s.name || s.username, username: s.username, phone: s.phone || '', online: !!s.online, link: messages.waLink(s.phone, text, cc)
+    }));
+    res.json({ countryCode: cc, device: { id: d.id, name: d.name }, impact: imp, sentence: impactModel.sentence(imp), kind, lang, text, customers, withPhone: customers.filter((c) => c.link).length });
+  } catch (e) { res.status(500).json({ error: 'Could not build the message' }); }
 });
 
 // Neighbours: who sits next to whom, read from routers and switches (read-only), plus suggestions for the

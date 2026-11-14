@@ -528,6 +528,10 @@
             return true;
         }
         if (e.target.closest('[data-conn=go]')) { connGo(); return true; }
+        var mt = e.target.closest('[data-maint]');
+        if (mt) { maintAct(mt.dataset.maint, mt.dataset.mid); return true; }
+        var tl = e.target.closest('[data-tell]');
+        if (tl) { openTell(tl.dataset.tell, 'outage', 'ar'); return true; } /* customers here read Arabic first; the dialog can switch */
         var tabBtn = e.target.closest('[data-dtab]');
         if (tabBtn) {
             detailTab = tabBtn.dataset.dtab;
@@ -864,6 +868,76 @@
         return scheme + '://' + d.ip + (web && d.port ? ':' + d.port : '');
     }
 
+    // Planned work and customer notices. Hidden for viewers; the server refuses them too.
+    function opsBlock(d) {
+        if (window.TowerDesk.role === 'viewer') return '';
+        var IM = window.TowerDesk.impactModel;
+        var imp = IM ? IM.impact(lastData ? lastData.devices : [d], d.id) : null;
+        var dep = imp ? IM.sentence(imp) : '';
+        var h = '<div class="ops-box">';
+        if (d.maintenance) {
+            h += '<div class="ops-row"><span class="maint-tag">🔧 In maintenance until ' + esc(new Date(d.maintenance.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) + (d.maintenance.reason ? ' · ' + esc(d.maintenance.reason) : '') + '</span>' +
+                '<button type="button" class="btn-secondary btn-sm" data-maint="end" data-mid="' + esc(d.maintenance.id) + '">End maintenance</button></div>' +
+                '<p class="muted">No alerts and no messages for this device until then.</p>';
+        } else if (CAN_EDIT) {
+            h += '<div class="ops-row"><label for="maint-hours">Planned work?</label><select id="maint-hours"><option value="1">1 hour</option><option value="2">2 hours</option><option value="4">4 hours</option><option value="8">8 hours</option><option value="24">1 day</option></select>' +
+                '<button type="button" class="btn-secondary btn-sm" data-maint="start">Start maintenance</button><span class="muted" id="maint-msg" role="status"></span></div>';
+        }
+        if (dep) h += '<p class="ops-impact">If this goes down: <strong>' + esc(dep) + '</strong>.</p>';
+        if (imp && imp.customers) h += '<button type="button" class="btn-secondary btn-sm" data-tell="' + esc(d.id) + '">Tell customers…</button>';
+        return h + '</div>';
+    }
+    function maintMsg(t) { var el = document.getElementById('maint-msg'); if (el) el.textContent = t; }
+    function maintAct(kind, mid) {
+        var body = kind === 'start' ? { scope: 'device', id: detailId, hours: Number((document.getElementById('maint-hours') || {}).value) || 1 } : null;
+        maintMsg('Saving…');
+        return fetch(kind === 'start' ? '/api/maintenance' : '/api/maintenance/' + encodeURIComponent(mid), { method: kind === 'start' ? 'POST' : 'DELETE', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+            .then(function (r) { return r.json(); }).then(function (j) {
+                if (j.error) { maintMsg(j.error); return; }
+                poll(); // the next snapshot carries the new state
+            }).catch(function () { maintMsg('Could not reach TowerDesk.'); });
+    }
+
+    // "Tell customers": the text, and a WhatsApp button per customer. TowerDesk sends nothing itself.
+    function closeTell() { var el = document.getElementById('tell-dialog'); if (el) el.remove(); }
+    function openTell(id, kind, lang) {
+        closeTell();
+        var el = document.createElement('div');
+        el.className = 'modal-overlay'; el.id = 'tell-dialog'; el.style.display = 'flex';
+        el.innerHTML = '<div class="modal conn-dialog tell-dialog" role="dialog" aria-modal="true"><div class="modal-header"><strong>Tell customers</strong><button type="button" class="close-btn" data-tell-close aria-label="Close">×</button></div><div class="modal-body"><p class="muted">Loading…</p></div></div>';
+        document.body.appendChild(el);
+        fetch('/api/messages/outage/' + encodeURIComponent(id) + '?kind=' + (kind || 'outage') + '&lang=' + (lang || 'ar') + (DEMO ? '&demo=1' : '')).then(function (r) { return r.json(); }).then(function (j) {
+            var body = el.querySelector('.modal-body');
+            if (j.error) { body.innerHTML = '<p class="live-error">' + esc(j.error) + '</p>'; return; }
+            var M = window.TowerDesk.messages;
+            body.innerHTML = '<p class="muted">' + esc(j.device.name) + ': ' + esc(j.sentence || 'no customers found') + '. TowerDesk does not send these. Each button opens <em>your</em> WhatsApp with the message ready, and you press Send there.</p>' +
+                '<div class="form-row"><div class="form-group"><label for="tell-kind">What happened</label><select id="tell-kind"><option value="outage"' + (j.kind === 'outage' ? ' selected' : '') + '>A fault</option><option value="maintenance"' + (j.kind === 'maintenance' ? ' selected' : '') + '>Planned maintenance</option></select></div>' +
+                '<div class="form-group"><label for="tell-lang">Language</label><select id="tell-lang"><option value="ar"' + (j.lang === 'ar' ? ' selected' : '') + '>العربية</option><option value="en"' + (j.lang === 'en' ? ' selected' : '') + '>English</option></select></div></div>' +
+                '<div class="form-group"><label for="tell-text">Message (you can change it)</label><textarea id="tell-text" rows="4" dir="auto">' + esc(j.text) + '</textarea></div>' +
+                '<div class="form-actions"><button type="button" class="btn-secondary btn-sm" data-tell-copy>Copy text</button><a class="btn-secondary btn-sm" id="tell-share" target="_blank" rel="noopener" href="' + esc(M.waShare(j.text)) + '">Open WhatsApp and choose who</a><span class="muted" id="tell-msg" role="status"></span></div>' +
+                '<h4 class="detail-sec">Customers (' + j.customers.length + ', ' + j.withPhone + ' with a phone number)</h4><div class="table-wrap tell-list"><table><tbody id="tell-rows"></tbody></table></div>';
+            var rows = el.querySelector('#tell-rows');
+            var draw = function () {
+                var text = el.querySelector('#tell-text').value;
+                rows.innerHTML = j.customers.length ? j.customers.map(function (c) {
+                    var link = M.waLink(c.phone, text, j.countryCode);
+                    return '<tr><td>' + (c.online ? '<span class="dot ok"></span> ' : '') + esc(c.name || c.username) + ' <span class="muted mono">' + esc(c.username || '') + '</span></td><td>' + (link ? '<a class="btn-secondary btn-sm" target="_blank" rel="noopener" href="' + esc(link) + '">WhatsApp</a>' : '<span class="muted">no phone number</span>') + '</td></tr>';
+                }).join('') : '<tr><td class="muted">No customers were matched to this device. SAS must be connected, and the sectors read.</td></tr>';
+                el.querySelector('#tell-share').href = M.waShare(text);
+            };
+            draw();
+            el.querySelector('#tell-text').addEventListener('input', draw);
+            var swap = function () { openTell(id, el.querySelector('#tell-kind').value, el.querySelector('#tell-lang').value); };
+            el.querySelector('#tell-kind').addEventListener('change', swap);
+            el.querySelector('#tell-lang').addEventListener('change', swap);
+        }).catch(function () { el.querySelector('.modal-body').innerHTML = '<p class="live-error">Could not build the message.</p>'; });
+    }
+    document.addEventListener('click', function (e) {
+        if (e.target.closest('[data-tell-close]') || e.target.id === 'tell-dialog') { closeTell(); return; }
+        var copy = e.target.closest('[data-tell-copy]');
+        if (copy) { var ta = document.getElementById('tell-text'); copyText(ta.value, copy); }
+    });
+
     function detailBody(d) {
         var cs = window.TowerDesk.connState(d);
         var det = (d.lastTest && d.lastTest.details) || {};
@@ -888,7 +962,7 @@
             return '<button type="button" role="tab" class="d-tab' + (tab === x[0] ? ' active' : '') + '" aria-selected="' + (tab === x[0]) + '" data-dtab="' + x[0] + '">' + esc(x[1]) + '</button>';
         }).join('') + '</div>' : '';
         var overview = (d.role === 'backhaul' ? linkHero(d) : '') +
-            '<dl class="kv detail-kv">' + info.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') + '</dl>' +
+            '<dl class="kv detail-kv">' + info.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') + '</dl>' + opsBlock(d) +
             '<h4 class="detail-sec">Live</h4>' + statGrid(d) +
             '<h4 class="detail-sec">Latency, last 10 minutes</h4>' + latencyChart(d.history) +
             (d.online === false ? '' : '<h4 class="detail-sec">Traffic' + (mxk === 'stations' ? '' : ' &amp; ' + (mxk === 'clients' ? 'clients' : 'interfaces')) + '</h4>' + metricsBlock(d.metrics));

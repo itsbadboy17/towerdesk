@@ -40,6 +40,8 @@ function findOpen(deviceId, kind) {
 
 function open(device, kind, severity, message) {
   if (findOpen(device.id, kind)) return null;
+  // Planned work on this device or its site: no alert, no message.
+  try { if (require('./maintenance').isMuted(device)) return null; } catch (e) { /* maintenance is optional */ }
   const a = {
     id: 'alr-' + crypto.randomBytes(5).toString('hex'),
     deviceId: device.id,
@@ -54,6 +56,7 @@ function open(device, kind, severity, message) {
   };
   load().unshift(a);
   save();
+  try { require('./notify').alertOpened(a); } catch (e) { /* messages never block monitoring */ }
   return a;
 }
 
@@ -65,6 +68,7 @@ function resolve(deviceId, kind, note) {
     // would otherwise fill the history with "down" entries that say nothing about the network.
     alerts = load().filter((x) => x !== a);
     save();
+    try { require('./notify').alertResolved(a); } catch (e) { /* see above */ }
     return a;
   }
   a.resolvedAt = new Date().toISOString();

@@ -234,6 +234,19 @@
             }
         }
 
+        // Who is signed in and what they may do. The server enforces it; this only hides what would be refused.
+        if (window.fetch) {
+            window.TowerDesk.session = fetch('/api/session').then(function (r) { return r.json(); }).then(function (s) {
+                var role = s.role || 'admin';
+                document.documentElement.setAttribute('data-role', role);
+                var hide = function (sel) { Array.prototype.forEach.call(document.querySelectorAll(sel), function (a) { var li = a.closest('li'); (li || a).hidden = true; }); };
+                if (role !== 'admin') hide('a[href="/settings"], a[href="/finance"]');
+                if (role === 'viewer') hide('a[href="/add-device"]');
+                window.TowerDesk.role = role;
+                return s;
+            }).catch(function () { return { role: 'admin' }; });
+        }
+
         // Sign Out (only meaningful once a login has been configured on the server).
         var signOut = Array.prototype.filter.call(document.querySelectorAll('.nav-link-btn'), function (b) {
             return /sign out/i.test(b.textContent);

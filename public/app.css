@@ -1004,3 +1004,27 @@ details.conn-box .conn-inner { padding: 0 14px 14px; }
 }
 
 .d-tab { white-space: nowrap; }
+
+/* Staff accounts */
+.staff-roles { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 14px; }
+.staff-roles > div { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-subtle); }
+.staff-pw { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+html[data-role="viewer"] [data-needs="edit"], html[data-role="tech"] [data-needs="admin"], html[data-role="viewer"] [data-needs="admin"] { display: none !important; }
+
+/* Needs attention: planned work is quiet, not red. */
+.attention-list .maint .att-dot { background: var(--text-muted); border-radius: 2px; }
+.attention-list .maint .att-what { color: var(--text-muted); }
+.maint-tag { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-hover); color: var(--text-muted); font-size: 0.8rem; font-weight: 600; }
+
+/* Device card: planned work and customer notices */
+.ops-box { margin: 14px 0 4px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-subtle); display: grid; gap: 8px; justify-items: start; }
+.ops-row { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+.ops-impact { margin: 0; }
+.tell-dialog { max-width: 620px; }
+.tell-dialog textarea { width: 100%; min-height: 90px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
+.tell-list { max-height: 260px; overflow: auto; }
+.tell-list td { padding: 6px 8px; }
+
+.nt-steps { margin: 8px 0 0 18px; display: grid; gap: 4px; }
+.nt-events { display: grid; gap: 4px; margin: 8px 0; }
+#report-dialog textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }

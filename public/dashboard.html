@@ -64,6 +64,7 @@
         <header class="content-header">
             <h1>Overview</h1>
             <div class="controls">
+                <button type="button" class="btn-secondary" id="report-btn" title="A short summary of the network, ready to paste into WhatsApp or Telegram">Status report</button>
                 <span class="live-pill" id="live-pill"><span class="live-dot"></span><span id="live-text">Connecting…</span></span>
             </div>
         </header>
@@ -110,6 +111,8 @@
         </div>
     </main>
 
+    <script src="/impact-model.js"></script>
+    <script src="/messages-model.js"></script>
     <script src="/insights.js"></script>
     <script>
         (function () {
@@ -129,6 +132,7 @@
             function upOf(list) { return list.filter(function (d) { return d.online === true && !d.unreachable; }).length; }
 
             function render(data) {
+                lastSnap = data;
                 var devices = data.devices || [];
                 $('net-banner').hidden = !data.networkDown;
                 $('net-banner-nets').textContent = (data.unreachableNetworks || []).length ? ' (' + data.unreachableNetworks.join(', ') + ')' : '';
@@ -187,6 +191,31 @@
                     I.loadSasByMac(DEMO).then(function (r) { sas.byMac = r.byMac; sas.data = r.data; renderSas(); }).catch(function () { /* SAS optional */ });
                 }
             }
+
+            // "Status report": the text, ready to copy or to open in WhatsApp. TowerDesk sends nothing itself.
+            var lastSnap = null;
+            function reportDialog() {
+                var old = $('report-dialog'); if (old) old.remove();
+                var M = window.TowerDesk.messages;
+                var text = M.statusReport(lastSnap || { devices: [] }, I.attention((lastSnap || {}).devices || [], sas.byMac), Date.now());
+                var el = document.createElement('div');
+                el.className = 'modal-overlay'; el.id = 'report-dialog'; el.style.display = 'flex';
+                el.innerHTML = '<div class="modal conn-dialog tell-dialog" role="dialog" aria-modal="true" aria-labelledby="rp-title"><div class="modal-header"><strong id="rp-title">Status report</strong><button type="button" class="close-btn" data-rp-close aria-label="Close">×</button></div><div class="modal-body">' +
+                    '<p class="muted">A short summary of the network right now. You can change the text before you use it.</p><textarea id="rp-text" rows="9" dir="auto">' + esc(text) + '</textarea>' +
+                    '<div class="form-actions"><button type="button" class="btn-primary btn-sm" data-rp-copy>Copy text</button><a class="btn-secondary btn-sm" id="rp-wa" target="_blank" rel="noopener" href="' + esc(M.waShare(text)) + '">Open WhatsApp</a><span class="muted" id="rp-msg" role="status"></span></div></div></div>';
+                document.body.appendChild(el);
+                var ta = $('rp-text');
+                ta.addEventListener('input', function () { $('rp-wa').href = M.waShare(ta.value); });
+                el.addEventListener('click', function (e) {
+                    if (e.target === el || e.target.closest('[data-rp-close]')) { el.remove(); return; }
+                    if (e.target.closest('[data-rp-copy]')) {
+                        var done = function () { $('rp-msg').textContent = 'Copied.'; };
+                        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(done, function () { ta.select(); $('rp-msg').textContent = 'Press Ctrl+C to copy.'; });
+                        else { ta.select(); $('rp-msg').textContent = 'Press Ctrl+C to copy.'; }
+                    }
+                });
+            }
+            $('report-btn').addEventListener('click', reportDialog);
 
             function renderSas() {
                 var j = sas.data;

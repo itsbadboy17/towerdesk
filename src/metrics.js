@@ -142,6 +142,7 @@ function applyStations(s, stations, now) {
   const macs = new Set(stations.map((x) => x.mac));
   for (const m of Object.keys(s.staPrev)) if (!macs.has(m)) delete s.staPrev[m];
   s.kind = 'stations';
+  s.lastStationCount = stations.length; // kept so an offline sector can still say how many customers depend on it
 }
 
 async function pollTplink(device, s) {
@@ -349,6 +350,7 @@ function snapshot(device) {
     macs: s.macs || null,
     stations: s.stations ? s.stations.slice(0, 64) : null,
     stationCount: s.stations ? s.stations.length : null,
+    stationCountLast: s.lastStationCount != null ? s.lastStationCount : null,
     onus: s.onus ? s.onus.slice(0, 512) : null,
     onuCount: s.onus ? s.onus.length : null,
     onuOnline: s.onus ? s.onus.filter((o) => o.online).length : null,

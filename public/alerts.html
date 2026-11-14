@@ -78,6 +78,11 @@
             </div>
         </header>
 
+        <div class="card" id="maint-card" hidden>
+            <div class="card-header"><h3>In maintenance</h3><span class="card-actions">No alerts or messages for these until they end</span></div>
+            <div class="card-body"><ul class="mismatch-list" id="maint-list"></ul></div>
+        </div>
+
         <div class="card attention-card">
             <div class="card-header"><h3>Active Alerts</h3><span class="card-actions">From the live monitor · updates every 10 s</span></div>
             <div class="card-body">
@@ -127,5 +132,25 @@
     </main>
 
     <script src="/alerts.js"></script>
+    <script>
+        (function () {
+            var esc = window.TowerDesk.fmt.esc;
+            function load() {
+                fetch('/api/maintenance').then(function (r) { return r.ok ? r.json() : { windows: [] }; }).then(function (j) {
+                    var w = j.windows || [];
+                    document.getElementById('maint-card').hidden = !w.length;
+                    document.getElementById('maint-list').innerHTML = w.map(function (x) {
+                        return '<li><strong>' + esc(x.name) + '</strong> <span class="muted">' + (x.scope === 'site' ? 'whole site' : 'device') + ' · until ' + esc(new Date(x.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) + (x.reason ? ' · ' + esc(x.reason) : '') + '</span> ' +
+                            (window.TowerDesk.role === 'viewer' ? '' : '<button type="button" class="btn-secondary btn-sm" data-end="' + esc(x.id) + '">End now</button>') + '</li>';
+                    }).join('');
+                }).catch(function () {});
+            }
+            document.getElementById('maint-list').addEventListener('click', function (e) {
+                var b = e.target.closest('[data-end]');
+                if (b) fetch('/api/maintenance/' + encodeURIComponent(b.dataset.end), { method: 'DELETE' }).then(load);
+            });
+            load(); setInterval(function () { if (!document.hidden) load(); }, 30000);
+        })();
+    </script>
 </body>
 </html>

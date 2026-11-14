@@ -135,6 +135,16 @@
             </div>
         </div>
 
+        <div class="card" id="notify-card">
+            <div class="card-header"><h3>Messages</h3><span class="card-actions">Telegram alerts · WhatsApp notices · needs internet</span></div>
+            <div class="card-body" id="notify-body"><p class="muted">Loading…</p></div>
+        </div>
+
+        <div class="card" id="staff-card">
+            <div class="card-header"><h3>Staff accounts</h3><span class="card-actions">Who can sign in, and what they may do</span></div>
+            <div class="card-body" id="staff-body"><p class="muted">Loading…</p></div>
+        </div>
+
         <div class="card">
             <div class="card-header"><h3>Backup and restore</h3><span class="card-actions">Devices, saved logins and settings</span></div>
             <div class="card-body">
@@ -357,5 +367,7 @@
             loadStatus();
         })();
     </script>
+    <script src="/staff.js"></script>
+    <script src="/notify-settings.js"></script>
 </body>
 </html>

@@ -122,6 +122,10 @@ function demoSubs(n) {
         ((i * 7 + 32) % 256).toString(16).padStart(2, '0').toUpperCase() + ':' +
         ((i * 5 + 1) % 256).toString(16).padStart(2, '0').toUpperCase(),
       nas: nas,
+      // Made-up contact and renewal data so the notices and the finance page can be tried in demo mode.
+      phone: '0770' + String(1000000 + ((i * 7919) % 8999999)).slice(0, 7),
+      expiration: new Date(now + (((i * 5) % 41) - 6) * 86400000).toISOString().slice(0, 10),
+      enabled: true,
       sessionStart: online ? new Date(now - sessionSeconds * 1000).toISOString() : null,
       sessionSeconds: sessionSeconds,
       sessionText: online ? hms(sessionSeconds) : '—',
