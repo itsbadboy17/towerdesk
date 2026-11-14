@@ -451,12 +451,12 @@
     function methodText(d) { return (METHOD_TEXT[d.method] || d.method) + (d.port && d.method !== 'ping' ? ' (port ' + d.port + ')' : ''); }
     function connBlock(d) {
         var cs = window.TowerDesk.connState(d);
-        var h = '<div class="conn-box" id="conn-box"><div class="conn-line"><strong>How TowerDesk connects to this device</strong><span class="status-badge ' + cs.badge + '" title="' + esc(cs.hint) + '">● ' + esc(cs.label) + '</span></div>' +
-            '<p class="muted conn-text">' + esc(methodText(d)) + '. ' + esc(cs.hint) + '</p>';
-        if (!CAN_EDIT) return h + '<p class="muted">Switch to Real data to change how a device is connected.</p></div>';
+        var h = '<details class="conn-box" id="conn-box"' + (connOpen ? ' open' : '') + '><summary><span class="conn-sum"><strong>Connection</strong> ' + esc(methodText(d)) + '</span><span class="conn-change">' + (CAN_EDIT ? 'Change' : 'Details') + '</span></summary>' +
+            '<div class="conn-inner"><p class="muted conn-text">' + esc(cs.hint) + '</p>';
+        if (!CAN_EDIT) return h + '<p class="muted">Switch to Real data to change how a device is connected.</p></div></details>';
         return h + '<div class="conn-row"><label for="conn-mode">Change to</label><select id="conn-mode">' +
             '<option value="auto">Automatic: try my saved logins</option><option value="login">Username and password…</option><option value="snmp">SNMP community…</option><option value="ping">Ping only (no login)</option></select>' +
-            '<button type="button" class="btn-primary btn-sm" data-conn="go">Connect</button><span class="muted" id="conn-msg" role="status"></span></div></div>';
+            '<button type="button" class="btn-primary btn-sm" data-conn="go">Connect</button><span class="muted" id="conn-msg" role="status"></span></div></div></details>';
     }
     function connMsg(text) { var el = document.getElementById('conn-msg'); if (el) el.textContent = text; }
     function postConnect(body) {
@@ -528,6 +528,14 @@
             return true;
         }
         if (e.target.closest('[data-conn=go]')) { connGo(); return true; }
+        var tabBtn = e.target.closest('[data-dtab]');
+        if (tabBtn) {
+            detailTab = tabBtn.dataset.dtab;
+            var dd = lastData && lastData.devices.find(function (x) { return x.id === detailId; });
+            var bodyEl = document.getElementById('detail-modal-body');
+            if (dd && bodyEl) { bodyEl.innerHTML = detailBody(dd); bodyEl.scrollTop = 0; }
+            return true;
+        }
         return false;
     }
     // The login dialog lives outside the card, so it has its own handler.
@@ -722,16 +730,17 @@
     }
 
     // ----- Full device/sector/backhaul detail (click a card) -----
-    var lastData = null, detailId = null;
+    var lastData = null, detailId = null, detailTab = 'overview', connOpen = false;
 
     function statGrid(d) {
         var mx = d.metrics || {};
         var r = mx.radio || {};
         var has = function (v) { return v !== undefined && v !== null && v !== ''; };
         var t = [];
-        if (has(r.signal)) t.push(['Signal', r.signal + ' dBm']);
-        if (has(r.snr)) t.push(['SNR', r.snr + ' dB']);
-        if (has(mx.ccq) || has(r.ccq)) t.push(['CCQ', (has(r.ccq) ? r.ccq : mx.ccq) + '%']);
+        // [label, text, number used to colour it]
+        if (has(r.signal)) t.push(['Signal', r.signal + ' dBm', Number(r.signal)]);
+        if (has(r.snr)) t.push(['SNR', r.snr + ' dB', Number(r.snr)]);
+        if (has(mx.ccq) || has(r.ccq)) t.push(['CCQ', (has(r.ccq) ? r.ccq : mx.ccq) + '%', Number(has(r.ccq) ? r.ccq : mx.ccq)]);
         if (has(r.noise)) t.push(['Noise', r.noise + ' dBm']);
         if (has(r.txRate) || has(r.rxRate)) t.push(['PHY tx/rx', (r.txRate || '–') + '/' + (r.rxRate || '–')]);
         var top = mx.interfaces && mx.interfaces[0];
@@ -743,17 +752,31 @@
         if (has(r.distance)) t.push(['Distance', r.distance + ' km']);
         if (has(r.availability)) t.push(['Availability', r.availability + '%']);
         if (has(r.remoteName)) t.push(['Remote end', r.remoteName]);
-        if (mx.cpu) t.push(['CPU', mx.cpu.now + '%']);
-        if (has(mx.memPct)) t.push(['RAM', mx.memPct + '%']);
+        if (mx.cpu) t.push(['CPU', mx.cpu.now + '%', Number(mx.cpu.now), true]);
+        if (has(mx.memPct)) t.push(['RAM', mx.memPct + '%', Number(mx.memPct), true]);
         if (has(mx.stationCount)) t.push(['Clients', mx.stationCount]);
         if (has(mx.onuCount)) t.push(['ONUs online', mx.onuOnline + ' / ' + mx.onuCount]);
-        t.push(['Latency', ms(d.latencyMs)]);
+        t.push(['Latency', ms(d.latencyMs), d.latencyMs == null ? NaN : Number(d.latencyMs)]);
         t.push(['Avg latency', ms(d.avgLatencyMs)]);
         t.push(['Uptime', d.uptimePct === null ? '–' : d.uptimePct + '%']);
         if (has(mx.uptime)) t.push(['Up for', mx.uptime]);
-        return '<div class="stat-grid">' + t.map(function (x) {
-            return '<div class="stat-tile"><div class="k">' + esc(x[0]) + '</div><div class="v">' + esc(x[1]) + '</div></div>';
-        }).join('') + '</div>';
+        // Plain traffic-light colours so a weak number stands out.
+        var tone = function (x) {
+            var n = x[2];
+            if (n == null || isNaN(n)) return '';
+            if (x[0] === 'Signal') return n >= -65 ? 'ok' : n >= -75 ? 'warn' : 'bad';
+            if (x[0] === 'SNR') return n >= 25 ? 'ok' : n >= 15 ? 'warn' : 'bad';
+            if (x[0] === 'CCQ') return n >= 85 ? 'ok' : n >= 70 ? 'warn' : 'bad';
+            if (x[0] === 'Latency') return n <= 50 ? 'ok' : n <= 200 ? 'warn' : 'bad';
+            if (x[3]) return n >= 90 ? 'bad' : n >= 75 ? 'warn' : 'ok';
+            return '';
+        };
+        var tile = function (x) { return '<div class="stat-tile"><div class="k">' + esc(x[0]) + '</div><div class="v ' + tone(x) + '">' + esc(x[1]) + '</div></div>'; };
+        var KEY = ['Signal', 'SNR', 'Clients', 'ONUs online', '↓ Down', '↑ Up', 'Latency', 'CPU', 'RAM'];
+        var key = KEY.map(function (k) { return t.filter(function (x) { return x[0] === k; })[0]; }).filter(Boolean).slice(0, 6);
+        var rest = t.filter(function (x) { return key.indexOf(x) < 0; });
+        return '<div class="stat-grid key">' + key.map(tile).join('') + '</div>' +
+            (rest.length ? '<details class="more-readings"><summary>More readings (' + rest.length + ')</summary><div class="stat-grid">' + rest.map(tile).join('') + '</div></details>' : '');
     }
 
     // ----- Wide two-ended view for a backhaul link -----
@@ -854,10 +877,24 @@
             ['Brand', (d.type && d.type !== 'other' ? BRAND_TEXT[d.type] : ({ airos: 'Ubiquiti (airOS)', mimosa: 'Mimosa', mikrotik: 'MikroTik (RouterOS)', 'mikrotik-ssl': 'MikroTik (RouterOS)', tplink: 'TP-Link' }[d.method] || BRAND_TEXT.other)) || d.type],
             ['Model', det.model],
             ['Role', ROLE_TEXT[d.role] || 'Device'],
-            ['Connected via', methodText(d)],
-            ['Firmware', det.firmware || (det.version ? 'v' + det.version : '')],
-            ['Last test', lastTest]
-        ].filter(function (x) { return x[1]; });
+            ['Firmware', det.firmware || (det.version ? 'v' + det.version : '')]
+        ].concat(d.lastTest && !d.lastTest.ok ? [['Last test', lastTest]] : []).filter(function (x) { return x[1]; });
+        var mxk = d.metrics && d.metrics.kind;
+        var isSta = d.online !== false && mxk === 'stations', isOnu = d.online !== false && mxk === 'onus';
+        var tabbed = isSta || isOnu;
+        var tab = !tabbed ? 'overview' : (detailTab === 'advisor' && !isSta ? 'overview' : detailTab);
+        var nCust = isSta ? ((d.metrics.stations || []).length || d.metrics.stationCount || 0) : (d.metrics.onuCount || (d.metrics.onus || []).length || 0);
+        var tabs = tabbed ? '<div class="d-tabs" role="tablist">' + [['overview', 'Overview']].concat(isSta ? [['advisor', 'Advisor']] : [], [['customers', (isSta ? 'Customers' : 'Fibre customers') + ' (' + nCust + ')']]).map(function (x) {
+            return '<button type="button" role="tab" class="d-tab' + (tab === x[0] ? ' active' : '') + '" aria-selected="' + (tab === x[0]) + '" data-dtab="' + x[0] + '">' + esc(x[1]) + '</button>';
+        }).join('') + '</div>' : '';
+        var overview = (d.role === 'backhaul' ? linkHero(d) : '') +
+            '<dl class="kv detail-kv">' + info.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') + '</dl>' +
+            '<h4 class="detail-sec">Live</h4>' + statGrid(d) +
+            '<h4 class="detail-sec">Latency, last 10 minutes</h4>' + latencyChart(d.history) +
+            (d.online === false ? '' : '<h4 class="detail-sec">Traffic' + (mxk === 'stations' ? '' : ' &amp; ' + (mxk === 'clients' ? 'clients' : 'interfaces')) + '</h4>' + metricsBlock(d.metrics));
+        var pane = tab === 'advisor' ? advisorBlock(d)
+            : tab === 'customers' ? (isSta ? registrationBlock(d.metrics) : onuBlock(d.metrics))
+            : overview;
         return '<div class="detail-top">' +
                 '<div><h3>' + esc(d.name) + '</h3><div class="muted mono">' + esc(d.ip) + ' · ' + esc(roleLabel) + '</div></div>' +
                 '<span class="status-badge ' + cs.badge + '">● ' + esc(cs.label) + '</span>' +
@@ -866,15 +903,7 @@
                 '<a class="btn-secondary btn-sm" href="' + esc(webUrl(d)) + '" target="_blank" rel="noopener">Open device page ↗</a>' +
                 window.TowerDesk.netTools(d.ip) +
             '</div>' +
-            connBlock(d) +
-            (d.role === 'backhaul' ? linkHero(d) : '') +
-            '<dl class="kv detail-kv">' + info.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') + '</dl>' +
-            '<h4 class="detail-sec">Live</h4>' + statGrid(d) +
-            '<h4 class="detail-sec">Latency, last 10 minutes</h4>' + latencyChart(d.history) +
-            (d.online !== false && d.metrics && d.metrics.kind === 'stations' ? '<h4 class="detail-sec">Advisor</h4>' + advisorBlock(d) : '') +
-            (d.online !== false && d.metrics && d.metrics.kind === 'stations' ? '<h4 class="detail-sec">Registration (connected stations)</h4>' + registrationBlock(d.metrics) : '') +
-            (d.online !== false && d.metrics && d.metrics.kind === 'onus' ? '<h4 class="detail-sec">ONUs (fibre customers)</h4>' + onuBlock(d.metrics) : '') +
-            (d.online === false ? '' : '<h4 class="detail-sec">Traffic' + (d.metrics && d.metrics.kind === 'stations' ? '' : ' &amp; ' + (d.metrics && d.metrics.kind === 'clients' ? 'clients' : 'interfaces')) + '</h4>' + metricsBlock(d.metrics));
+            connBlock(d) + tabs + '<div class="d-pane">' + pane + '</div>';
     }
 
     function ensureModal() {
@@ -903,12 +932,14 @@
             if (d && tb) tb.innerHTML = onuRows(d.metrics);
         });
         document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDetail(); });
+        m.addEventListener('toggle', function (e) { if (e.target.id === 'conn-box') connOpen = e.target.open; }, true);
         return m;
     }
     function openDetail(id) {
         if (!lastData) return;
         var d = lastData.devices.find(function (x) { return x.id === id; });
         if (!d) return;
+        if (detailId !== id) { detailTab = 'overview'; connOpen = false; }
         detailId = id;
         var m = ensureModal();
         var isLink = d.role === 'backhaul';
@@ -923,6 +954,8 @@
     }
     function closeDetail() {
         detailId = null;
+        detailTab = 'overview';
+        connOpen = false;
         adv = blankAdv();
         onuFilter = '';
         var m = document.getElementById('detail-modal');
@@ -986,15 +1019,13 @@
         // every device would count the same bits again at each router and backhaul they pass through.
         var trafficBps = sectors.reduce(function (a, d) { return d.online ? a + I.trafficBps(d) : a; }, 0);
         renderAttention(shown);
-        $('kpi-total').textContent = s.total;
-        $('kpi-online').textContent = s.online;
-        $('kpi-offline').textContent = s.offline;
+        $('kpi-online').textContent = s.online + ' / ' + s.total;
         $('kpi-traffic').textContent = bps(trafficBps);
         $('kpi-sectors').textContent = sectors.length;
         $('kpi-subs').textContent = subs;
         $('kpi-sectors-sub').textContent = sectors.length ? sectors.filter(function (d) { return d.online; }).length + ' online' : 'Point to multipoint';
-        $('kpi-online-sub').textContent = s.total ? Math.round((s.online / s.total) * 100) + '% of devices' : ' ';
-        $('kpi-offline-sub').textContent = s.offline ? 'Needs attention' : ' ';
+        $('kpi-online-sub').textContent = !s.total ? 'No devices yet' : s.offline ? s.offline + ' offline, needs attention' : 'All answering';
+        $('kpi-online-sub').className = 'kpi-change ' + (s.offline ? 'badge-down' : 'badge-up');
         $('interval-note').textContent = 'Checked every ' + Math.round(data.intervalMs / 1000) + ' s · last 10 minutes shown';
 
         var grid = $('live-grid');

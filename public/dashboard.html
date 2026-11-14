@@ -70,18 +70,17 @@
 
         <div class="source-banner warn" id="net-banner" role="status" hidden><strong>Can't reach the tower network<span id="net-banner-nets"></span>.</strong> Nothing on it answered — if you connect through a VPN, check that it is open. Those devices' status is unknown until the network is back.</div>
 
+        <div class="card attention-card">
+            <div class="card-header"><h3>Needs attention</h3><span class="card-actions" id="ov-att-count"></span></div>
+            <div class="card-body"><ul class="attention-list" id="ov-att"><li class="att-ok">Loading…</li></ul></div>
+        </div>
+
         <div class="kpi-grid">
             <div class="kpi-card"><div class="kpi-head"><h3>Devices online</h3></div><div class="kpi-value" id="ov-devices">–</div><div class="kpi-change muted" id="ov-devices-sub">&nbsp;</div></div>
-            <div class="kpi-card"><div class="kpi-head"><h3>Uplinks</h3></div><div class="kpi-value" id="ov-links">–</div><div class="kpi-change muted" id="ov-links-sub">&nbsp;</div></div>
             <div class="kpi-card"><div class="kpi-head"><h3>Sectors</h3></div><div class="kpi-value" id="ov-sectors">–</div><div class="kpi-change muted" id="ov-sectors-sub">&nbsp;</div></div>
             <div class="kpi-card"><div class="kpi-head"><h3>Customer radios</h3></div><div class="kpi-value" id="ov-radios">–</div><div class="kpi-change muted">Registered on sectors</div></div>
             <div class="kpi-card"><div class="kpi-head"><h3>Subscribers online</h3></div><div class="kpi-value" id="ov-subs">–</div><div class="kpi-change muted" id="ov-subs-sub">From SAS</div></div>
             <div class="kpi-card"><div class="kpi-head"><h3>Sector traffic</h3></div><div class="kpi-value" id="ov-traffic">–</div><div class="kpi-change muted" title="What customers are using right now, added up over all your sectors (download + upload).">Customers, all sectors</div></div>
-        </div>
-
-        <div class="card">
-            <div class="card-header"><h3>Needs attention</h3><span class="card-actions" id="ov-att-count"></span></div>
-            <div class="card-body"><ul class="attention-list" id="ov-att"><li class="att-ok">Loading…</li></ul></div>
         </div>
 
         <div class="card">
@@ -142,8 +141,6 @@
 
                 $('ov-devices').textContent = upOf(devices) + ' / ' + devices.length;
                 $('ov-devices-sub').textContent = unknown ? unknown + ' unknown' : (devices.length ? (devices.length - upOf(devices)) + ' offline' : 'No devices yet');
-                $('ov-links').textContent = upOf(links) + ' / ' + links.length;
-                $('ov-links-sub').textContent = links.length ? 'connected' : 'None found';
                 $('ov-sectors').textContent = upOf(sectors) + ' / ' + sectors.length;
                 $('ov-sectors-sub').textContent = sectors.length ? 'online' : 'None found';
                 $('ov-radios').textContent = radios;

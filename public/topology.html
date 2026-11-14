@@ -158,7 +158,7 @@
                 }).join('');
                 return '<section class="site-card"><header><h4>' + (g.key ? esc(g.name) : 'Not on a site yet') + '</h4>' +
                     '<span class="site-pill">' + dot(s.worst) + esc(pill) + '</span></header>' +
-                    (CAN_EDIT ? '<label class="site-all"><input type="checkbox" data-selall="' + esc(g.key) + '"' + (g.devices.every(function (d) { return selected[d.id]; }) ? ' checked' : '') + '> Select all in this card</label>' : '') + +
+                    (CAN_EDIT ? '<label class="site-all"><input type="checkbox" data-selall="' + esc(g.key) + '"' + (g.devices.every(function (d) { return selected[d.id]; }) ? ' checked' : '') + '> Select all in this card</label>' : '') +
                     '<div class="site-stats muted">' + esc(online + ' of ' + s.total + ' online') + ' · ' + esc(s.sectors + ' sector' + (s.sectors === 1 ? '' : 's')) + ' · ' + esc(customers) + '</div>' +
                     (issues.length ? '<ul class="site-issues">' + issues.map(function (it) {
                         return '<li class="' + esc(it.sev) + '"><a href="/monitoring?open=' + encodeURIComponent(it.id) + Q + '"><strong>' + esc(it.what) + '</strong> ' + esc(it.why) + '</a></li>';

@@ -899,3 +899,93 @@ html[dir="rtl"] .card-actions a::after { content: "‹"; }
 .site-row input[type="checkbox"], .site-all input[type="checkbox"] { width: 17px; height: 17px; cursor: pointer; }
 .site-row:has(input[type="checkbox"]) { cursor: pointer; }
 .site-row:has(input[type="checkbox"]:checked) { background: var(--accent-soft); border-radius: 6px; }
+
+/* Design A: device card. Tabs, big coloured key readings, one-line connection box. */
+.d-tabs { display: flex; gap: 4px; margin: 14px 0 16px; border-bottom: 1px solid var(--border); }
+.d-tab { background: none; border: 0; border-bottom: 3px solid transparent; padding: 10px 16px; margin-bottom: -1px; font-weight: 650; font-size: 0.92rem; color: var(--text-muted); cursor: pointer; min-height: 44px; }
+.d-tab:hover { color: var(--text-main); }
+.d-tab.active { color: var(--text-main); border-bottom-color: var(--accent); }
+.d-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
+.d-pane > .detail-sec:first-child { margin-top: 0; }
+.stat-grid.key { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+.stat-grid.key .stat-tile { padding: 14px 16px; }
+.stat-grid.key .stat-tile .k { font-size: 0.8rem; }
+.stat-grid.key .stat-tile .v { font-size: 1.55rem; font-weight: 700; letter-spacing: -0.01em; }
+.stat-tile .v.ok { color: var(--success); }
+.stat-tile .v.warn { color: var(--warning); }
+.stat-tile .v.bad { color: var(--danger); }
+.more-readings { margin-top: 10px; }
+.more-readings summary { cursor: pointer; color: var(--text-muted); font-weight: 600; font-size: 0.85rem; padding: 6px 0; }
+.more-readings .stat-grid { margin-top: 8px; }
+details.conn-box { border: 1px solid var(--border); border-radius: 10px; margin: 12px 0 0; background: var(--bg-card); }
+details.conn-box > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; cursor: pointer; list-style: none; min-height: 44px; }
+details.conn-box > summary::-webkit-details-marker { display: none; }
+details.conn-box .conn-sum { min-width: 0; overflow-wrap: anywhere; }
+details.conn-box .conn-sum strong { margin-inline-end: 6px; }
+details.conn-box .conn-change { flex: none; font-size: 0.85rem; font-weight: 650; color: var(--accent); }
+details.conn-box .conn-change::after { content: " ▾"; }
+details.conn-box[open] .conn-change::after { content: " ▴"; }
+details.conn-box .conn-inner { padding: 0 14px 14px; }
+
+/* ==== Design A, shared layer: readable sizes, real touch targets, a clear first thing on each page ==== */
+.kpi-grid { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+.kpi-card { padding: 16px 18px; }
+.kpi-card h3 { font-size: 0.88rem; text-transform: none; letter-spacing: 0; font-weight: 600; }
+.kpi-value { font-size: 1.9rem; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.kpi-change { font-size: 0.85rem; }
+.card-actions { font-size: 0.82rem; }
+.card-header h3 { font-size: 1rem; }
+.muted, .kpi-change.muted { font-size: inherit; }
+.stat-tile .k, .metric-label, dt { font-size: 0.8rem; }
+.ch-x, .ch-y, [class^="ch-"][class$="-label"], .ch-avg-label { font-size: 12px; }
+.btn-primary, .btn-secondary, .btn-sm, .action-btn, .add-project-btn { min-height: 36px; }
+.icon-btn, .close-btn { min-width: 36px; min-height: 36px; }
+@media (pointer: coarse) {
+    .btn-primary, .btn-secondary, .btn-sm, .action-btn, .add-project-btn, .icon-btn, .close-btn, select, .d-tab, .provider-tab { min-height: 44px; }
+    input[type="checkbox"] { width: 22px; height: 22px; }
+}
+
+/* The problem list leads each page: stronger frame, bigger rows, an Open button on each. */
+.attention-card { border-color: color-mix(in srgb, var(--warning) 45%, var(--border)); box-shadow: none; }
+.attention-card > .card-header { border-bottom-color: color-mix(in srgb, var(--warning) 25%, var(--border)); }
+.attention-card > .card-header h3 { font-size: 1.1rem; }
+.attention-list .att-link { padding: 12px 14px; align-items: center; flex-wrap: wrap; }
+.attention-list .att-what { font-size: 0.98rem; }
+.attention-list .att-why { flex: 1 1 200px; min-width: 0; }
+.attention-list .att-link::after { content: "Open"; flex: none; margin-inline-start: auto; padding: 5px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.82rem; font-weight: 650; color: var(--accent); background: var(--bg-hover); }
+.attention-list .att-link:hover::after { border-color: var(--accent); }
+.attention-list .att-dot { width: 10px; height: 10px; }
+/* Shape as well as colour: warnings are round, critical problems are diamonds. */
+.attention-list .critical .att-dot { border-radius: 2px; transform: rotate(45deg); }
+.attention-list .att-ok { padding: 6px 2px; }
+
+/* Five KPI cards: one row when there is room, otherwise two columns with the last card full width (no orphan). */
+.kpi-grid:has(> :nth-child(5):last-child) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.kpi-grid:has(> :nth-child(5):last-child) > :last-child { grid-column: 1 / -1; }
+@media (min-width: 1180px) {
+    .kpi-grid:has(> :nth-child(5):last-child) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .kpi-grid:has(> :nth-child(5):last-child) > :last-child { grid-column: auto; }
+}
+
+.stat-grid.key .stat-tile .v { font-size: 1.35rem; white-space: nowrap; }
+
+/* Alerts: active problems first, the counters become a slim strip, history scrolls inside its card. */
+.kpi-grid.strip { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.kpi-grid.strip .kpi-card { padding: 10px 14px; }
+.kpi-grid.strip .kpi-head { margin-bottom: 2px; }
+.kpi-grid.strip .kpi-value { font-size: 1.35rem; margin-bottom: 2px; }
+.kpi-grid.strip .kpi-change { font-size: 0.8rem; }
+.history-scroll { max-height: 360px; overflow: auto; }
+.history-scroll thead th { position: sticky; top: 0; background: var(--bg-card); z-index: 1; }
+
+/* Phones: KPI cards in two columns so the problem list is not pushed off-screen. */
+@media (max-width: 600px) {
+    .kpi-grid, .kpi-grid:has(> :nth-child(5):last-child) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
+    .kpi-card { padding: 12px; }
+    .kpi-value { font-size: 1.45rem; }
+    .kpi-card h3, .kpi-change { font-size: 0.8rem; }
+    .attention-list .att-link::after { margin-inline-start: 0; }
+    .d-tabs { overflow-x: auto; }
+}
+
+.d-tab { white-space: nowrap; }

@@ -78,7 +78,19 @@
             </div>
         </header>
 
-        <div class="kpi-grid">
+        <div class="card attention-card">
+            <div class="card-header"><h3>Active Alerts</h3><span class="card-actions">From the live monitor · updates every 10 s</span></div>
+            <div class="card-body">
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Opened</th><th>Device</th><th>Severity</th><th>Problem</th><th>Duration</th><th>Action</th></tr></thead>
+                        <tbody id="active-list"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="kpi-grid strip">
             <div class="kpi-card">
                 <div class="kpi-head"><h3>Active</h3></div>
                 <div class="kpi-value" id="kpi-active">–</div>
@@ -102,21 +114,9 @@
         </div>
 
         <div class="card">
-            <div class="card-header"><h3>Active Alerts</h3><span class="card-actions">From the live monitor · updates every 10 s</span></div>
-            <div class="card-body">
-                <div class="table-wrap">
-                    <table>
-                        <thead><tr><th>Opened</th><th>Device</th><th>Severity</th><th>Problem</th><th>Duration</th><th>Action</th></tr></thead>
-                        <tbody id="active-list"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <div class="card">
             <div class="card-header"><h3>History</h3><span class="card-actions" title="Slow-connection alerts that cleared. An offline alert is removed when the device comes back, so closing your VPN never fills this list.">Resolved alerts (offline alerts are not kept)</span></div>
             <div class="card-body">
-                <div class="table-wrap">
+                <div class="table-wrap history-scroll">
                     <table>
                         <thead><tr><th>Opened</th><th>Device</th><th>Severity</th><th>Problem</th><th>Lasted</th><th>Resolution</th></tr></thead>
                         <tbody id="history-list"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
