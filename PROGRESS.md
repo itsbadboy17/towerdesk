@@ -191,3 +191,12 @@ Not done: the phone app (left out on purpose); airOS radios cannot report neighb
 - UNVERIFIED on real hardware: RouterOS prompt/banner text and the exact mac-telnet behaviour across versions. Tested only against a fake router (25 checks).
 - Needs: relay = a MikroTik added with the API and with SSH enabled; new router on the same switch/VLAN.
 - Topology "seen, not added": a MikroTik with no IP gets a "Set up by MAC" button (real-data mode).
+## GNS3 lab and what testing against it found (features branch)
+- lab/: scripts to rebuild the GNS3 test network (MikroTik CHR + Cisco IOU L2 from the user's own GNS3 VM). See lab/README.md.
+- Neighbours: with devices on one wire (bridges), neighbour discovery alone cannot show the order; the tree is now rebuilt from MAC tables
+  (gateway-facing port per switch/bridge; the closest device that has another below it). Devices with several addresses are matched by name.
+  Verified on the lab: Gateway > Master > Slave > Cisco-SW > Sector1..3 (all "high").
+- Reach by MAC: verified on the lab through Sector1 to an untouched CHR (address, API, name, new password; verified over the API).
+  Found and fixed: a brand-new RouterOS asks "see the software license? [Y/n]" and then forces a new password at first login.
+- scripts/mock-sas4.js: pretend SAS 4 server (60 subscribers) for testing finance, notices and the SAS page.
+- Not tested on a real device: Set up a radio (Ubiquiti), and any real tower hardware.

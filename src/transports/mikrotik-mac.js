@@ -63,16 +63,21 @@ async function run(shell, p) {
   ex.send(String(p.user || 'admin') + '+ctw512');
   await ex.waitFor(/password:\s*$/i, waitMs).catch(() => { throw new MacError('login', 'The new router did not ask for a password.'); });
   ex.send(p.pass || '');
-  r = await ex.waitFor([PROMPT, /(new|repeat new) password\s*[>:]\s*$/i, /login:\s*$/i, /login failed|invalid user|wrong password/i], waitMs)
-    .catch(() => { throw new MacError('login', 'The new router did not accept the login in time.'); });
-  if (r.index >= 2) throw new MacError('login', 'The new router refused that username and password. Newer MikroTik models have a unique password printed on their label.');
-  if (r.index === 1) {
-    // some models make you choose a password the first time you log in
-    if (!p.newPassword) { ex.send('\u0003'); throw new MacError('forced', 'This router asks for a new password on first login. Type the new admin password in the form and run it again.'); }
-    ex.send(p.newPassword);
-    r = await ex.waitFor([PROMPT, /repeat new password\s*[>:]\s*$/i], waitMs).catch(() => { throw new MacError('login', 'The router did not accept the new password.'); });
-    if (r.index === 1) { ex.send(p.newPassword); await ex.waitFor(PROMPT, waitMs).catch(() => { throw new MacError('login', 'The router did not accept the new password.'); }); }
+  // After the password a brand-new router can ask, in turn: whether to show the software licence, and for a new
+  // password to be chosen. Both are answered here; a refused login or a missing new password stops with a clear message.
+  const NEWPW = /(new|repeat new) password\s*[>:]\s*$/i, LICENSE = /\[Y\/n\]:\s*$/i;
+  const AFTER = [PROMPT, NEWPW, /login:\s*$/i, /login failed|invalid user|wrong password/i, LICENSE];
+  let r2 = await ex.waitFor(AFTER, waitMs).catch(() => { throw new MacError('login', 'The new router did not accept the login in time.'); });
+  for (let step = 0; r2.index !== 0 && step < 6; step++) {
+    if (r2.index === 2 || r2.index === 3) throw new MacError('login', 'The new router refused that username and password. Newer MikroTik models have a unique password printed on their label.');
+    if (r2.index === 4) ex.send('n');
+    else {
+      if (!p.newPassword) { ex.send('\u0003'); throw new MacError('forced', 'This router asks for a new password on first login. Type the new admin password in the form and run it again.'); }
+      ex.send(p.newPassword);
+    }
+    r2 = await ex.waitFor(AFTER, waitMs).catch(() => { throw new MacError('login', 'The router did not accept the answer in time.'); });
   }
+  if (r2.index !== 0) throw new MacError('login', 'The new router kept asking questions at login.');
   for (const l of p.lines) {
     ex.send(l.cmd);
     sent.push(model.maskLine(l));

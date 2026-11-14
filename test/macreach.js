@@ -33,9 +33,11 @@ function fakeShell(opts) {
     if (sh.state === 'login') { sh.user = text; sh.state = 'password'; return say('Password: '); }
     if (sh.state === 'password') {
       if (sh.user.split('+')[0] !== (opts.user || 'admin') || text !== (opts.pass || '')) { sh.state = 'login'; return say('Login failed, incorrect username or password\r\nLogin: '); }
+      if (opts.license) { sh.state = 'licence'; return say('Do you want to see the software license? [Y/n]: '); }
       if (opts.forced) { sh.state = 'new1'; return say('Please change your password\r\nnew password> '); }
       sh.state = 'inner'; return say('MikroTik RouterOS 7.11 (c) 1999-2023\r\n[admin@NewRouter] > ');
     }
+    if (sh.state === 'licence') { sh.answeredLicence = text; if (opts.forced) { sh.state = 'new1'; return say('Please change your password\r\nnew password> '); } sh.state = 'inner'; return say('[admin@NewRouter] > '); }
     if (sh.state === 'new1') { sh.state = 'new2'; return say('repeat new password> '); }
     if (sh.state === 'new2') { sh.state = 'inner'; return say('[admin@NewRouter] > '); }
     if (sh.state === 'inner') {
@@ -87,6 +89,13 @@ function fakeShell(opts) {
   await check('a forced password change stops with a clear message unless a new password was given', async () => {
     await assert.rejects(() => D.run(fakeShell({ knownMac: GOOD.mac, forced: true }), { mac: c.mac, user: 'admin', pass: '', lines }), /asks for a new password on first login/);
     const sh = fakeShell({ knownMac: GOOD.mac, forced: true }); const r = await D.run(sh, { mac: c.mac, user: 'admin', pass: '', newPassword: 'N3w_pass-2026', lines }); assert.ok(r.done);
+  });
+  await check('a first-login licence question is answered (no), then the commands go in', async () => {
+    const sh = fakeShell({ knownMac: GOOD.mac, license: true }); const r = await D.run(sh, { mac: c.mac, user: 'admin', pass: '', lines }); assert.ok(r.done); assert.ok(sh.log.includes('n'));
+  });
+  await check('licence question AND forced new password, in that order, are both handled', async () => {
+    const sh = fakeShell({ knownMac: GOOD.mac, license: true, forced: true }); const r = await D.run(sh, { mac: c.mac, user: 'admin', pass: '', newPassword: 'N3w_pass-2026', lines }); assert.ok(r.done);
+    await assert.rejects(() => D.run(fakeShell({ knownMac: GOOD.mac, license: true, forced: true }), { mac: c.mac, user: 'admin', pass: '', lines }), /asks for a new password on first login/);
   });
   await check('a command the router refuses stops everything and the error hides the password', async () => {
     try { await D.run(fakeShell({ knownMac: GOOD.mac, pass: 'factory-pw-1', failOn: /identity/ }), { mac: c.mac, user: 'admin', pass: 'factory-pw-1', newPassword: 'N3w_pass-2026', lines }); assert.fail('should have refused'); }
