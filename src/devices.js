@@ -178,4 +178,14 @@ function setLayout(id, input) {
   return { device: publicView(d) };
 }
 
-module.exports = { TYPES, list, get, add, update, edit, setPeer, setLayout, reconfigure, remove, connectionOptions, publicView, findDuplicate };
+// A free-text note on a device (where it is, who installed it, what to know on a visit). Never a password.
+function setNotes(id, text) {
+  const list = load();
+  const d = list.find((x) => x.id === id);
+  if (!d) return { error: 'Device not found' };
+  d.notes = String(text || '').replace(/\r/g, '').trim().slice(0, 1000);
+  save(list);
+  return { ok: true, notes: d.notes };
+}
+
+module.exports = { TYPES, list, get, add, update, edit, setPeer, setLayout, setNotes, reconfigure, remove, connectionOptions, publicView, findDuplicate };

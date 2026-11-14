@@ -213,6 +213,7 @@ function snapshot() {
       provider: d.provider || null,
       peerId: d.peerId || null,
       parentId: d.parentId || null,
+      notes: d.notes || '',
       maintenance: (() => { try { const w = require('./maintenance').isMuted(d); return w ? { id: w.id, until: w.until, reason: w.reason, scope: w.scope } : null; } catch (e) { return null; } })(),
       // Not checked yet in this run (just opened) -> unknown ("checking…"), not the status saved
       // when the app was last closed.

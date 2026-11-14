@@ -532,6 +532,13 @@ app.post('/api/finance/config', (req, res) => {
   res.json({ ok: true, config: finance.config() });
 });
 
+// A note on a device (technicians and admins; the role rules already refuse viewers' writes).
+app.post('/api/devices/:id/notes', (req, res) => {
+  const r = devices.setNotes(req.params.id, req.body && req.body.notes);
+  if (r.error) return res.status(404).json(r);
+  res.json(r);
+});
+
 // Maintenance windows: mute alerts and messages for a device or a site for a set time.
 const maintenance = require('./src/maintenance');
 const notify = require('./src/notify');
@@ -605,6 +612,24 @@ function neighborView(demo) {
   return Object.assign({ demo: false, scannedAt: at, scanned: obs.length, canScan: list.filter(neighbors.canScan).length }, neighbors.analyse(list, obs, macs));
 }
 app.get('/api/neighbors', (req, res) => res.json(neighborView(req.query && req.query.demo === '1')));
+// Every few hours the routers and switches are asked again (read-only), and a change in what is next to what is
+// written to the Recent changes list. Off in demo mode and when nothing can be scanned.
+const NEIGHBOR_EVERY_MS = 6 * 3600 * 1000;
+async function scheduledNeighborScan() {
+  try {
+    if (process.env.TOWERDESK_DEMO === '1') return;
+    const list = devices.list();
+    if (!list.some(neighbors.canScan)) return;
+    const before = neighborView(false).suggestions;
+    await neighbors.scan(list, devices, { snmp: require('./src/transports/snmp'), mikrotik: require('./src/transports/mikrotik') });
+    const after = neighborView(false).suggestions;
+    const name = (id) => (list.find((d) => d.id === id) || {}).name;
+    neighbors.diffSuggestions(before, after, (id) => (id === 'internet' ? 'the internet' : name(id))).forEach((c) => {
+      try { monitor.note({ kind: 'device', id: c.id, name: name(c.id) || c.id, text: name(c.id) + ': ' + c.text }); } catch (e) { /* optional */ }
+    });
+  } catch (e) { /* a scan problem must never disturb the app */ }
+}
+if (!process.env.TOWERDESK_TEST) { setTimeout(scheduledNeighborScan, 3 * 60 * 1000).unref(); setInterval(scheduledNeighborScan, NEIGHBOR_EVERY_MS).unref(); }
 app.post('/api/neighbors/scan', async (req, res) => {
   if (req.query && req.query.demo === '1') return res.json(Object.assign({ report: [] }, neighborView(true)));
   try {

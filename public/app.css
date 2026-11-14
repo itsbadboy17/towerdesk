@@ -1068,3 +1068,16 @@ html[data-role="viewer"] [data-needs="edit"], html[data-role="tech"] [data-needs
 .cfg-table td { padding: 4px 6px; }
 .fin-profit-neg { color: var(--danger); }
 .fin-profit-pos { color: var(--success); }
+
+.notes-box { margin: 12px 0 4px; display: grid; gap: 6px; }
+.notes-box textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
+/* Quick search */
+#qs-overlay { position: fixed; inset: 0; z-index: 3000; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; }
+#qs-box { width: min(620px, 92vw); background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-lg); overflow: hidden; }
+#qs-input { width: 100%; padding: 16px 18px; font-size: 1.05rem; border: 0; border-bottom: 1px solid var(--border); background: transparent; outline: none; }
+#qs-list { max-height: 52vh; overflow: auto; padding: 6px; }
+#qs-list .qs-group { padding: 8px 12px 2px; font-size: 0.78rem; color: var(--text-muted); font-weight: 650; }
+#qs-list .qs-item { display: flex; justify-content: space-between; gap: 12px; padding: 9px 12px; border-radius: 8px; cursor: pointer; }
+#qs-list .qs-item.on, #qs-list .qs-item:hover { background: var(--accent-soft); }
+#qs-list .qs-sub { color: var(--text-muted); font-size: 0.85rem; }
+#qs-foot { padding: 8px 14px; border-top: 1px solid var(--border); font-size: 0.8rem; color: var(--text-muted); }

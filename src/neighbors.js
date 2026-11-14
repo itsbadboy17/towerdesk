@@ -246,6 +246,21 @@ function portMeta(parsed) {
   return out;
 }
 
+// What changed between two scans: a device that is now seen under a different parent than before.
+// before/after: the `suggestions` of two analyses. Only devices present in both are compared, so a first scan says nothing.
+function diffSuggestions(before, after, nameOf) {
+  const out = [];
+  Object.keys(after || {}).forEach((id) => {
+    const a = after[id], b = (before || {})[id];
+    if (!b || !a) return;
+    const pa = a.parentId || 'name:' + a.parentName, pb = b.parentId || 'name:' + b.parentName;
+    if (pa === pb) return;
+    const label = (x) => (x.parentId ? nameOf(x.parentId) : x.parentName) || 'unknown';
+    out.push({ id, text: 'is now seen next to ' + label(a) + ' (before: ' + label(b) + ')' });
+  });
+  return out;
+}
+
 // ---------------- store (data/neighbors.json) ----------------
 function load() { try { const v = JSON.parse(fs.readFileSync(FILE, 'utf8')); return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; } }
 function save(all) {
@@ -293,4 +308,4 @@ async function scan(deviceList, devices, transports, only) {
   return report;
 }
 
-module.exports = { portMeta, normMac, normIp, nameKey, kindOf, typeHint, fromSnmpTables, fromMikrotikTables, analyse, observations, put, forget, canScan, scan, collect };
+module.exports = { diffSuggestions, portMeta, normMac, normIp, nameKey, kindOf, typeHint, fromSnmpTables, fromMikrotikTables, analyse, observations, put, forget, canScan, scan, collect };

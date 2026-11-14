@@ -48,6 +48,7 @@
         sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
         moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/>',
         menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+        search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
         topology: '<rect x="9" y="2.5" width="6" height="5" rx="1.2"/><rect x="2.5" y="16.5" width="6" height="5" rx="1.2"/><rect x="15.5" y="16.5" width="6" height="5" rx="1.2"/><path d="M12 7.5V12M5.5 16.5V12h13v4.5"/>'
     };
     var NAV_ICON = {
@@ -251,6 +252,8 @@
                 if (role !== 'admin') hide('a[href="/settings"], a[href="/finance"]');
                 if (role === 'viewer') hide('a[href="/add-device"]');
                 window.TowerDesk.role = role;
+                // Quick search (Ctrl+K) on every page except the sign-in page.
+                if (location.pathname !== '/login' && !document.getElementById('td-qs')) { var qs = document.createElement('script'); qs.id = 'td-qs'; qs.src = '/quick-search.js'; document.head.appendChild(qs); }
                 return s;
             }).catch(function () { return { role: 'admin' }; });
         }

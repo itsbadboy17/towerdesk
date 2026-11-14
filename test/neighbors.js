@@ -85,6 +85,13 @@ check('a switch port summary counts the devices behind each port and lists what 
   assert.ok(pm['Gi0/3'].neighbors.some((n) => n.name === 'HRINS-Sm21' && n.ip === '10.0.0.21'));
   assert.ok(pm['Gi0/3'].neighbors.some((n) => n.name === 'core-sw' && n.port === 'Gi0/1'));
 });
+check('a device that moved to a different parent between two scans is reported', () => {
+  const before = { su10: { parentId: 'sw', parentName: 'Switch' }, s21: { parentId: 'sw' } };
+  const after = { su10: { parentId: 'sm18', parentName: 'Sm18' }, s21: { parentId: 'sw' }, newbie: { parentId: 'sw' } };
+  const d = N.diffSuggestions(before, after, (id) => ({ sw: 'Switch', sm18: 'Sm18' }[id]));
+  assert.strictEqual(d.length, 1); assert.strictEqual(d[0].id, 'su10'); assert.ok(/now seen next to Sm18 \(before: Switch\)/.test(d[0].text));
+});
+check('the first scan reports no changes', () => assert.deepStrictEqual(N.diffSuggestions({}, { a: { parentId: 'x' } }, () => 'x'), []));
 check('a port summary for a device with no tables is empty', () => assert.deepStrictEqual(N.portMeta(null), {}));
 check('nothing read means no suggestions and no crash', () => { const E = N.analyse(devices, [], {}); assert.deepStrictEqual(E.suggestions, {}); assert.deepStrictEqual(E.unknown, []); });
 check('only routers and switches with an API or SNMP login can be scanned', () => { assert.ok(N.canScan({ method: 'snmp' })); assert.ok(N.canScan({ method: 'mikrotik' })); assert.ok(!N.canScan({ method: 'airos' })); assert.ok(!N.canScan({ method: 'ping' })); });

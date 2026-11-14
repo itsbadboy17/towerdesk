@@ -183,6 +183,7 @@
     // Do not redraw the card under the user: an open ping result, a history chart, or the ONU
     // search box while it is being typed in.
     function detailBusy(body) {
+        if (document.activeElement && document.activeElement.id === 'dev-notes') return true;
         return !!body.querySelector('.net-tools-out:not([hidden]), .sta-history, .adv-open') || !!document.getElementById('conn-dialog') || !!(document.activeElement && /^(onu-filter|conn-mode)$/.test(document.activeElement.id));
     }
 
@@ -528,6 +529,14 @@
             return true;
         }
         if (e.target.closest('[data-conn=go]')) { connGo(); return true; }
+        if (e.target.closest('[data-notes-save]')) {
+            var ta = document.getElementById('dev-notes'), nm = document.getElementById('notes-msg');
+            nm.textContent = 'Saving…';
+            fetch('/api/devices/' + encodeURIComponent(ta.dataset.notesFor) + '/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notes: ta.value }) })
+                .then(function (r) { return r.json(); }).then(function (j) { nm.textContent = j.error ? j.error : 'Saved.'; })
+                .catch(function () { nm.textContent = 'Could not reach TowerDesk.'; });
+            return true;
+        }
         var mt = e.target.closest('[data-maint]');
         if (mt) { maintAct(mt.dataset.maint, mt.dataset.mid); return true; }
         var tl = e.target.closest('[data-tell]');
@@ -882,6 +891,12 @@
         } else if (CAN_EDIT) {
             h += '<div class="ops-row"><label for="maint-hours">Planned work?</label><select id="maint-hours"><option value="1">1 hour</option><option value="2">2 hours</option><option value="4">4 hours</option><option value="8">8 hours</option><option value="24">1 day</option></select>' +
                 '<button type="button" class="btn-secondary btn-sm" data-maint="start">Start maintenance</button><span class="muted" id="maint-msg" role="status"></span></div>';
+        }
+        var canNote = window.TowerDesk.role !== 'viewer' && CAN_EDIT;
+        if (canNote || d.notes) {
+            h += '<div class="notes-box"><label for="dev-notes"><strong>Notes</strong> <span class="muted">where it is, who installed it, what to know on a visit. Never passwords.</span></label>' +
+                '<textarea id="dev-notes" rows="3" maxlength="1000"' + (canNote ? '' : ' readonly') + ' data-notes-for="' + esc(d.id) + '">' + esc(d.notes || '') + '</textarea>' +
+                (canNote ? '<div class="ops-row"><button type="button" class="btn-secondary btn-sm" data-notes-save>Save note</button><span class="muted" id="notes-msg" role="status"></span></div>' : '') + '</div>';
         }
         if (dep) h += '<p class="ops-impact">If this goes down: <strong>' + esc(dep) + '</strong>.</p>';
         if (imp && imp.customers) h += '<button type="button" class="btn-secondary btn-sm" data-tell="' + esc(d.id) + '">Tell customers…</button>';

@@ -107,6 +107,8 @@
             var selected = {}, siteInput = '', barMsg = '', diagSel = null, lastGraph = null;
             var NB = null, nbMsg = '', nbBusy = false; // neighbours (who is next to whom), from /api/neighbors
             var traceQ = '', tracePick = '', openSectors = {};
+            // /topology?trace=<name> (from quick search) opens "Trace a customer" with that name filled in.
+            try { var tq = new URLSearchParams(location.search).get('trace'); if (tq) { traceQ = tq.slice(0, 80); view = 'trace'; } } catch (e) { /* optional */ }
 
             // ---------- small helpers ----------
             function dotClass(h) { return h === 'up' || h === 'down' || h === 'warn' ? h : 'unknown'; }
