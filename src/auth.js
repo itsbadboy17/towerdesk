@@ -126,7 +126,7 @@ function logout(req, res) {
 
 // What each role may do. Admin: everything. Technician: devices, monitoring and the advisor, but not staff,
 // settings, saved logins, backups, updates or money. Viewer: look, ping and trace only.
-const ADMIN_PREFIX = ['/api/users', '/api/credentials', '/api/update', '/api/ai/config', '/api/radius/config', '/api/backup', '/api/restore', '/api/finance', '/api/notify', '/api/provision/settings'];
+const ADMIN_PREFIX = ['/api/users', '/api/credentials', '/api/update', '/api/ai/config', '/api/radius/config', '/api/backup', '/api/restore', '/api/finance', '/api/notify', '/api/provision/settings', '/api/lab/config'];
 const ADMIN_PAGES = new Set(['/settings', '/settings.html', '/finance', '/finance.html']);
 const VIEWER_POST_OK = [/^\/api\/logout$/, /^\/api\/tools\//];
 function canAccess(role, method, p) {

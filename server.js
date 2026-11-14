@@ -19,7 +19,8 @@ app.get('/api/session', (req, res) => {
   const s = auth.getSession(req);
   const required = auth.isConfigured() && process.env.TOWERDESK_AUTH !== 'off';
   // With no login configured everyone is the owner; otherwise the role comes from the account.
-  res.json({ authRequired: required, user: s ? s.user : null, role: required ? (s ? auth.roleOf(s.user) : null) : 'admin' });
+  // lab: true only in the second TowerDesk that the "Lab data" mode starts (it is a different process with its own data folder)
+  res.json({ authRequired: required, user: s ? s.user : null, role: required ? (s ? auth.roleOf(s.user) : null) : 'admin', lab: process.env.TOWERDESK_LAB === '1', mainUrl: process.env.TOWERDESK_MAIN_URL || null });
 });
 app.use(auth.middleware);
 
@@ -504,6 +505,13 @@ app.post('/api/topology/layout', (req, res) => {
   res.json({ ok: errors.length === 0, done, errors });
 });
 
+// Lab data: a second TowerDesk with its own data folder, started on request (see src/lab.js).
+const lab = require('./src/lab');
+app.get('/api/lab', async (req, res) => { try { res.json(Object.assign({ isLab: process.env.TOWERDESK_LAB === '1' }, await lab.status())); } catch (e) { res.status(500).json({ error: 'Could not check the lab' }); } });
+app.post('/api/lab/start', async (req, res) => { try { const r = await lab.start(); if (r.error) return res.status(400).json(r); res.json(Object.assign(r, await lab.status())); } catch (e) { res.status(500).json({ error: 'Could not start the lab' }); } });
+app.post('/api/lab/stop', async (req, res) => { try { res.json(await lab.stop()); } catch (e) { res.status(500).json({ error: 'Could not stop the lab' }); } });
+app.post('/api/lab/config', (req, res) => { const r = lab.setConfig(req.body || {}); if (r.error) return res.status(400).json(r); res.json(r); });
+
 // Set up a radio from a template. Plan is read-only; apply needs the admin's "allow writing" switch (off by default).
 const provision = require('./src/provision');
 app.get('/provision', (req, res) => res.sendFile(path.join(__dirname, 'public', 'provision.html')));
@@ -697,6 +705,7 @@ monitor.start();
 
 // Log out of device sessions (e.g. the TP-Link admin slot) when the server stops.
 function shutdown() {
+  try { require('./src/lab').stopSync(); } catch (e) { /* ignore */ }
   try { require('./src/metrics').closeAll(); } catch (e) { /* ignore */ }
   try { require('./src/history').close(); } catch (e) { /* ignore */ }
   setTimeout(() => process.exit(0), 700).unref();
@@ -979,6 +988,7 @@ app.use((req, res, next) => {
 
 // Start the server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`TowerDesk server running on http://localhost:${PORT}`);
+// The lab copy listens on this computer only (TOWERDESK_HOST=127.0.0.1); the normal TowerDesk listens as before.
+app.listen(PORT, process.env.TOWERDESK_HOST || undefined, () => {
+  console.log(`TowerDesk server running on http://localhost:${PORT}` + (process.env.TOWERDESK_LAB === '1' ? ' (LAB data)' : ''));
 });

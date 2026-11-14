@@ -210,24 +210,94 @@
             });
             right.insertBefore(themeBtn, designSel.nextSibling);
 
-            // Real data / demo data switch, next to the language selector
+            // Real data / Demo data / Lab data, next to the language selector. Real and Demo work as before. Lab data goes to a
+            // second TowerDesk (its own data folder, this computer only) that is started when you choose it.
+            var modeWrap = document.createElement('div');
+            modeWrap.className = 'mode-wrap';
             var demoBtn = document.createElement('button');
             demoBtn.type = 'button';
             demoBtn.id = 'demo-toggle';
             demoBtn.className = 'demo-toggle' + (DEMO_ON ? ' is-demo' : '');
-            demoBtn.setAttribute('aria-pressed', DEMO_ON ? 'true' : 'false');
-            demoBtn.innerHTML = '<span class="demo-dot" aria-hidden="true"></span><span class="demo-label"></span>';
-            demoBtn.querySelector('.demo-label').textContent = DEMO_ON ? 'Demo data' : 'Real data';
-            demoBtn.title = DEMO_ON ? 'Showing a sample tower. Click to go back to your real data.' : 'Showing your real data. Click to switch to a sample tower for testing.';
-            demoBtn.addEventListener('click', function () {
-                writePref('td-demo', DEMO_ON ? '0' : '1');
+            demoBtn.setAttribute('aria-haspopup', 'true');
+            demoBtn.setAttribute('aria-expanded', 'false');
+            demoBtn.innerHTML = '<span class="demo-dot" aria-hidden="true"></span><span class="demo-label"></span><span class="mode-caret" aria-hidden="true">▾</span>';
+            var MODE_TEXT = { real: 'Real data', demo: 'Demo data', lab: 'Lab data' };
+            var MODE_HINT = { real: 'Your real towers and devices.', demo: 'A sample tower for trying the screens. Changes nothing.', lab: 'Your test lab (for example GNS3): its own devices and data, never your real ones.' };
+            var curMode = DEMO_ON ? 'demo' : 'real';
+            var modeMenu = document.createElement('div');
+            modeMenu.className = 'mode-menu'; modeMenu.setAttribute('role', 'menu'); modeMenu.hidden = true;
+            function drawMenu(noteText) {
+                modeMenu.innerHTML = ['real', 'demo', 'lab'].map(function (m) {
+                    return '<button type="button" role="menuitemradio" aria-checked="' + (m === curMode) + '" class="mode-item mode-' + m + (m === curMode ? ' on' : '') + '" data-mode="' + m + '"><span class="mode-name">' + MODE_TEXT[m] + '</span><span class="mode-hint">' + MODE_HINT[m] + '</span></button>';
+                }).join('') + '<p class="mode-note" id="mode-note" role="status">' + (noteText || '') + '</p>';
+            }
+            function setLabel() {
+                demoBtn.querySelector('.demo-label').textContent = MODE_TEXT[curMode];
+                demoBtn.classList.toggle('is-demo', curMode === 'demo');
+                demoBtn.classList.toggle('is-lab', curMode === 'lab');
+                demoBtn.title = MODE_HINT[curMode] + ' Click to change.';
+                window.TowerDesk.mode = curMode;
+                if (translateFn) translateFn();
+            }
+            var translateFn = null;
+            drawMenu(); setLabel();
+            modeWrap.appendChild(demoBtn); modeWrap.appendChild(modeMenu);
+            right.insertBefore(modeWrap, right.firstChild);
+            translateFn = translate;
+            function closeMenu() { modeMenu.hidden = true; demoBtn.setAttribute('aria-expanded', 'false'); }
+            demoBtn.addEventListener('click', function (e) { e.stopPropagation(); modeMenu.hidden = !modeMenu.hidden; demoBtn.setAttribute('aria-expanded', String(!modeMenu.hidden)); if (!modeMenu.hidden) drawMenu(); if (window.TowerDesk.i18n) window.TowerDesk.i18n.apply(root.lang); });
+            document.addEventListener('click', function (e) { if (!modeWrap.contains(e.target)) closeMenu(); });
+            document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeMenu(); });
+            var labInfo = { isLab: false, mainUrl: null };
+            function modeNote(t) { var n = document.getElementById('mode-note'); if (n) n.textContent = t || ''; if (window.TowerDesk.i18n) window.TowerDesk.i18n.apply(root.lang); }
+            function toMain(demo) {
+                var base = labInfo.mainUrl || 'http://localhost:3000';
+                var u = new URL(location.pathname + location.search, base);
+                if (demo) u.searchParams.set('demo', '1'); else u.searchParams.delete('demo');
+                location.href = u.toString();
+            }
+            function startLab() {
+                modeNote('Starting the lab…');
+                fetch('/api/lab/start', { method: 'POST' }).then(function (r) { return r.json(); }).then(function (j) {
+                    if (j.error) { modeNote(j.error); return; }
+                    var tries = 0;
+                    (function wait() {
+                        fetch('/api/lab').then(function (r) { return r.json(); }).then(function (st) {
+                            if (st.ready) { var u = new URL(location.pathname + location.search, st.url); u.searchParams.delete('demo'); location.href = u.toString(); return; }
+                            if (st.blocked) { modeNote(st.blocked); return; }
+                            if (++tries > 45) { modeNote('The lab did not start. Check its folder and port in Settings.'); return; }
+                            setTimeout(wait, 1000);
+                        }).catch(function () { modeNote('Could not reach TowerDesk.'); });
+                    })();
+                }).catch(function () { modeNote('Could not start the lab.'); });
+            }
+            modeMenu.addEventListener('click', function (e) {
+                var it = e.target.closest('[data-mode]');
+                if (!it) return;
+                var m = it.dataset.mode;
+                if (m === curMode) { closeMenu(); return; }
+                if (m === 'lab') { startLab(); return; }
+                if (labInfo.isLab) { writePref('td-demo', m === 'demo' ? '1' : '0'); toMain(m === 'demo'); return; }
+                writePref('td-demo', m === 'demo' ? '1' : '0');
                 var u = new URL(location.href);
-                // Going to demo also says so in the address (a fallback if the browser cannot
-                // remember it); going back to real removes it so the page cannot stay in demo.
-                if (DEMO_ON) u.searchParams.delete('demo'); else u.searchParams.set('demo', '1');
+                // Demo also says so in the address (a fallback if the browser cannot remember it); Real removes it.
+                if (m === 'demo') u.searchParams.set('demo', '1'); else u.searchParams.delete('demo');
                 location.replace(u.toString());
             });
-            right.insertBefore(demoBtn, right.firstChild);
+            // The lab copy says so on every page, in the button and in a banner (it is a different process, so it tells us itself).
+            if (window.fetch) fetch('/api/session').then(function (r) { return r.json(); }).then(function (sess) {
+                if (!sess || !sess.lab) return;
+                labInfo = { isLab: true, mainUrl: sess.mainUrl };
+                curMode = 'lab'; DEMO_ON = false; drawMenu(); setLabel();
+                var mainEl2 = document.querySelector('.main');
+                if (mainEl2 && !document.querySelector('.lab-banner')) {
+                    var lb = document.createElement('div');
+                    lb.className = 'lab-banner'; lb.setAttribute('role', 'status');
+                    lb.textContent = 'Lab data: your test lab, with its own devices and data. Nothing here touches your real towers.';
+                    mainEl2.insertBefore(lb, mainEl2.firstChild);
+                    if (window.TowerDesk.i18n) window.TowerDesk.i18n.apply(root.lang);
+                }
+            });
 
             // While demo is on, say so on every page so it can never be mistaken for real data.
             // (The header is fixed to the top, so the notice goes first inside the page content.)

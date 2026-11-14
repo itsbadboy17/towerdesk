@@ -200,3 +200,9 @@ Not done: the phone app (left out on purpose); airOS radios cannot report neighb
   Found and fixed: a brand-new RouterOS asks "see the software license? [Y/n]" and then forces a new password at first login.
 - scripts/mock-sas4.js: pretend SAS 4 server (60 subscribers) for testing finance, notices and the SAS page.
 - Not tested on a real device: Set up a radio (Ubiquiti), and any real tower hardware.
+## Lab data mode (features branch)
+- Top-bar switch is now a menu: Real data / Demo data / Lab data. Lab data starts (if needed) and opens a SECOND TowerDesk (src/lab.js):
+  own data folder (never the real one), own port (default 3001), localhost only, marked TOWERDESK_LAB=1 so every page shows a banner.
+  It also starts the pretend SAS (scripts/mock-sas4.js) unless switched off. Settings > Lab data (admin): folder, port, start/stop.
+- Port safety: a TowerDesk on the lab port that does not say it is the lab is never opened as lab data.
+- Tested: test/lab.js (11 checks) and by hand: Real > Lab > Real in the browser against the GNS3 lab.

@@ -135,6 +135,19 @@
             </div>
         </div>
 
+        <div class="card" id="lab-card">
+            <div class="card-header"><h3>Lab data</h3><span class="card-actions">A test lab, separate from your real data</span></div>
+            <div class="card-body">
+                <p class="muted">Choose <strong>Lab data</strong> in the top bar to open a second TowerDesk with its own devices and its own data folder, for testing against a lab network (for example GNS3). It listens on this computer only and can never use your real data folder.</p>
+                <div class="form-row">
+                    <div class="form-group"><label for="lab-dir">Lab data folder</label><input id="lab-dir" type="text" autocomplete="off"></div>
+                    <div class="form-group"><label for="lab-port">Lab port</label><input id="lab-port" type="text" inputmode="numeric" autocomplete="off"></div>
+                </div>
+                <label class="conn-check"><input type="checkbox" id="lab-sas"> Also start the pretend SAS server (invented subscribers for the lab)</label>
+                <div class="form-actions"><button type="button" class="btn-primary" id="lab-save">Save</button><button type="button" class="btn-secondary" id="lab-start">Start the lab</button><button type="button" class="btn-secondary" id="lab-stop">Stop the lab</button><span class="muted" id="lab-msg" role="status"></span></div>
+            </div>
+        </div>
+
         <div class="card" id="provision-card">
             <div class="card-header"><h3>Radio setup</h3><span class="card-actions">Off by default</span></div>
             <div class="card-body">
@@ -379,6 +392,17 @@
     <script src="/staff.js"></script>
     <script>
         (function () {
+            (function () {
+                var $ = function (id) { return document.getElementById(id); };
+                if (!$('lab-card')) return;
+                function say(t) { $('lab-msg').textContent = t || ''; }
+                function api(m, u, b) { return fetch(u, { method: m, headers: { 'Content-Type': 'application/json' }, body: b ? JSON.stringify(b) : undefined }).then(function (r) { return r.json(); }); }
+                function load() { api('GET', '/api/lab').then(function (j) { if (!j.config) return; $('lab-dir').value = j.config.dataDir; $('lab-port').value = j.config.port; $('lab-sas').checked = !!j.config.mockSas; say(j.isLab ? 'You are in the lab now.' : (j.running ? 'The lab is running.' : (j.blocked || 'The lab is stopped.'))); $('lab-start').disabled = !!j.isLab; $('lab-stop').disabled = !!j.isLab; }).catch(function () {}); }
+                $('lab-save').addEventListener('click', function () { api('POST', '/api/lab/config', { dataDir: $('lab-dir').value.trim(), port: $('lab-port').value.trim(), mockSas: $('lab-sas').checked }).then(function (j) { say(j.error ? j.error : 'Saved. It applies the next time the lab starts.'); }); });
+                $('lab-start').addEventListener('click', function () { say('Starting…'); api('POST', '/api/lab/start').then(function (j) { say(j.error ? j.error : 'Starting. Choose Lab data in the top bar to open it.'); setTimeout(load, 4000); }); });
+                $('lab-stop').addEventListener('click', function () { api('POST', '/api/lab/stop').then(function (j) { say(j.stopped ? 'Stopped.' : 'Nothing was started from here.'); setTimeout(load, 1500); }); });
+                load();
+            })();
             var box = document.getElementById('prov-allow'), msg = document.getElementById('prov-msg');
             if (!box) return;
             fetch('/api/provision/settings').then(function (r) { return r.json(); }).then(function (j) { box.checked = !!j.allowWrite; }).catch(function () {});
