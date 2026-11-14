@@ -103,6 +103,7 @@
             var view = VIEWS.indexOf(getPref()) >= 0 ? getPref() : 'sites';
             var devices = [], sas = { byMac: {}, list: [], configured: false }, sasAt = 0;
             var selected = {}, siteInput = '', barMsg = '', diagSel = null, lastGraph = null;
+            var NB = null, nbMsg = '', nbBusy = false; // neighbours (who is next to whom), from /api/neighbors
             var traceQ = '', tracePick = '', openSectors = {};
 
             // ---------- small helpers ----------
@@ -196,6 +197,74 @@
                 n.children.forEach(function (c) { out[c.id] = true; descendants(c, out); });
                 return out;
             }
+            // ---------- neighbours ----------
+            function addUrl(x) { return '/add-device?name=' + encodeURIComponent(x.name || '') + '&ip=' + encodeURIComponent(x.ip || '') + '&type=' + encodeURIComponent(x.typeHint || '') + (DEMO ? '&demo=1' : ''); }
+            function nbName(pid) { if (pid === 'internet') return 'The internet'; var x = lastGraph && lastGraph.nodes[pid]; return x ? x.label : ''; }
+            function nbAddButton(name) {
+                var u = NB && (NB.unknown || []).filter(function (x) { return x.name === name; })[0];
+                return u && CAN_EDIT ? '<a class="btn-secondary btn-sm" href="' + esc(addUrl(u)) + '">Add ' + esc(u.name) + '</a>' : '';
+            }
+            function nbEditorHtml(n) {
+                if (!NB) return '';
+                var html = '', s = NB.suggestions && NB.suggestions[n.id];
+                if (s && s.already) html += '<p class="nb-ok">✓ What you set matches what its neighbours show.</p>';
+                else if (s && s.parentId) html += '<div class="nb-sug"><div><strong>Suggestion:</strong> it plugs into <b>' + esc(nbName(s.parentId) || s.parentName) + '</b>.</div><div class="muted">' + esc(s.reason) + '</div>' +
+                    (CAN_EDIT ? '<button type="button" class="btn-primary btn-sm" data-act="nb-use" data-parent="' + esc(s.parentId) + '">Use this</button>' : '') + '</div>';
+                else if (s) html += '<div class="nb-sug warn"><div><strong>Suggestion:</strong> it plugs into <b>' + esc(s.parentName) + '</b>, which is not added to TowerDesk yet.</div><div class="muted">' + esc(s.reason) + '</div>' + nbAddButton(s.parentName) + '</div>';
+                var near = (NB.nearby && NB.nearby[n.id]) || [];
+                if (near.length) {
+                    html += '<div class="nb-near"><strong>Seen next to it (' + near.length + ')</strong><ul>' + near.slice(0, 10).map(function (x) {
+                        var who = x.known ? '<button type="button" class="name-btn" data-act="nb-jump" data-id="' + esc(x.id) + '">' + esc(x.name) + '</button>' : '<span class="nb-new">' + esc(x.name) + '</span> <span class="nb-chip">not added</span>';
+                        var how = x.kind === 'direct' ? 'directly' + (x.port ? ' on ' + x.port : '') : 'on the same wire' + (x.port ? ' (' + x.port + ')' : '');
+                        return '<li>' + who + ' <span class="muted">' + esc((x.ip ? x.ip + ' · ' : '') + (x.platform ? x.platform + ' · ' : '') + how) + '</span></li>';
+                    }).join('') + '</ul>' + (near.length > 10 ? '<p class="muted">and ' + (near.length - 10) + ' more</p>' : '') + '</div>';
+                } else if (NB.scanned) html += '<p class="muted nb-none">No neighbours seen for this device yet. Only routers and switches that TowerDesk can log in to (MikroTik API or SNMP) report them.</p>';
+                return html;
+            }
+            function nbApplicable() {
+                if (!NB) return [];
+                return Object.keys(NB.suggestions || {}).filter(function (id) { var s = NB.suggestions[id]; return s.parentId && !s.already && lastGraph && lastGraph.nodes[id]; });
+            }
+            function renderNbPanel() {
+                var el = $('nb-panel');
+                if (!el) return;
+                var status;
+                if (!NB) status = 'Loading…';
+                else if (!NB.canScan) status = 'No router or switch that TowerDesk can read is added yet. A MikroTik (API or SNMP) or a switch with SNMP can tell it who is next to it.';
+                else if (!NB.scanned) status = 'Not scanned yet. Press Scan neighbours: TowerDesk reads each router and switch’s neighbour table (read-only).';
+                else status = 'Read from ' + NB.scanned + ' of ' + NB.canScan + ' router' + (NB.canScan === 1 ? '' : 's') + '/switch' + (NB.canScan === 1 ? '' : 'es') + (NB.scannedAt ? ', ' + F.ago(NB.scannedAt) + ' ago' : '') + '.';
+                var apply = nbApplicable();
+                var html = '<div class="nb-head"><div><strong>What is next to what</strong><div class="muted">' + esc(nbMsg || status) + '</div></div><div class="nb-actions">' +
+                    (CAN_EDIT || DEMO ? '<button type="button" class="btn-secondary btn-sm" data-act="nb-scan"' + (nbBusy ? ' disabled' : '') + '>' + (nbBusy ? 'Scanning…' : 'Scan neighbours') + '</button>' : '') +
+                    (CAN_EDIT && apply.length ? '<button type="button" class="btn-primary btn-sm" data-act="nb-apply">Use all ' + apply.length + ' suggestion' + (apply.length === 1 ? '' : 's') + '</button>' : '') + '</div></div>';
+                var unk = (NB && NB.unknown) || [];
+                if (unk.length) {
+                    html += '<details class="nb-unknown"' + (unk.length <= 4 ? ' open' : '') + '><summary>Seen on your network, not added (' + unk.length + ')</summary><ul>' + unk.map(function (u) {
+                        return '<li><span><strong>' + esc(u.name || u.mac || u.ip) + '</strong> <span class="muted">' + esc([u.kind === 'switch' ? 'Switch' : '', u.platform, u.ip, u.mac, u.seenBy && u.seenBy.length ? 'seen by ' + u.seenBy.join(', ') : ''].filter(Boolean).join(' · ')) + '</span></span>' +
+                            (CAN_EDIT ? '<a class="btn-secondary btn-sm" href="' + esc(addUrl(u)) + '">Add</a>' : '') + '</li>';
+                    }).join('') + '</ul></details>';
+                }
+                el.innerHTML = html;
+            }
+            function loadNb() {
+                return fetch('/api/neighbors' + (DEMO ? '?demo=1' : '')).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+                    if (!j) return;
+                    NB = j; renderNbPanel();
+                    if (!busy()) renderEditor();
+                }).catch(function () { /* neighbours are optional */ });
+            }
+            function scanNb() {
+                nbBusy = true; nbMsg = 'Reading neighbour tables…'; renderNbPanel();
+                return fetch('/api/neighbors/scan' + (DEMO ? '?demo=1' : ''), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(function (r) { return r.json(); }).then(function (j) {
+                    nbBusy = false;
+                    if (j && j.error) { nbMsg = j.error; renderNbPanel(); return; }
+                    NB = j;
+                    var bad = (j.report || []).filter(function (x) { return !x.ok; });
+                    nbMsg = (j.report || []).length ? 'Read ' + (j.report.length - bad.length) + ' of ' + j.report.length + (bad.length ? '. Could not read: ' + bad.map(function (x) { return x.name + ' (' + x.error + ')'; }).join(', ') : '.') : '';
+                    renderNbPanel(); renderEditor();
+                }).catch(function () { nbBusy = false; nbMsg = 'Could not reach TowerDesk.'; renderNbPanel(); });
+            }
+
             function renderEditor() {
                 var el = $('topo-edit');
                 if (!el) return;
@@ -207,14 +276,14 @@
                 }
                 var h = T.healthOf(n.d, attnMap().by);
                 var head = '<div class="tp-edit-head">' + dot(h) + '<strong>' + esc(n.label) + '</strong> <a class="btn-secondary btn-sm" href="/monitoring?open=' + encodeURIComponent(n.id) + Q + '">Open in Monitoring</a></div>';
-                if (!CAN_EDIT) { el.innerHTML = head + '<p class="muted">Switch to Real data to change what connects to what.</p>'; return; }
+                if (!CAN_EDIT) { el.innerHTML = head + '<p class="muted">Switch to Real data to change what connects to what.</p>' + nbEditorHtml(n); return; }
                 var below = descendants(n);
                 var opts = '<option value=""' + (!n.parent ? ' selected' : '') + '>— not connected yet —</option><option value="internet"' + (n.parent === 'internet' ? ' selected' : '') + '>The internet (first device after my provider)</option>' +
                     g.list.filter(function (x) { return x.id !== n.id && !below[x.id]; }).map(function (x) {
                         return '<option value="' + esc(x.id) + '"' + (n.parent === x.id ? ' selected' : '') + '>' + esc(x.label) + '</option>';
                     }).join('');
                 el.innerHTML = head + '<p class="muted">Which device does <b>' + esc(n.label) + '</b> get its internet from? Pick the device it is cabled or linked to, on the way to the internet.</p><div class="tp-edit-row"><label for="tp-parent">Gets its internet from</label><select id="tp-parent">' + opts + '</select>' +
-                    '<button type="button" class="btn-primary btn-sm" data-act="connect">Save</button><span class="muted" id="tp-msg" role="status"></span></div>';
+                    '<button type="button" class="btn-primary btn-sm" data-act="connect">Save</button><span class="muted" id="tp-msg" role="status"></span></div>' + nbEditorHtml(n);
             }
             function renderDiagram() {
                 var g = T.buildGraph(devices, I), L = T.layout(g), A = attnMap();
@@ -240,10 +309,11 @@
                 svg += '</svg>';
                 var wrap = document.querySelector('#topo .tp-wrap');
                 var sl = wrap ? wrap.scrollLeft : 0, st = wrap ? wrap.scrollTop : 0;
-                $('topo').innerHTML = '<p class="muted tp-help">Each box is a device. A line means “gets its internet from”: the box above feeds the box below. Click a box to change what it plugs into.</p><div class="tp-wrap">' + svg + '</div><div class="tp-edit" id="topo-edit"></div>';
+                $('topo').innerHTML = '<p class="muted tp-help">Each box is a device. A line means “gets its internet from”: the box above feeds the box below. Click a box to change what it plugs into.</p><div class="tp-wrap">' + svg + '</div><div class="tp-edit" id="topo-edit"></div><div class="nb-panel" id="nb-panel"></div>';
                 var nw = document.querySelector('#topo .tp-wrap');
                 if (nw) { nw.scrollLeft = sl; nw.scrollTop = st; }
                 renderEditor();
+                renderNbPanel();
             }
 
             // ---------- 3. trace a customer ----------
@@ -422,6 +492,26 @@
                     }).catch(function () { barMsg = 'Could not reach TowerDesk.'; renderBar(); });
                     return;
                 }
+                if (act.dataset.act === 'nb-scan') { if (!nbBusy) scanNb(); return; }
+                if (act.dataset.act === 'nb-jump') { selectNode(act.dataset.id); return; }
+                if (act.dataset.act === 'nb-use' || act.dataset.act === 'nb-apply') {
+                    var batch = [];
+                    if (act.dataset.act === 'nb-use') {
+                        var cur = lastGraph && diagSel && lastGraph.nodes[diagSel];
+                        if (!cur) return;
+                        batch.push({ id: cur.id, parentId: act.dataset.parent });
+                        if (cur.far) batch.push({ id: cur.far.id, parentId: act.dataset.parent });
+                    } else {
+                        nbApplicable().forEach(function (id) { batch.push({ id: id, parentId: NB.suggestions[id].parentId }); });
+                    }
+                    if (!batch.length) return;
+                    nbMsg = 'Saving…'; renderNbPanel();
+                    post(batch).then(function (j) {
+                        nbMsg = j.ok ? 'Saved ' + batch.length + ' change' + (batch.length === 1 ? '' : 's') + '.' : ((j.errors && j.errors[0] && j.errors[0].error) || 'Could not save.');
+                        poll(); loadNb();
+                    }).catch(function () { nbMsg = 'Could not reach TowerDesk.'; renderNbPanel(); });
+                    return;
+                }
                 if (act.dataset.act === 'connect') {
                     var n = lastGraph && diagSel && lastGraph.nodes[diagSel], sel = $('tp-parent');
                     if (!n || !sel) return;
@@ -446,7 +536,9 @@
                     .catch(function (e) { if (e.message !== 'login') { $('live-pill').className = 'live-pill bad'; $('live-text').textContent = 'Disconnected — retrying'; } });
             }
             poll();
+            loadNb();
             setInterval(function () { if (!document.hidden) poll(); }, 10000);
+            setInterval(function () { if (!document.hidden && !nbBusy) loadNb(); }, 60000);
         })();
     </script>
 </body>

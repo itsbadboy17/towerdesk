@@ -290,4 +290,17 @@ async function test(opts) {
   }
 }
 
-module.exports = { test, Session, readSystem, readInterfaces, readWireless, readRegistration, parseRegistration, isAuthError, encodeSentence, parseSentences };
+// Neighbour discovery (MNDP/CDP/LLDP), ARP, the bridge MAC table, the default gateway and the router's own
+// MACs. Each print is optional: a missing menu is skipped. Read-only.
+async function readNeighborTables(session) {
+  const tryRun = (words) => session.run(words).catch(() => []);
+  const neighbors = await tryRun(['/ip/neighbor/print']);
+  const arp = await tryRun(['/ip/arp/print']);
+  const hosts = await tryRun(['/interface/bridge/host/print']);
+  const routes = await tryRun(['/ip/route/print', '?dst-address=0.0.0.0/0']);
+  const ifs = await tryRun(['/interface/print', '=.proplist=mac-address']);
+  const gw = routes.find((r) => r.gateway && /^\d+(\.\d+){3}$/.test(r.gateway));
+  return { neighbors, arp, hosts, gateway: gw ? gw.gateway : '', selfMacs: ifs.map((i) => i['mac-address']).filter(Boolean) };
+}
+
+module.exports = { test, Session, readSystem, readInterfaces, readWireless, readRegistration, readNeighborTables, parseRegistration, isAuthError, encodeSentence, parseSentences };

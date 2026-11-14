@@ -193,4 +193,19 @@ function build() {
   };
 }
 
-module.exports = { snapshot: build };
+// What the demo "Core router" sees next to it, in the shape src/neighbors.js reads: a Cisco switch that
+// is not added yet and two sectors behind it.
+function neighborObservations() {
+  return [{
+    deviceId: 'd1', gateway: '10.90.0.254', arp: [], fdb: [], selfMacs: [],
+    rows: [
+      { via: 'cdp', mac: '00:1d:46:3d:9f:8c', ip: '', name: 'Tower switch', platform: 'cisco WS-C2960-24TT-L', remotePort: 'FastEthernet0/12', localPort: 'ether2' },
+      { via: 'mndp', mac: '74:4d:28:00:00:01', ip: '10.90.1.1', name: 'Sector North', platform: 'Ubiquiti', remotePort: '', localPort: 'ether2' },
+      { via: 'mndp', mac: '74:4d:28:00:00:02', ip: '10.90.1.2', name: 'Sector West', platform: 'Ubiquiti', remotePort: '', localPort: 'ether2' },
+      { via: 'mndp', mac: '74:4d:28:00:00:03', ip: '10.90.1.3', name: 'Sector South', platform: 'Ubiquiti', remotePort: '', localPort: 'ether2' },
+      { via: 'mndp', mac: '4c:5e:0c:00:00:09', ip: '10.90.1.9', name: 'Sector East', platform: 'MikroTik', remotePort: '', localPort: 'ether2' }
+    ]
+  }];
+}
+
+module.exports = { snapshot: build, neighborObservations };

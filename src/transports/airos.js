@@ -116,7 +116,9 @@ function parseStatus(j) {
     stations: stations.length || undefined,
     temp: num(h.temperature)
   };
+  const macs = Array.from(new Set((j.interfaces || []).map((i) => String(i && i.hwaddr || '').toLowerCase()).concat([String(w.apmac || '').toLowerCase()]).filter((m) => /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(m))));
   return {
+    macs,
     hostname: h.hostname,
     model: h.devmodel || h.platform,
     firmware: h.fwversion,

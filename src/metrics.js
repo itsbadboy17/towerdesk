@@ -195,6 +195,7 @@ async function pollAiros(device, s, now) {
   s.signal = st.signal;
   s.ccq = st.ccq;
   s.radio = st.radio || null;
+  s.macs = st.macs || s.macs;
   s.model = st.model || s.model;
   // Point-to-multipoint AP: the connected-subscriber list. Point-to-point links report none.
   applyStations(s, st.stations, now);
@@ -345,6 +346,7 @@ function snapshot(device) {
     signal: s.signal !== undefined ? s.signal : null,
     ccq: s.ccq !== undefined ? s.ccq : null,
     radio: s.radio || null,
+    macs: s.macs || null,
     stations: s.stations ? s.stations.slice(0, 64) : null,
     stationCount: s.stations ? s.stations.length : null,
     onus: s.onus ? s.onus.slice(0, 512) : null,

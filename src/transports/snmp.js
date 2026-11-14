@@ -109,4 +109,50 @@ async function readInterfaces({ host, port = 161, community = 'public', version 
   }
 }
 
-module.exports = { test, readInterfaces, vendorFromObjectId };
+// Neighbour-related tables, all best effort: a table the device does not have is simply empty.
+// MikroTik neighbour discovery (also carries Cisco CDP and LLDP sightings), standard LLDP and CDP,
+// the ARP table, the default route, the MAC (bridge forwarding) table and the device's own MACs.
+// Read-only.
+async function readNeighborTables({ host, port = 161, community = 'public', version = '2c', timeout = 4000 }) {
+  const session = snmp.createSession(host, community || 'public', {
+    port, version: version === '1' ? snmp.Version1 : snmp.Version2c, timeout, retries: 0
+  });
+  session.on('error', () => {});
+  const tc = (oid, cols) => tableColumns(session, oid, cols).catch(() => ({}));
+  const getOne = (oid) => new Promise((resolve) => session.get([oid], (err, vb) => resolve(err || !vb || !vb[0] || snmp.isVarbindError(vb[0]) ? null : vb[0].value)));
+  const hex6 = (b) => (Buffer.isBuffer(b) && b.length === 6 ? b.toString('hex').replace(/(..)(?!$)/g, '$1:') : '');
+  const txt = (b) => (Buffer.isBuffer(b) ? b.toString('utf8') : (b === undefined || b === null ? '' : String(b)));
+  const ipOf = (b) => (Buffer.isBuffer(b) && b.length === 4 ? Array.from(b).join('.') : (typeof b === 'string' ? b : ''));
+  const vals = (t) => Object.keys(t).map((k) => Object.assign({ _k: k }, t[k]));
+  try {
+    const [mndp, lldp, cdp, arp, gw, fdb, bp, ifx, ifs] = await Promise.all([
+      tc('1.3.6.1.4.1.14988.1.1.11.1', [2, 3, 4, 5, 6, 8]),
+      tc('1.0.8802.1.1.2.1.4.1', [5, 7, 8, 9]),
+      tc('1.3.6.1.4.1.9.9.23.1.2.1', [4, 5, 6, 7, 8]),
+      tc('1.3.6.1.2.1.4.22', [2]),
+      getOne('1.3.6.1.2.1.4.21.1.7.0.0.0.0'),
+      tc('1.3.6.1.2.1.17.4.3', [1, 2]),
+      tc('1.3.6.1.2.1.17.1.4', [2]),
+      tc('1.3.6.1.2.1.31.1.1', [1]),
+      tc('1.3.6.1.2.1.2.2', [6])
+    ]);
+    const ifNames = {};
+    Object.keys(ifx).forEach((i) => { ifNames[i] = txt(ifx[i][1]); });
+    const portName = {};
+    Object.keys(bp).forEach((p) => { portName[p] = ifNames[bp[p][2]] || 'port' + p; });
+    return {
+      mndp: vals(mndp).map((r) => ({ ip: ipOf(r[2]), mac: hex6(r[3]), version: txt(r[4]), platform: txt(r[5]), identity: txt(r[6]), ifIndex: r[8] })),
+      lldp: vals(lldp).map((r) => { const parts = r._k.split('.'); return { local: parts.length >= 2 ? parts[parts.length - 2] : undefined, chassis: r[5], portId: txt(r[7]), portDesc: txt(r[8]), sysName: txt(r[9]) }; }),
+      cdp: vals(cdp).map((r) => ({ ifIndex: r._k.split('.')[0], addr: ipOf(r[4]), version: txt(r[5]), deviceId: txt(r[6]), port: txt(r[7]), platform: txt(r[8]) })),
+      arp: Object.keys(arp).map((k) => ({ ip: k.split('.').slice(1).join('.'), mac: hex6(arp[k][2]) })).filter((a) => a.mac),
+      gateway: gw === null ? '' : (typeof gw === 'string' ? gw : ipOf(gw)),
+      fdb: Object.keys(fdb).map((k) => ({ mac: hex6(fdb[k][1]), port: portName[fdb[k][2]] || 'port' + fdb[k][2] })).filter((x) => x.mac),
+      ifNames,
+      selfMacs: vals(ifs).map((r) => hex6(r[6])).filter(Boolean)
+    };
+  } finally {
+    session.close();
+  }
+}
+
+module.exports = { test, readInterfaces, readNeighborTables, vendorFromObjectId };

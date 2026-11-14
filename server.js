@@ -474,10 +474,37 @@ app.post('/api/topology/layout', (req, res) => {
   res.json({ ok: errors.length === 0, done, errors });
 });
 
+// Neighbours: who sits next to whom, read from routers and switches (read-only), plus suggestions for the
+// link diagram. GET shows what was read last; POST /scan reads the devices again now.
+const neighbors = require('./src/neighbors');
+function neighborView(demo) {
+  if (demo) {
+    const dm = require('./src/demo');
+    const list = dm.snapshot().devices.map((d) => ({ id: d.id, name: d.name, ip: d.ip, type: d.type, parentId: d.parentId }));
+    const a = neighbors.analyse(list, dm.neighborObservations(), {});
+    return Object.assign({ demo: true, scannedAt: new Date().toISOString(), scanned: 1, canScan: 1 }, a);
+  }
+  const list = devices.list();
+  const macs = {};
+  (monitor.snapshot().devices || []).forEach((d) => { if (d.metrics && d.metrics.macs) macs[d.id] = d.metrics.macs; });
+  const obs = neighbors.observations();
+  const at = obs.map((o) => o.at).filter(Boolean).sort().pop() || null;
+  return Object.assign({ demo: false, scannedAt: at, scanned: obs.length, canScan: list.filter(neighbors.canScan).length }, neighbors.analyse(list, obs, macs));
+}
+app.get('/api/neighbors', (req, res) => res.json(neighborView(req.query && req.query.demo === '1')));
+app.post('/api/neighbors/scan', async (req, res) => {
+  if (req.query && req.query.demo === '1') return res.json(Object.assign({ report: [] }, neighborView(true)));
+  try {
+    const report = await neighbors.scan(devices.list(), devices, { snmp: require('./src/transports/snmp'), mikrotik: require('./src/transports/mikrotik') }, req.body && req.body.id ? String(req.body.id) : undefined);
+    res.json(Object.assign({ report }, neighborView(false)));
+  } catch (e) { res.status(500).json({ error: 'The scan failed' }); }
+});
+
 app.delete('/api/devices/:id', (req, res) => {
   if (!devices.remove(req.params.id)) return res.status(404).json({ error: 'Device not found' });
   alerts.forgetDevice(req.params.id);
   require('./src/radio-history').forget(req.params.id);
+  require('./src/neighbors').forget(req.params.id);
   res.json({ success: true });
 });
 

@@ -652,6 +652,20 @@
         });
     });
 
+    // Coming from Topology ("seen on your network, not added"): start with what is already known.
+    (function prefill() {
+        try {
+            var q = new URLSearchParams(location.search);
+            var nm = q.get('name'), ip = q.get('ip'), ty = q.get('type');
+            if (!nm && !ip && !ty) return;
+            if (nm && $('device-name')) $('device-name').value = nm.slice(0, 80);
+            if (ip && $('device-ip')) $('device-ip').value = ip.slice(0, 45);
+            if (ty && $('device-type') && Array.prototype.some.call($('device-type').options, function (o) { return o.value === ty; })) $('device-type').value = ty;
+            var f = !ip && $('device-ip') ? $('device-ip') : $('device-name');
+            if (f) { f.scrollIntoView({ block: 'center' }); f.focus(); }
+        } catch (e) { /* prefill is only a convenience */ }
+    })();
+
     // ----- Saved Logins (credential vault) -----
     function syncVaultFields() {
         var community = $('vault-kind').value === 'community';

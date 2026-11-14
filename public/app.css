@@ -899,3 +899,19 @@ html[dir="rtl"] .card-actions a::after { content: "‹"; }
 .site-row input[type="checkbox"], .site-all input[type="checkbox"] { width: 17px; height: 17px; cursor: pointer; }
 .site-row:has(input[type="checkbox"]) { cursor: pointer; }
 .site-row:has(input[type="checkbox"]:checked) { background: var(--accent-soft); border-radius: 6px; }
+
+/* Topology: neighbours (who is next to whom). */
+.nb-sug { margin-top: 12px; padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border)); border-radius: 10px; background: var(--accent-soft); display: grid; gap: 6px; justify-items: start; }
+.nb-sug.warn { border-color: color-mix(in srgb, var(--warning) 50%, var(--border)); background: color-mix(in srgb, var(--warning) 10%, transparent); }
+.nb-ok { margin-top: 10px; color: var(--success); font-weight: 600; }
+.nb-near { margin-top: 12px; }
+.nb-near ul, .nb-unknown ul { list-style: none; margin-top: 6px; display: grid; gap: 4px; }
+.nb-near li { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
+.nb-chip { font-size: 0.75rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); }
+.nb-none { margin-top: 10px; }
+.nb-panel { margin-top: 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); }
+.nb-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.nb-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.nb-unknown { margin-top: 12px; }
+.nb-unknown summary { cursor: pointer; font-weight: 650; }
+.nb-unknown li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 6px 0; border-top: 1px solid var(--border); }
