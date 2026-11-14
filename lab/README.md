@@ -23,6 +23,10 @@ New-MikroTik is left exactly as it boots.
 ## Run a second TowerDesk for the lab (own data, own port)
     $env:TOWERDESK_DATA_DIR = 'G:\New folder (7)\towerdesk-lab-data'; $env:PORT = 3001; node server.js
     node scripts/mock-sas4.js --port 8085        # pretend SAS 4 (manager / lab-pass)
+    node scripts/mock-olt.js --port 1161         # pretend EPON OLT with 6 ONUs (SNMP, community public)
+
+There is no free OLT image for GNS3 (OLT firmware only ships in the vendors' hardware), so the OLT is pretend: it runs on the PC and the lab
+reaches it at 192.168.229.1:1161. Add it in TowerDesk as type OLT, method SNMP, port 1161, community public.
 
 ## Scripts here
 `build-gns3-project.ps1` (project, nodes, links through GNS3's local API), `configure-routers.js` (types the settings on the consoles),
