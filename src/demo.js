@@ -159,6 +159,13 @@ function build() {
     device({ id: 'd2', provider: 'HRINS core', name: 'Fiber ONU', type: 'onu', ip: '10.90.0.9', method: 'ping', loc: 'Cabinet', online: true, days: 29, lat: 2, summary: 'Replies to ping (2 ms)', details: {}, metrics: null })
   ];
 
+  // Where each demo device sits and what it connects to, so the Topology views have a shape.
+  const PARENT = { bh1: 'internet', bh2: 'internet', d1: 'bh1', s1: 'd1', s2: 'd1', s3: 'bh2', olt1: 'd1', d2: 'olt1' };
+  const SITE = { s2: 'North roof', s3: 'North roof', bh2: 'North roof' };
+  devices.forEach((d) => {
+    if (PARENT[d.id]) d.parentId = PARENT[d.id];
+    if (SITE[d.id]) d.location = SITE[d.id];
+  });
   pairLinks(devices);
   const online = devices.filter((d) => d.online === true).length;
   const lats = devices.map((d) => d.latencyMs).filter((x) => x !== null);
@@ -176,6 +183,12 @@ function build() {
     events: [
       { t: new Date(START - 6 * 60000).toISOString(), id: 's3', name: 'Sector South', ip: '10.90.1.3', online: false },
       { t: new Date(START - 92 * 60000).toISOString(), id: 's3', name: 'Sector South', ip: '10.90.1.3', online: true }
+    ],
+    changes: [
+      { t: new Date(START - 4 * 60000).toISOString(), kind: 'clients', id: 's2', name: 'Sector West', text: 'Sector West: 2 customer radios joined (now 6)' },
+      { t: new Date(START - 31 * 60000).toISOString(), kind: 'setting', id: 's1', name: 'Sector North', text: 'Sector North: the radio change was kept' },
+      { t: new Date(START - 48 * 60000).toISOString(), kind: 'clients', id: 's1', name: 'Sector North', text: 'Sector North: 1 customer radio left (now 6)' },
+      { t: new Date(START - 3 * 3600000).toISOString(), kind: 'device', id: 'd2', name: 'Fiber ONU', text: 'Fiber ONU was added' }
     ]
   };
 }

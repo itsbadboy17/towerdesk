@@ -343,63 +343,58 @@ app.post('/api/devices/:id/check', async (req, res) => {
   res.json({ device: devices.publicView(devices.get(d.id)), test: result });
 });
 
-// Enable SNMP on a MikroTik (the only action that WRITES to a device). The browser confirms
-// first; this logs in to the RouterOS API, turns SNMP on, ensures a read-only community exists,
-// then verifies over SNMP and switches the device to SNMP monitoring if that worked.
-const mikrotik = require('./src/transports/mikrotik');
-const snmpTransport = require('./src/transports/snmp');
-app.post('/api/devices/:id/enable-snmp', async (req, res) => {
+// Change how TowerDesk connects to ONE device, from its card: Auto (the saved default logins),
+// SNMP, a username and password, or ping only. The connection is tried first and the device is
+// only changed when it works. A password typed here is kept with the device (encrypted); with
+// saveAsDefault it is also added to the saved default logins that Add Device tries. Nothing secret
+// is ever returned.
+app.post('/api/devices/:id/connect', async (req, res) => {
   const d = devices.get(req.params.id);
   if (!d) return res.status(404).json({ error: 'Device not found' });
-  if (d.type !== 'mikrotik') return res.status(400).json({ error: 'Auto-enabling SNMP is only supported on MikroTik for now. On other devices, enable SNMP on the device, then add it with the SNMP method.' });
-
-  const opts = devices.connectionOptions(d);
-  const vault = credentials.resolved();
-  // Pick the community: one the request named, else a saved community, else "public".
-  let community = (req.body && req.body.community) ? String(req.body.community) : null;
-  let communityLabel = community ? 'the one you entered' : null;
-  if (!community && vault.communities.length) { community = vault.communities[0].community; communityLabel = '"' + vault.communities[0].label + '"'; }
-  if (!community) { community = 'public'; communityLabel = 'the default "public"'; }
-
-  // Log in to the RouterOS API with the device's saved login, falling back to the vault.
-  const secure = opts.method === 'mikrotik-ssl';
-  const apiPort = (opts.method === 'mikrotik' || opts.method === 'mikrotik-ssl') ? opts.port : undefined;
-  const candidates = [{ username: opts.username, password: opts.password }].concat(vault.logins);
-  let session = null;
-  for (const c of candidates) {
-    if (!c.password && !c.username) continue;
-    try { session = await mikrotik.Session.open({ host: opts.host, port: apiPort, username: c.username, password: c.password, secure }); break; } catch (e) { /* try the next login */ }
-  }
-  if (!session) {
-    return res.status(400).json({ error: 'Could not log in to the MikroTik API to change settings. On the router, enable IP → Services → api, make sure the login can write, then try again.' });
-  }
-  try {
-    await mikrotik.enableSnmp(session, { community });
-  } catch (e) {
-    return res.status(502).json({ error: 'Logged in, but could not turn on SNMP: ' + (e.message || 'command failed') });
-  } finally {
-    session.close();
-  }
-
-  // Confirm SNMP answers, then switch monitoring to it. If it can't be read back yet, keep the
-  // current method so monitoring never breaks.
-  const verify = await snmpTransport.test({ host: opts.host, community, version: '2c', timeout: 4000 });
-  let device = d;
-  if (verify.ok) {
-    device = devices.reconfigure(d.id, { method: 'snmp', community, port: null, lastTest: verify });
-    applyAutoName(d.id, verify);
+  const b = req.body || {};
+  const mode = ['auto', 'login', 'snmp', 'ping'].includes(b.mode) ? b.mode : 'auto';
+  const metricsMod = require('./src/metrics');
+  const finish = async (patch, extra) => {
+    devices.edit(d.id, patch);
+    const test = await transports.test(devices.connectionOptions(devices.get(d.id)));
+    devices.update(d.id, { lastTest: test, status: { online: !!test.ok, checkedAt: new Date().toISOString() } });
+    applyAutoName(d.id, test);
+    metricsMod.forget(d.id);
     monitor.tick();
+    return Object.assign({ ok: !!test.ok, device: devices.publicView(devices.get(d.id)), test }, extra);
+  };
+  try {
+    if (mode === 'ping') return res.json(await finish({ method: 'ping', port: null }));
+    const vault = credentials.resolved();
+    const typedLogin = (b.username || b.password) ? [{ username: String(b.username || '').slice(0, 64), password: String(b.password || '').slice(0, 200), label: 'typed here' }] : null;
+    const typedCommunity = b.community ? [{ community: String(b.community).slice(0, 100), label: 'typed here' }] : null;
+    const logins = mode === 'snmp' ? [] : (typedLogin || vault.logins);
+    const communities = mode === 'login' ? [] : (typedCommunity || vault.communities);
+    if (!logins.length && !communities.length) return res.json({ ok: false, needLogin: true, tried: 0, typed: false, mode });
+    // A device typed as "other" has no vendor to guess methods from: look at it first.
+    let vendor = d.type, method = d.method === 'ping' ? undefined : d.method;
+    if (d.type === 'other') {
+      const det = await transports.detect(d.ip);
+      if (det && det.ok) { vendor = det.vendor || vendor; method = method || det.suggestedMethod; }
+    }
+    const probe = await transports.probeCredentials({ host: d.ip, method, port: d.port, vendor, logins, communities, perTry: 5000 });
+    if (!probe.ok) return res.json({ ok: false, needLogin: true, tried: logins.length + communities.length, typed: !!(typedLogin || typedCommunity), mode });
+    let savedAsDefault = false;
+    if (b.saveAsDefault) {
+      if (typedLogin && !vault.logins.some((l) => l.username === probe.username && l.password === probe.password)) {
+        credentials.addLogin({ label: String(b.label || probe.username || 'login'), username: probe.username, password: probe.password });
+        savedAsDefault = true;
+      } else if (typedCommunity && !vault.communities.some((c) => c.community === probe.community)) {
+        credentials.addCommunity({ label: String(b.label || 'community'), community: probe.community });
+        savedAsDefault = true;
+      }
+    }
+    const patch = { method: probe.method, port: probe.port, username: probe.username, password: probe.password, community: probe.community };
+    if (d.type === 'other' && vendor && vendor !== 'other') patch.type = vendor;
+    return res.json(await finish(patch, { matched: probe.label || null, savedAsDefault }));
+  } catch (e) {
+    return res.json({ ok: false, error: 'Could not try the connection.' });
   }
-  res.json({
-    enabled: true,
-    verified: verify.ok,
-    switched: verify.ok,
-    communityLabel, // label only, never the community value
-    device: devices.publicView(devices.get(d.id)),
-    message: verify.ok
-      ? 'SNMP is on and TowerDesk is now monitoring this router over SNMP using ' + communityLabel + '.'
-      : 'SNMP was turned on with ' + communityLabel + ', but TowerDesk could not read it back yet (a firewall rule may block UDP 161). Monitoring is unchanged; press Check in a moment.'
-  });
 });
 
 // One-click "Fix unconnected": for every device that is not already connected with data, try the
@@ -467,9 +462,22 @@ app.put('/api/devices/:id', async (req, res) => {
   res.json({ success: true, device: devices.publicView(devices.get(d.id)), test });
 });
 
+// Topology: place devices on a site and say what each one connects to. Saves only those two
+// fields (no re-test, no change to how a device is monitored).
+app.post('/api/topology/layout', (req, res) => {
+  const changes = Array.isArray(req.body && req.body.changes) ? req.body.changes.slice(0, 200) : [];
+  const done = [], errors = [];
+  changes.forEach((c) => {
+    const r = devices.setLayout(String((c && c.id) || ''), { location: c && c.location, parentId: c && c.parentId });
+    if (r.error) errors.push({ id: c && c.id, error: r.error }); else done.push(c.id);
+  });
+  res.json({ ok: errors.length === 0, done, errors });
+});
+
 app.delete('/api/devices/:id', (req, res) => {
   if (!devices.remove(req.params.id)) return res.status(404).json({ error: 'Device not found' });
   alerts.forgetDevice(req.params.id);
+  require('./src/radio-history').forget(req.params.id);
   res.json({ success: true });
 });
 
@@ -587,7 +595,9 @@ function demoStatus(id) {
   if (Date.now() >= p.revertAt) { demoPending.delete(id); return { expired: true, applied: p.applied }; }
   return { applied: p.applied, revertAt: p.revertAt, secondsLeft: Math.round((p.revertAt - Date.now()) / 1000), revertMinutes: radio.REVERT_MIN };
 }
-app.get('/api/ai/config', (req, res) => res.json(advisor.getConfig()));
+app.get('/api/ai/config', async (req, res) => {
+  try { res.json(await advisor.status()); } catch (e) { res.json(advisor.getConfig()); }
+});
 app.post('/api/ai/config', (req, res) => {
   try { res.json(advisor.setConfig(req.body || {})); }
   catch (e) { res.status(400).json({ error: 'Could not save the AI settings' }); }
@@ -618,6 +628,74 @@ app.post('/api/advisor/:id', async (req, res) => {
     res.json(out);
   } catch (e) { res.json({ error: 'Could not check this sector' }); }
 });
+// ----- Channel suggestions and the change history of a radio -----
+const radioHistory = require('./src/radio-history');
+const demoHist = new Map();
+function demoHistory(device, ctxFreq) {
+  if (!demoHist.has(device.id)) {
+    const f = ctxFreq || 5180;
+    demoHist.set(device.id, [
+      { t: new Date(Date.now() - 2 * 86400000).toISOString(), deviceId: device.id, deviceName: device.name, action: 'kept', changes: [{ setting: 'frequency', label: 'Frequency', unit: 'MHz', from: f - 40, to: f }] },
+      { t: new Date(Date.now() - 3 * 86400000).toISOString(), deviceId: device.id, deviceName: device.name, action: 'undone', changes: [{ setting: 'txPower', label: 'Transmit power', unit: 'dBm', from: 24, to: 20 }] }
+    ]);
+  }
+  return demoHist.get(device.id);
+}
+function demoRecord(device, action, changes) {
+  const l = demoHistory(device);
+  l.unshift({ t: new Date().toISOString(), deviceId: device.id, deviceName: device.name, action, changes });
+}
+function offer(req, device, snap, raw) {
+  const demo = isDemo(req);
+  const canApply = demo ? ['frequency', 'txPower'] : radio.capabilities(device);
+  const ctx = advisor.context(device, snap.devices, canApply);
+  const changes = advisor.sanitize(ctx, raw);
+  return {
+    changes, proposalId: changes.length ? advisor.remember(device.id, changes) : null, dropped: raw.length - changes.length,
+    applyNote: demo ? null : radio.whyNot(device), experimental: demo ? (device.type === 'ubnt' || device.method === 'airos') : radio.experimental(device),
+    pending: demo ? demoStatus(device.id) : radio.status(device.id)
+  };
+}
+app.get('/api/advisor/:id/history', (req, res) => {
+  const { snap, device } = advisorDevice(req);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+  const ctx = advisor.context(device, snap.devices, []);
+  res.json({ entries: isDemo(req) ? demoHistory(device, ctx.sector.frequencyMHz).slice(0, 30) : radioHistory.list(device.id, 30) });
+});
+app.post('/api/advisor/:id/channels', (req, res) => {
+  const { snap, device } = advisorDevice(req);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+  res.json(advisor.channelPlan(advisor.context(device, snap.devices, [])));
+});
+app.post('/api/advisor/:id/channel', (req, res) => {
+  const { snap, device } = advisorDevice(req);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+  const ctx = advisor.context(device, snap.devices, []);
+  const c = advisor.channelChange(ctx, req.body && req.body.frequencyMHz);
+  if (!c) return res.json({ error: 'That channel is not one of the suggestions any more. Search again.' });
+  res.json(offer(req, device, snap, [c]));
+});
+// Turn an entry of the history into a proposal: go back to what it was before, or do it again.
+app.post('/api/advisor/:id/history-proposal', (req, res) => {
+  const { snap, device } = advisorDevice(req);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+  const demo = isDemo(req);
+  const t = String((req.body && req.body.t) || '');
+  const entry = demo ? demoHistory(device).find((e) => e.t === t) : radioHistory.find(device.id, t);
+  if (!entry) return res.json({ error: 'That history entry was not found.' });
+  const back = (req.body && req.body.mode) !== 'again';
+  const when = new Date(entry.t).toLocaleString();
+  const raw = entry.changes.filter((c) => (back ? c.from : c.to) != null).map((c) => ({
+    setting: c.setting, to: back ? c.from : c.to,
+    reason: back ? 'Puts it back to what it was before the change of ' + when + '.' : 'Repeats the change of ' + when + '.',
+    risk: 'Clients reconnect; allow about a minute.'
+  }));
+  if (!raw.length) return res.json({ error: 'There is nothing to put back for that entry.' });
+  const out = offer(req, device, snap, raw);
+  if (!out.changes.length) out.error = 'The radio already has those values, or they are outside the safe limits.';
+  res.json(out);
+});
+
 // Read-only: can this radio take a one-click change? Logs in and looks; changes nothing.
 app.post('/api/advisor/:id/preflight', async (req, res) => {
   const { device } = advisorDevice(req);
@@ -638,12 +716,14 @@ app.post('/api/advisor/:id/apply', async (req, res) => {
     let st;
     if (isDemo(req)) {
       const now = Date.now();
+      demoRecord(device, 'applied', chosen.map((c) => ({ setting: c.setting, label: c.label, unit: c.unit, from: c.from, to: c.to })));
       demoPending.set(device.id, { applied: chosen.map((c) => ({ setting: c.setting, label: c.label, unit: c.unit, from: c.from, to: c.to })), revertAt: now + radio.REVERT_MIN * 60 * 1000 });
       st = demoStatus(device.id);
     } else {
       st = await radio.apply(device, chosen);
     }
     advisor.forget(req.body.proposalId);
+    if (!isDemo(req)) monitor.note('setting', device.id, device.name, device.name + ': ' + chosen.map((c) => c.label + ' ' + (c.from == null ? '?' : c.from) + ' → ' + c.to + ' ' + c.unit).join(', ') + ' (applied, waiting to be kept)');
     res.json({ pending: st });
   } catch (e) { res.json({ error: e.message }); }
 });
@@ -651,8 +731,15 @@ app.post('/api/advisor/:id/:action(keep|undo)', async (req, res) => {
   const { device } = advisorDevice(req);
   if (!device) return res.status(404).json({ error: 'Device not found' });
   try {
-    if (isDemo(req)) { demoPending.delete(device.id); return res.json(req.params.action === 'keep' ? { kept: true } : { undone: true }); }
-    res.json(req.params.action === 'keep' ? await radio.keep(device) : await radio.undo(device));
+    if (isDemo(req)) {
+      const p = demoPending.get(device.id);
+      if (p) demoRecord(device, req.params.action === 'keep' ? 'kept' : 'undone', p.applied);
+      demoPending.delete(device.id);
+      return res.json(req.params.action === 'keep' ? { kept: true } : { undone: true });
+    }
+    const result = req.params.action === 'keep' ? await radio.keep(device) : await radio.undo(device);
+    monitor.note('setting', device.id, device.name, device.name + ': the radio change was ' + (req.params.action === 'keep' ? 'kept' : 'undone'));
+    res.json(result);
   } catch (e) { res.json({ error: e.message }); }
 });
 

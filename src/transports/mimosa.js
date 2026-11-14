@@ -69,6 +69,10 @@ function parseStatus(j) {
   const distance = distM === undefined ? undefined : (distM > 50 ? Math.round((distM / 1000) * 100) / 100 : distM);
   const txpower = nf(s.ActualTotalTxPower) !== undefined ? nf(s.ActualTotalTxPower) : nf(s.tx_power);
   const MODELS = { C02: 'C5c' }; // confirmed; other codes fall through to the raw value
+  // Which end of the link this radio is. A point-to-point "Access point" is the master end ('master',
+  // never 'ap', which TowerDesk reads as a sector); a point-to-multipoint one is a real AP.
+  const devMode = String(di.DeviceMode || '');
+  const mode = /access/i.test(devMode) ? (String(di.PTMPMode) === '1' ? 'ap-ptmp' : 'master') : (/station/i.test(devMode) ? 'sta' : undefined);
   return {
     hostname: di.DeviceName,
     model: di.productName || MODELS[di.Model] || di.Model,
@@ -89,7 +93,9 @@ function parseStatus(j) {
       connected: String(c.connected) === '1' || c.connected === true,
       throughput,
       remoteName: rem.DeviceName,
-      remoteModel: rem.Model
+      remoteModel: rem.Model,
+      mode,
+      remoteMode: /station/i.test(String(rem.DeviceMode || '')) ? 'sta' : (/access/i.test(String(rem.DeviceMode || '')) ? 'master' : undefined)
     },
     throughput
   };

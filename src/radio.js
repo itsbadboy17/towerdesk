@@ -12,6 +12,7 @@
 const devices = require('./devices');
 const mikrotik = require('./transports/mikrotik');
 const airosSsh = require('./transports/airos-ssh');
+const radioHistory = require('./radio-history');
 
 const REVERT_MIN = 5;
 const SCHED = 'towerdesk-revert';
@@ -197,7 +198,9 @@ async function apply(device, changes) {
   if (!list.length) throw new Error('Nothing to apply.');
   if (pending.has(device.id)) throw new Error('An earlier change on this sector is still waiting for Keep or Undo.');
   const rec = kind === 'mikrotik' ? await applyMikrotik(device, list) : await applyAiros(device, list);
+  rec.name = device.name;
   pending.set(device.id, rec);
+  radioHistory.add({ deviceId: device.id, deviceName: device.name, action: 'applied', changes: rec.applied });
   return status(device.id);
 }
 
@@ -205,9 +208,10 @@ async function apply(device, changes) {
 async function keep(device) {
   const rec = pending.get(device.id);
   if (!rec) throw new Error('Nothing is waiting on this sector.');
-  if (Date.now() >= rec.revertAt) { pending.delete(device.id); throw new Error('Too late: the radio has already put the old values back.'); }
+  if (Date.now() >= rec.revertAt) { pending.delete(device.id); radioHistory.add({ deviceId: device.id, deviceName: rec.name, action: 'expired', changes: rec.applied }); throw new Error('Too late: the radio has already put the old values back.'); }
   if (rec.kind === 'airos') await keepAiros(device); else await keepMikrotik(device);
   pending.delete(device.id);
+  radioHistory.add({ deviceId: device.id, deviceName: rec.name || device.name, action: 'kept', changes: rec.applied });
   return { kept: true };
 }
 
@@ -217,13 +221,14 @@ async function undo(device) {
   if (!rec) throw new Error('Nothing is waiting on this sector.');
   if (rec.kind === 'airos') await undoAiros(device); else await undoMikrotik(device, rec);
   pending.delete(device.id);
+  radioHistory.add({ deviceId: device.id, deviceName: rec.name || device.name, action: 'undone', changes: rec.applied });
   return { undone: true };
 }
 
 function status(deviceId) {
   const rec = pending.get(deviceId);
   if (!rec) return null;
-  if (Date.now() >= rec.revertAt) { pending.delete(deviceId); return { expired: true, applied: rec.applied }; }
+  if (Date.now() >= rec.revertAt) { pending.delete(deviceId); radioHistory.add({ deviceId, deviceName: rec.name, action: 'expired', changes: rec.applied }); return { expired: true, applied: rec.applied }; }
   return { applied: rec.applied, revertAt: rec.revertAt, secondsLeft: Math.max(0, Math.round((rec.revertAt - Date.now()) / 1000)), revertMinutes: REVERT_MIN };
 }
 

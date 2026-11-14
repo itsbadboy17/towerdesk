@@ -90,7 +90,7 @@
             <div class="kpi-card">
                 <div class="kpi-head"><h3>Devices</h3></div>
                 <div class="kpi-value" id="kpi-total">–</div>
-                <div class="kpi-change muted" id="kpi-total-sub">Monitored</div>
+                <div class="kpi-change muted" id="kpi-total-sub">Added to TowerDesk</div>
             </div>
             <div class="kpi-card">
                 <div class="kpi-head"><h3>Online</h3></div>
@@ -103,9 +103,9 @@
                 <div class="kpi-change badge-down" id="kpi-offline-sub">&nbsp;</div>
             </div>
             <div class="kpi-card">
-                <div class="kpi-head"><h3>Total Traffic</h3></div>
+                <div class="kpi-head"><h3>Sector traffic</h3></div>
                 <div class="kpi-value" id="kpi-traffic">–</div>
-                <div class="kpi-change muted" id="kpi-traffic-sub">RX + TX, live</div>
+                <div class="kpi-change muted" id="kpi-traffic-sub" title="What customers are using right now, added up over all your sectors (download + upload). Routers and backhauls are not added, because they carry the same traffic again.">Customers, all sectors</div>
             </div>
             <div class="kpi-card">
                 <div class="kpi-head"><h3>Sectors</h3></div>
@@ -113,9 +113,9 @@
                 <div class="kpi-change muted" id="kpi-sectors-sub">PtMP access points</div>
             </div>
             <div class="kpi-card">
-                <div class="kpi-head"><h3>Subscribers</h3></div>
+                <div class="kpi-head"><h3>Customer radios</h3></div>
                 <div class="kpi-value" id="kpi-subs">–</div>
-                <div class="kpi-change muted" id="kpi-subs-sub">Connected clients</div>
+                <div class="kpi-change muted" id="kpi-subs-sub" title="Customer radios currently connected to your sectors, from each sector's client list.">Connected to sectors</div>
             </div>
         </div>
 
@@ -149,6 +149,7 @@
     </main>
 
     <script src="/insights.js"></script>
+    <script src="/charts.js"></script>
     <script src="/monitoring.js"></script>
 </body>
 </html>

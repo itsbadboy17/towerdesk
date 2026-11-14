@@ -3,7 +3,8 @@
 
     var POLL_MS = 5000;
     var TYPE_LABELS = { mikrotik: 'MikroTik', cisco: 'Cisco', ubnt: 'Ubiquiti', mimosa: 'Mimosa', tplink: 'TP-Link', onu: 'ONU', olt: 'OLT', other: 'Device' };
-    var DEMO = location.search.indexOf('demo') >= 0 || (function () { try { return localStorage.getItem('td-demo') === '1'; } catch (e) { return false; } })();
+    var DEMO = !!window.TowerDesk.demo;
+    var CAN_EDIT = !DEMO; // demo devices are not saved, so nothing can be reconnected there
     var MON_URL = DEMO ? '/api/monitor?demo=1' : '/api/monitor';
     var selectedProvider = (function () { try { return localStorage.getItem('td-provider') || 'all'; } catch (e) { return 'all'; } })();
     var $ = function (id) { return document.getElementById(id); };
@@ -103,10 +104,27 @@
             '</svg><div class="chart-scale muted">peak ' + esc(bps(max)) + '</div>';
     }
 
+    function stepSec() { return lastData && lastData.intervalMs ? Math.round(lastData.intervalMs / 1000) : 10; }
+    // Latency for the last 10 minutes: now / average / worst, then the chart.
+    function latencyChart(history) {
+        var vals = history || [], oks = vals.filter(function (v) { return v !== null; });
+        if (vals.length < 2) return '<p class="muted">Collecting latency readings…</p>';
+        var avg = oks.length ? oks.reduce(function (a, b) { return a + b; }, 0) / oks.length : null;
+        var now = vals[vals.length - 1], worst = oks.length ? Math.max.apply(null, oks) : null;
+        var lost = vals.length - oks.length;
+        return '<div class="ch-chips"><span>Now <b>' + esc(ms(now)) + '</b></span><span>Average <b>' + esc(ms(avg === null ? null : Math.round(avg * 10) / 10)) + '</b></span><span>Worst <b>' + esc(ms(worst)) + '</b></span>' +
+            (lost ? '<span class="bad">No answer <b>' + lost + '</b> of ' + vals.length + ' checks</span>' : '') + '</div>' +
+            window.TowerDesk.charts.line({ series: [{ name: 'Latency', color: 'var(--accent)', values: vals, fmt: 'ms', fill: 0.2 }], minMax: 10, stepSec: stepSec(), avg: avg, gaps: true });
+    }
+    function trafficLines(rx, tx) {
+        return window.TowerDesk.charts.line({ series: [{ name: 'Download', color: 'var(--accent)', values: rx, fmt: 'bps', fill: 0.2 }, { name: 'Upload', color: '#e8872b', values: tx, fmt: 'bps', fill: 0.12 }], minMax: 1000, stepSec: stepSec() });
+    }
+
     function metricsBlock(m) {
-        if (!m) return '<p class="muted live-info">📈 Traffic graphs need the <strong>MikroTik API</strong>, <strong>SNMP</strong> or <strong>TP-Link router login</strong> method (or a TP-Link with its password saved).</p>';
+        if (!m) return '<p class="muted live-info">No traffic graph: this device is on ping only, so TowerDesk has nothing to read. Press <strong>Connect</strong> above to add a login or SNMP.</p>';
         if (m.error) return '<p class="live-error">⚠️ ' + esc(m.error) + '</p>';
-        if (m.waiting || !m.interfaces.length) return '<p class="muted live-info">📈 Collecting traffic data (' + esc(m.source) + ')…</p>';
+        if (m.lastPoll && !m.interfaces.length) return '<p class="muted live-info">This device does not report traffic counters, so there is no traffic graph. The signal and client numbers above are live.</p>';
+        if (m.waiting || !m.interfaces.length) return '<p class="muted live-info"><span class="spin" aria-hidden="true"></span> Waiting for the first readings from this device (' + esc(m.source) + '). A traffic graph needs two readings, about 20 seconds apart. If this stays, the device is slow to answer.</p>';
         var top = m.interfaces[0];
         var sys = [];
         if (m.signal !== null && m.signal !== undefined) sys.push('signal <strong>' + esc(m.signal) + ' dBm</strong>');
@@ -117,7 +135,7 @@
         return '<div class="traffic">' +
             '<div class="traffic-head"><span><strong>' + esc(top.name) + '</strong> <span class="muted">· ' + esc(m.source) + '</span></span>' +
             '<span class="legend"><span class="rx">↓ ' + esc(bps(top.rxBps)) + '</span><span class="tx">↑ ' + esc(bps(top.txBps)) + '</span></span></div>' +
-            trafficChart(top.rx, top.tx) +
+            trafficLines(top.rx, top.tx) +
             (m.kind === 'stations' && m.interfaces.length < 2 ? ''
             : m.kind === 'clients'
                 ? (m.clients && m.clients.length
@@ -165,7 +183,7 @@
     // Do not redraw the card under the user: an open ping result, a history chart, or the ONU
     // search box while it is being typed in.
     function detailBusy(body) {
-        return !!body.querySelector('.net-tools-out:not([hidden]), .sta-history, .adv-open') || !!(document.activeElement && document.activeElement.id === 'onu-filter');
+        return !!body.querySelector('.net-tools-out:not([hidden]), .sta-history, .adv-open') || !!document.getElementById('conn-dialog') || !!(document.activeElement && /^(onu-filter|conn-mode)$/.test(document.activeElement.id));
     }
 
     // ----- OLT: the ONU table (optical power, temperature) -----
@@ -223,36 +241,69 @@
             }));
     }
 
-    // ----- Sector advisor: diagnose, propose, and apply only what the owner accepts -----
-    var adv = { id: null, busy: false, data: null, error: null, msg: '', pf: null };
+    // ----- Sector advisor: find out what is wrong, and change things only when the owner says so -----
+    function blankAdv(id) { return { id: id || null, busy: '', msg: '', since: 0, data: null, error: null, pf: null, channels: null, history: null }; }
+    var adv = blankAdv();
     function advQ() { return DEMO ? '?demo=1' : ''; }
+    function advUrl(path) { return '/api/advisor/' + encodeURIComponent(detailId) + path + advQ(); }
     function advPost(path, body) {
-        return fetch('/api/advisor/' + encodeURIComponent(detailId) + path + advQ(), {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {})
-        }).then(function (r) { return r.json(); });
+        return fetch(advUrl(path), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }).then(function (r) { return r.json(); });
     }
     function advRedraw() {
         var el = document.getElementById('adv-panel');
         var d = lastData && lastData.devices.find(function (x) { return x.id === detailId; });
         if (el && d) el.outerHTML = advisorBlock(d);
     }
+    function advData() {
+        if (!adv.data) adv.data = { findings: [], ai: null, aiError: null, changes: [], proposalId: null, pending: null, via: null, sent: { clients: 0, otherRadios: 0 }, experimental: false, applyNote: null };
+        return adv.data;
+    }
+    function advStart(kind, msg) { adv.busy = kind; adv.msg = msg; adv.error = null; adv.since = Date.now(); advRedraw(); }
+    function advStop() { adv.busy = ''; adv.msg = ''; }
+    function advFail(text) { advStop(); adv.error = text; advRedraw(); }
+    function advLost() { advFail('Could not reach TowerDesk. Check that the app is still running.'); }
+    function loadHistory() {
+        fetch(advUrl('/history')).then(function (r) { return r.json(); }).then(function (j) { adv.history = j.entries || []; advRedraw(); }).catch(function () { /* history is optional */ });
+    }
     function advRun(useAi) {
-        adv = { id: detailId, busy: true, data: adv.id === detailId ? adv.data : null, error: null, msg: useAi ? 'Asking the AI…' : 'Checking…' };
-        advRedraw();
+        advStart(useAi ? 'ai' : 'check', useAi ? 'Asking Claude… this takes 20 to 60 seconds. You can keep using TowerDesk meanwhile.' : 'Checking this sector…');
         advPost('', { ai: !!useAi, lang: document.documentElement.lang === 'ar' ? 'ar' : 'en' }).then(function (j) {
-            adv.busy = false; adv.msg = '';
+            advStop();
             if (j.error) adv.error = j.error; else adv.data = j;
             advRedraw();
-        }).catch(function () { adv.busy = false; adv.msg = ''; adv.error = 'Could not reach TowerDesk.'; advRedraw(); });
+        }).catch(advLost);
+    }
+    function advChannels() {
+        advStart('channels', 'Looking for channels that stay clear of your other radios…');
+        advPost('/channels').then(function (plan) { advStop(); adv.channels = plan; advRedraw(); }).catch(advLost);
+    }
+    // A suggestion or a history entry becomes a proposed change the owner still has to apply.
+    function mergeOffer(j, okMsg) {
+        if (j.error) { adv.error = j.error; return; }
+        var d = advData();
+        d.changes = j.changes || []; d.proposalId = j.proposalId; d.applyNote = j.applyNote; d.experimental = j.experimental; d.pending = j.pending;
+        adv.msg = okMsg + (j.dropped ? ' (' + j.dropped + ' value' + (j.dropped === 1 ? ' was' : 's were') + ' left out: outside the safe limits.)' : '');
+    }
+    function advUseChannel(freq) {
+        advStart('offer', 'Preparing the change…');
+        advPost('/channel', { frequencyMHz: Number(freq) }).then(function (j) { advStop(); mergeOffer(j, 'Review the change below, then press Apply.'); advRedraw(); scrollToProposal(); }).catch(advLost);
+    }
+    function advFromHistory(t, mode) {
+        advStart('offer', 'Preparing the change…');
+        advPost('/history-proposal', { t: t, mode: mode }).then(function (j) { advStop(); mergeOffer(j, mode === 'again' ? 'Review the change below, then press Apply.' : 'Review what it goes back to below, then press Apply.'); advRedraw(); scrollToProposal(); }).catch(advLost);
+    }
+    function scrollToProposal() {
+        var el = document.getElementById('adv-proposed');
+        if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
     // Read-only: log in to the radio and check it can take a one-click change. Changes nothing.
     function advPreflight() {
-        adv.busy = true; adv.error = null; adv.msg = 'Checking the radio…'; adv.pf = null; advRedraw();
+        advStart('pf', 'Checking the radio…');
         advPost('/preflight').then(function (j) {
-            adv.busy = false; adv.msg = '';
+            advStop();
             adv.pf = { ok: !!j.ok, problems: j.problems || [], frequency: j.frequency, txPower: j.txPower, sample: !!j.sample };
             advRedraw();
-        }).catch(function () { adv.busy = false; adv.msg = ''; adv.error = 'Could not reach TowerDesk.'; advRedraw(); });
+        }).catch(advLost);
     }
     function advApply() {
         var boxes = document.querySelectorAll('#adv-panel input[data-adv-change]:checked');
@@ -262,77 +313,238 @@
         var btn = document.getElementById('adv-apply');
         window.TowerDesk.inlineConfirm(btn, 'Change this live sector now? ' + list + '. Clients may drop for about a minute.').then(function (yes) {
             if (!yes) return;
-            adv.busy = true; adv.error = null; adv.msg = 'Applying…'; advRedraw();
+            advStart('apply', 'Applying…');
             advPost('/apply', { proposalId: adv.data.proposalId, accept: accept }).then(function (j) {
-                adv.busy = false; adv.msg = '';
+                advStop();
                 if (j.error) adv.error = j.error;
-                else { adv.data.pending = j.pending; adv.data.changes = []; adv.data.proposalId = null; }
+                else { adv.data.pending = j.pending; adv.data.changes = []; adv.data.proposalId = null; loadHistory(); }
                 advRedraw();
-            }).catch(function () { adv.busy = false; adv.msg = ''; adv.error = 'Lost contact while applying. The radio puts the old values back by itself in a few minutes.'; advRedraw(); });
+            }).catch(function () { advFail('Lost contact while applying. The radio puts the old values back by itself in a few minutes.'); });
         });
     }
     function advFinish(action) {
-        adv.busy = true; adv.error = null; adv.msg = action === 'keep' ? 'Keeping…' : 'Undoing…'; advRedraw();
+        advStart(action, action === 'keep' ? 'Keeping the change…' : 'Undoing…');
         advPost('/' + action).then(function (j) {
-            adv.busy = false;
-            if (j.error) { adv.error = j.error; adv.msg = ''; }
-            else { adv.data.pending = null; adv.msg = action === 'keep' ? 'Kept. The new values stay.' : 'Undone. The old values are back.'; }
+            advStop();
+            if (j.error) adv.error = j.error;
+            else { advData().pending = null; adv.msg = action === 'keep' ? 'Kept. The new values stay.' : 'Undone. The old values are back.'; loadHistory(); }
             advRedraw();
-        }).catch(function () { adv.busy = false; adv.msg = ''; adv.error = 'Could not reach the radio. It puts the old values back by itself.'; advRedraw(); });
+        }).catch(function () { advFail('Could not reach the radio. It puts the old values back by itself.'); });
+    }
+    function copyText(text, btn) {
+        var done = function () { if (btn) { var old = btn.textContent; btn.textContent = 'Copied ✓'; setTimeout(function () { btn.textContent = old; }, 1600); } };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () { window.prompt('Copy this command:', text); });
+        else window.prompt('Copy this command:', text);
+    }
+
+    // Plain explanation of a failure; a sign-in command gets its own block with a Copy button.
+    function advErrorBox(title, text) {
+        var m = /(& ".+?" auth login)/.exec(text || '');
+        if (m) {
+            return '<div class="adv-error" role="alert"><strong>' + esc(title) + '</strong><p>' + esc(text.replace(m[1], '').replace(/\s*:\s*$/, ':').trim()) + '</p>' +
+                '<pre class="adv-cmd">' + esc(m[1]) + '</pre><button type="button" class="btn-secondary btn-sm" data-adv="copy" data-cmd="' + esc(m[1]) + '">Copy command</button></div>';
+        }
+        return '<div class="adv-error" role="alert"><strong>' + esc(title) + '</strong><p>' + esc(text) + '</p></div>';
+    }
+    var ACTION_TEXT = { applied: 'Applied', kept: 'Kept', undone: 'Undone', expired: 'Reverted by the radio' };
+    function changeText(list, back) {
+        return (list || []).map(function (c) { return esc(c.label) + ' ' + esc(back ? (c.to == null ? '?' : c.to) : (c.from == null ? '?' : c.from)) + ' → ' + esc(back ? (c.from == null ? '?' : c.from) : (c.to == null ? '?' : c.to)) + ' ' + esc(c.unit); }).join(', ');
+    }
+    function advStep(kind, title, text, cls, busy) {
+        return '<div class="adv-step"><button type="button" class="' + cls + ' btn-sm" data-adv="' + kind + '"' + (busy ? ' disabled' : '') + '>' + esc(title) + '</button><p class="muted">' + esc(text) + '</p></div>';
+    }
+    function channelsBlock(ch, busy, canChange) {
+        if (!ch) return '';
+        var h = '<h5>Channels</h5>';
+        if (!ch.current) return h + '<p class="muted">' + esc(ch.note) + '</p>';
+        h += '<p class="adv-now">Now: <strong>' + esc(ch.current.frequencyMHz) + ' MHz</strong>, ' + esc(ch.current.widthMHz) + ' MHz wide. ' +
+            (ch.current.overlaps && ch.current.overlaps.length ? '<span class="adv-bad">It overlaps ' + esc(ch.current.overlaps.join(', ')) + ' (your own radio' + (ch.current.overlaps.length === 1 ? '' : 's') + ').</span>' : '<span class="adv-good">It does not overlap any of your other radios.</span>') + '</p>';
+        if (!ch.options.length) return h + '<p class="muted">' + esc(ch.note) + '</p>';
+        h += (ch.allOverlap ? '<p class="adv-bad">Every channel overlaps something of yours; these overlap the least.</p>' : '<p class="muted">Free channels, best first. “Clear by” is the gap to your nearest radio.</p>') +
+            '<div class="reg-wrap"><table class="iface-table adv-table"><thead><tr><th>Channel</th><th>Clear by</th><th>Nearest radio</th><th>Move</th><th></th></tr></thead><tbody>' +
+            ch.options.map(function (o) {
+                return '<tr><td class="mono"><strong>' + esc(o.frequencyMHz) + ' MHz</strong></td><td class="mono">' + (o.clearanceMHz === null ? 'nothing near' : esc(o.clearanceMHz) + ' MHz') + '</td><td>' + esc(o.nearest || '–') + '</td>' +
+                    '<td class="mono">' + (o.moveMHz > 0 ? '+' : '') + esc(o.moveMHz) + ' MHz</td><td>' + (canChange ? '<button type="button" class="btn-secondary btn-sm" data-adv-chan="' + esc(o.frequencyMHz) + '"' + (busy ? ' disabled' : '') + '>Use this channel</button>' : '') + '</td></tr>';
+            }).join('') + '</tbody></table></div><p class="muted adv-fine">' + esc(ch.note) + '</p>';
+        return h;
+    }
+    function historyBlock(list, busy, canChange) {
+        if (list === null) return '';
+        var h = '<details class="adv-history"' + (list.length ? ' open' : '') + '><summary>Change history (' + list.length + ')</summary>';
+        if (!list.length) return h + '<p class="muted">Nothing has been changed on this radio through TowerDesk yet.</p></details>';
+        h += '<ul class="adv-hist">' + list.map(function (e) {
+            var back = e.action === 'applied' || e.action === 'kept';
+            var btn = canChange ? '<button type="button" class="btn-secondary btn-sm" data-adv-hist="' + (back ? 'back' : 'again') + '" data-t="' + esc(e.t) + '"' + (busy ? ' disabled' : '') + '>' + (back ? 'Go back to ' + changeText(e.changes, true).split(' → ')[1].replace(/<[^>]*>/g, '') : 'Apply again') + '</button>' : '';
+            return '<li><span class="mono muted">' + esc(new Date(e.t).toLocaleString()) + '</span> <span class="adv-chip ' + esc(e.action) + '">' + esc(ACTION_TEXT[e.action] || e.action) + '</span> ' + changeText(e.changes, false) + ' ' + btn + '</li>';
+        }).join('') + '</ul></details>';
+        return h;
     }
     function advisorBlock(d) {
         var mine = adv.id === d.id;
-        var a = mine ? adv.data : null;
-        var h = '<div id="adv-panel" class="adv-panel' + (mine && (a || adv.busy || adv.error) ? ' adv-open' : '') + '">';
-        h += '<div class="adv-actions"><button type="button" class="btn-secondary btn-sm" data-adv="check"' + (adv.busy ? ' disabled' : '') + '>Check this sector</button>' +
-            '<button type="button" class="btn-primary btn-sm" data-adv="ai"' + (adv.busy ? ' disabled' : '') + '>Ask AI for advice</button>' +
-            (mine && adv.msg ? '<span class="muted" role="status">' + esc(adv.msg) + '</span>' : '') + '</div>';
-        if (mine && adv.error) h += '<p class="live-error">⚠️ ' + esc(adv.error) + '</p>';
+        var a = mine ? adv.data : null, busy = mine ? adv.busy : '';
+        var canChange = !!(a ? (a.changes && a.changes.length) || a.pending : false);
+        var h = '<div id="adv-panel" class="adv-panel' + (mine && (a || busy || adv.error || adv.channels) ? ' adv-open' : '') + '">';
+        h += '<p class="adv-lead">Find out why this sector is slow or unstable, and fix it if you want. <strong>Nothing changes on the radio until you press Apply and confirm</strong>, and every change can be undone.</p>';
+        h += '<div class="adv-steps">' +
+            advStep('check', 'Check this sector', 'Instant and offline. Looks at each customer\'s signal and link quality, and at channel overlap.', 'btn-secondary', busy) +
+            advStep('channels', 'Find a better channel', 'Lists channels that stay clear of your other radios, so you can switch to one in a click.', 'btn-secondary', busy) +
+            advStep('ai', 'Ask AI for advice', 'Sends anonymised numbers (no names, MACs or IPs) to Claude, which explains what is wrong. Takes 20 to 60 seconds.', 'btn-primary', busy) + '</div>';
+        if (busy) h += '<div class="adv-progress" role="status"><span class="spin" aria-hidden="true"></span><span>' + esc(adv.msg) + '</span><span class="muted" data-adv-since="' + esc(adv.since) + '"></span></div>';
+        else if (mine && adv.msg) h += '<p class="adv-done" role="status">' + esc(adv.msg) + '</p>';
+        if (mine && adv.error) h += advErrorBox('That did not work', adv.error);
         var pf = mine ? adv.pf : null;
-        if (!a) return h + '<p class="muted adv-hint">The check reads this sector\'s live data and points at likely causes. AI advice is optional and needs a key in Settings.</p></div>';
-        h += '<ul class="adv-findings">' + a.findings.map(function (f) { return '<li class="adv-' + esc(f.severity) + '">' + esc(f.text) + '</li>'; }).join('') + '</ul>';
-        if (a.aiError) h += '<p class="live-error">⚠️ ' + esc(a.aiError) + '</p>';
-        if (a.ai) {
-            h += '<div class="adv-ai"><div class="adv-ai-head"><strong>AI advice</strong> <span class="muted">confidence: ' + esc(a.ai.confidence) + ' · sent ' + esc(a.sent.clients) + ' clients and ' + esc(a.sent.otherRadios) + ' radios, no names or addresses</span></div>' +
+        if (a && a.findings && a.findings.length) h += '<h5>What the check found</h5><ul class="adv-findings">' + a.findings.map(function (f) { return '<li class="adv-' + esc(f.severity) + '">' + esc(f.text) + '</li>'; }).join('') + '</ul>';
+        if (mine) h += channelsBlock(adv.channels, busy, true);
+        if (a && a.aiError) h += advErrorBox('Could not get AI advice', a.aiError);
+        if (a && a.ai) {
+            h += '<div class="adv-ai"><div class="adv-ai-head"><strong>AI advice</strong> <span class="muted">confidence: ' + esc(a.ai.confidence) + (a.via === 'claude-code' ? ' · via Claude Code on this PC' : '') + ' · sent ' + esc(a.sent.clients) + ' clients and ' + esc(a.sent.otherRadios) + ' radios, no names or addresses</span></div>' +
                 '<p>' + esc(a.ai.summary) + '</p>' +
                 (a.ai.causes.length ? '<h5>Likely causes</h5><ul>' + a.ai.causes.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
                 (a.ai.manual.length ? '<h5>To do by hand</h5><ul>' + a.ai.manual.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') + '</div>';
         }
-        if (a.pending && !a.pending.expired) {
+        if (a && a.pending && !a.pending.expired) {
             h += '<div class="adv-pending"><strong>Changed just now:</strong> ' + a.pending.applied.map(function (c) { return esc(c.label) + ' ' + esc(c.from == null ? '?' : c.from) + ' → ' + esc(c.to) + ' ' + esc(c.unit); }).join(', ') +
                 '<p class="muted">The radio puts the old values back by itself <span data-adv-until="' + esc(a.pending.revertAt) + '"></span> unless you press Keep. Watch the clients come back first.</p>' +
-                '<div class="adv-actions"><button type="button" class="btn-primary btn-sm" data-adv="keep"' + (adv.busy ? ' disabled' : '') + '>Keep the change</button>' +
-                '<button type="button" class="btn-secondary btn-sm" data-adv="undo"' + (adv.busy ? ' disabled' : '') + '>Undo now</button></div></div>';
-        } else if (a.pending && a.pending.expired) {
+                '<div class="adv-actions"><button type="button" class="btn-primary btn-sm" data-adv="keep"' + (busy ? ' disabled' : '') + '>Keep the change</button>' +
+                '<button type="button" class="btn-secondary btn-sm" data-adv="undo"' + (busy ? ' disabled' : '') + '>Undo now</button></div></div>';
+        } else if (a && a.pending && a.pending.expired) {
             h += '<p class="muted">The last change was not kept, so the radio put the old values back.</p>';
         }
-        if (a.changes && a.changes.length) {
+        if (a && a.changes && a.changes.length) {
             var canAny = a.changes.some(function (c) { return c.applicable; });
             if (a.experimental && canAny) {
-                h += '<div class="adv-exp"><strong>Experimental on Ubiquiti radios.</strong> This has not been proven on a real radio yet. Try it first on one quiet sector, at a quiet hour, with the sector open in front of you. It needs SSH turned on in the radio\'s Services page. <div class="adv-actions"><button type="button" class="btn-secondary btn-sm" data-adv="preflight"' + (adv.busy ? ' disabled' : '') + '>Test this radio (read-only)</button>' +
+                h += '<div class="adv-exp"><strong>Experimental on Ubiquiti radios.</strong> This has not been proven on a real radio yet. Try it first on one quiet sector, at a quiet hour, with the sector open in front of you. It needs SSH turned on in the radio\'s Services page. <div class="adv-actions"><button type="button" class="btn-secondary btn-sm" data-adv="preflight"' + (busy ? ' disabled' : '') + '>Test this radio (read-only)</button>' +
                     (pf ? (pf.ok ? '<span class="adv-ok">✓ Ready' + (pf.sample ? ' (sample)' : '') + (pf.frequency != null ? ' · ' + esc(pf.frequency) + ' MHz' : '') + (pf.txPower != null ? ' · ' + esc(pf.txPower) + ' dBm' : '') + '</span>' : '<span class="live-error">✗ ' + esc((pf.problems || [])[0] || 'Not ready') + '</span>') : '') + '</div></div>';
             }
-            h += '<h5>Proposed changes</h5><div class="reg-wrap"><table class="iface-table adv-table"><thead><tr><th></th><th>Setting</th><th>Now</th><th>New</th><th>Why</th><th>Risk</th></tr></thead><tbody>' +
+            h += '<h5 id="adv-proposed">Proposed changes</h5><div class="reg-wrap"><table class="iface-table adv-table"><thead><tr><th></th><th>Setting</th><th>Now</th><th>New</th><th>Why</th><th>Risk</th></tr></thead><tbody>' +
                 a.changes.map(function (c, i) {
-                    return '<tr><td>' + (c.applicable ? '<input type="checkbox" data-adv-change="' + i + '" aria-label="Apply ' + esc(c.label) + '">' : '<span class="muted" title="Set this one on the radio\'s own page">by hand</span>') + '</td>' +
+                    return '<tr><td>' + (c.applicable ? '<input type="checkbox" data-adv-change="' + i + '" aria-label="Apply ' + esc(c.label) + '"' + (a.changes.length === 1 ? ' checked' : '') + '>' : '<span class="muted" title="Set this one on the radio\'s own page">by hand</span>') + '</td>' +
                         '<td><strong>' + esc(c.label) + '</strong></td><td class="mono">' + esc(c.from == null ? '?' : c.from + ' ' + c.unit) + '</td><td class="mono"><strong>' + esc(c.to + ' ' + c.unit) + '</strong></td>' +
                         '<td>' + esc(c.reason) + '</td><td class="muted">' + esc(c.risk) + '</td></tr>';
                 }).join('') + '</tbody></table></div>' +
                 (canAny
-                    ? '<div class="adv-actions"><button type="button" class="btn-primary btn-sm" id="adv-apply" data-adv="apply"' + (adv.busy ? ' disabled' : '') + '>Apply ticked changes</button><span class="muted">Nothing changes until you press this and confirm. It undoes itself after ' + esc((a.pending && a.pending.revertMinutes) || 5) + ' minutes unless you keep it.</span></div>'
+                    ? '<div class="adv-actions"><button type="button" class="btn-primary btn-sm" id="adv-apply" data-adv="apply"' + (busy ? ' disabled' : '') + '>Apply ticked changes</button><span class="muted">Nothing changes until you press this and confirm. It undoes itself after ' + esc((a.pending && a.pending.revertMinutes) || 5) + ' minutes unless you keep it.</span></div>'
                     : '<p class="muted">' + esc(a.applyNote || 'These have to be set on the radio\'s own page.') + '</p>');
-        } else if (a.ai && !(a.pending && !a.pending.expired)) {
+        } else if (a && a.ai && !(a.pending && !a.pending.expired)) {
             h += '<p class="muted">The AI proposed no setting change for this sector.</p>';
         }
+        if (mine) h += historyBlock(adv.history, busy, true);
         return h + '</div>';
     }
-    // Countdown on a pending change.
+    // Countdown on a pending change, and how long a slow request has been running.
     setInterval(function () {
         var el = document.querySelector('#adv-panel [data-adv-until]');
-        if (!el) return;
-        var left = Math.max(0, Math.round((Number(el.dataset.advUntil) - Date.now()) / 1000));
-        el.textContent = left ? 'in ' + Math.floor(left / 60) + ':' + ('0' + (left % 60)).slice(-2) : 'now';
+        if (el) {
+            var left = Math.max(0, Math.round((Number(el.dataset.advUntil) - Date.now()) / 1000));
+            el.textContent = left ? 'in ' + Math.floor(left / 60) + ':' + ('0' + (left % 60)).slice(-2) : 'now';
+        }
+        var w = document.querySelector('#adv-panel [data-adv-since]');
+        if (w) w.textContent = '· ' + Math.max(0, Math.round((Date.now() - Number(w.dataset.advSince)) / 1000)) + ' s';
     }, 1000);
+
+    // ----- Connection: how TowerDesk talks to this device, changeable from its card -----
+    var METHOD_TEXT = {
+        ping: 'Ping only (no login)', mikrotik: 'Username and password, MikroTik API', 'mikrotik-ssl': 'Username and password, MikroTik API (secure)', ssh: 'Username and password, SSH',
+        telnet: 'Username and password, Telnet', snmp: 'SNMP v2c (a community name)', snmp1: 'SNMP v1 (a community name)', tplink: 'Password, TP-Link router login',
+        airos: 'Username and password, Ubiquiti airOS login', mimosa: 'Password, Mimosa login', http: 'Web page only (no login)', https: 'Web page only (no login)'
+    };
+    function methodText(d) { return (METHOD_TEXT[d.method] || d.method) + (d.port && d.method !== 'ping' ? ' (port ' + d.port + ')' : ''); }
+    function connBlock(d) {
+        var cs = window.TowerDesk.connState(d);
+        var h = '<div class="conn-box" id="conn-box"><div class="conn-line"><strong>How TowerDesk connects to this device</strong><span class="status-badge ' + cs.badge + '" title="' + esc(cs.hint) + '">● ' + esc(cs.label) + '</span></div>' +
+            '<p class="muted conn-text">' + esc(methodText(d)) + '. ' + esc(cs.hint) + '</p>';
+        if (!CAN_EDIT) return h + '<p class="muted">Switch to Real data to change how a device is connected.</p></div>';
+        return h + '<div class="conn-row"><label for="conn-mode">Change to</label><select id="conn-mode">' +
+            '<option value="auto">Automatic: try my saved logins</option><option value="login">Username and password…</option><option value="snmp">SNMP community…</option><option value="ping">Ping only (no login)</option></select>' +
+            '<button type="button" class="btn-primary btn-sm" data-conn="go">Connect</button><span class="muted" id="conn-msg" role="status"></span></div></div>';
+    }
+    function connMsg(text) { var el = document.getElementById('conn-msg'); if (el) el.textContent = text; }
+    function postConnect(body) {
+        return fetch('/api/devices/' + encodeURIComponent(detailId) + '/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) { return r.json(); });
+    }
+    function closeConnDialog() { var el = document.getElementById('conn-dialog'); if (el) el.remove(); }
+    function openConnDialog(mode, info) {
+        closeConnDialog();
+        var d = lastData && lastData.devices.find(function (x) { return x.id === detailId; });
+        var snmp = mode === 'snmp';
+        var intro = info && info.auto
+            ? (info.tried ? 'TowerDesk tried ' + info.tried + ' saved login' + (info.tried === 1 ? '' : 's') + ' on this device and none of them worked. ' : 'There are no saved logins yet. ') + 'Add the ' + (snmp ? 'SNMP community' : 'username and password') + ' for this device.'
+            : (snmp ? 'Enter the SNMP community this device answers to.' : 'Enter the username and password for this device. Mimosa and TP-Link radios need only a password: leave the username empty.');
+        var el = document.createElement('div');
+        el.className = 'modal-overlay';
+        el.id = 'conn-dialog';
+        el.style.display = 'flex';
+        el.innerHTML = '<div class="modal conn-dialog" role="dialog" aria-modal="true" aria-labelledby="conn-d-title"><div class="modal-header"><strong id="conn-d-title">' + (snmp ? 'SNMP community' : 'Login') + ' for ' + esc(d ? d.name : 'this device') + '</strong><button type="button" class="close-btn" data-conn="cancel" aria-label="Close">×</button></div>' +
+            '<div class="modal-body"><p class="muted">' + esc(intro) + ' TowerDesk tests it first and keeps it with this device only if it works.</p>' +
+            (snmp ? '<div class="form-group"><label for="conn-comm">SNMP community</label><input type="text" id="conn-comm" value="public" autocomplete="off"></div>'
+                : '<div class="form-group"><label for="conn-user">Username</label><input type="text" id="conn-user" autocomplete="off"></div><div class="form-group"><label for="conn-pass">Password</label><input type="password" id="conn-pass" autocomplete="new-password"></div>') +
+            '<label class="conn-check"><input type="checkbox" id="conn-default"> Also save it as a <strong>default ' + (snmp ? 'community' : 'login') + '</strong>: TowerDesk will try it on the other devices when I add devices in bulk.</label>' +
+            '<div class="form-group" id="conn-label-row" hidden><label for="conn-label">Name for this default</label><input type="text" id="conn-label" placeholder="e.g. Ubiquiti radios" autocomplete="off"></div>' +
+            '<p class="live-error" id="conn-err" role="alert" hidden></p>' +
+            '<div class="form-actions"><button type="button" class="btn-secondary" data-conn="cancel">Cancel</button><button type="button" class="btn-primary" data-conn="try" data-mode="' + esc(mode) + '">Try and save</button></div></div></div>';
+        document.body.appendChild(el);
+        var first = el.querySelector('input[type=text], input[type=password]');
+        if (first) first.focus();
+    }
+    function connTry(mode) {
+        var g = function (id) { var x = document.getElementById(id); return x ? x.value : ''; };
+        var body = { mode: mode, saveAsDefault: !!(document.getElementById('conn-default') || {}).checked, label: g('conn-label').trim() };
+        if (mode === 'snmp') body.community = g('conn-comm').trim(); else { body.username = g('conn-user').trim(); body.password = g('conn-pass'); }
+        var err = document.getElementById('conn-err');
+        var btn = document.querySelector('#conn-dialog [data-conn=try]');
+        if (mode === 'snmp' ? !body.community : !body.username && !body.password) { err.hidden = false; err.textContent = mode === 'snmp' ? 'Enter the community name.' : 'Enter a username and password (or just a password).'; return; }
+        err.hidden = true; btn.disabled = true; btn.textContent = 'Trying…';
+        postConnect(body).then(function (r) {
+            btn.disabled = false; btn.textContent = 'Try and save';
+            if (r.ok) { closeConnDialog(); connMsg('Connected' + (r.matched ? '' : '') + '. ' + (r.savedAsDefault ? 'Saved as a default too.' : '')); poll(); return; }
+            err.hidden = false;
+            err.textContent = r.needLogin ? 'That did not work on this device. Check the ' + (mode === 'snmp' ? 'community' : 'username and password') + ' and try again.' : (r.error || 'Could not connect: ' + ((r.test && r.test.error) || 'the device did not answer.'));
+        }).catch(function () { btn.disabled = false; btn.textContent = 'Try and save'; err.hidden = false; err.textContent = 'Could not reach TowerDesk.'; });
+    }
+    function connGo() {
+        var sel = document.getElementById('conn-mode');
+        if (!sel) return;
+        var mode = sel.value;
+        if (mode === 'login' || mode === 'snmp') { openConnDialog(mode, null); return; }
+        connMsg(mode === 'ping' ? 'Switching…' : 'Trying the saved logins…');
+        postConnect({ mode: mode }).then(function (r) {
+            if (r.ok) { connMsg(mode === 'ping' ? 'Now monitored with ping only.' : 'Connected' + (r.matched ? ' with “' + r.matched + '”.' : '.')); poll(); }
+            else if (r.needLogin) { connMsg(''); openConnDialog('login', { auto: true, tried: r.tried }); }
+            else connMsg(r.error || 'Could not connect.');
+        }).catch(function () { connMsg('Could not reach TowerDesk.'); });
+    }
+    // One click handler for everything in the advisor and the connection box.
+    function handleModalClick(e) {
+        var chan = e.target.closest('[data-adv-chan]');
+        if (chan) { advUseChannel(chan.dataset.advChan); return true; }
+        var hist = e.target.closest('[data-adv-hist]');
+        if (hist) { advFromHistory(hist.dataset.t, hist.dataset.advHist); return true; }
+        var advBtn = e.target.closest('[data-adv]');
+        if (advBtn) {
+            var act = advBtn.dataset.adv;
+            if (act === 'check') advRun(false); else if (act === 'ai') advRun(true); else if (act === 'channels') advChannels();
+            else if (act === 'apply') advApply(); else if (act === 'preflight') advPreflight(); else if (act === 'copy') copyText(advBtn.dataset.cmd, advBtn);
+            else advFinish(act);
+            return true;
+        }
+        if (e.target.closest('[data-conn=go]')) { connGo(); return true; }
+        return false;
+    }
+    // The login dialog lives outside the card, so it has its own handler.
+    document.addEventListener('click', function (e) {
+        var c = e.target.closest('#conn-dialog [data-conn]');
+        if (!c) return;
+        if (c.dataset.conn === 'cancel') closeConnDialog();
+        else if (c.dataset.conn === 'try') connTry(c.dataset.mode);
+    });
+    document.addEventListener('change', function (e) {
+        if (e.target.id === 'conn-default') { var row = document.getElementById('conn-label-row'); if (row) row.hidden = !e.target.checked; }
+    });
+    document.addEventListener('keydown', function (e) {
+        if (!document.getElementById('conn-dialog')) return;
+        if (e.key === 'Escape') { closeConnDialog(); e.stopPropagation(); }
+        else if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox') { var t = document.querySelector('#conn-dialog [data-conn=try]'); if (t && !t.disabled) { e.preventDefault(); connTry(t.dataset.mode); } }
+    }, true);
 
     function registrationBlock(m) {
         var rows = (m && m.stations) || [];
@@ -456,6 +668,20 @@
     // (The pairing rules live in insights.js so the Overview and Topology pages agree.)
     function peerOf(d) { return lastData ? I.peerOf(d, lastData.devices) : null; }
     function isFarEnd(d) { return lastData ? I.isFarEnd(d, lastData.devices) : false; }
+    // Which end of a link a radio is, from what the radio itself reports ('' when it does not say).
+    function endRole(d) {
+        var m = ((d && d.metrics && d.metrics.radio) || {}).mode;
+        if (m && /^(ap|master)/i.test(String(m))) return 'Master';
+        if (m && /^(sta|slave)/i.test(String(m))) return 'Slave';
+        return '';
+    }
+    function otherRole(r) { return r === 'Master' ? 'Slave' : (r === 'Slave' ? 'Master' : ''); }
+    // Roles of the monitored end (d) and of its far end. When a radio does not say, a lone
+    // monitored end is taken to be the slave (as before) and a pair is split by which is folded in.
+    function linkRoles(d, peer) {
+        var near = endRole(d) || (peer ? (endRole(peer) ? otherRole(endRole(peer)) : (isFarEnd(d) ? 'Master' : 'Slave')) : 'Slave');
+        return { near: near, far: peer ? (endRole(peer) || otherRole(near)) : otherRole(near) };
+    }
     function modelOf(d) { var det = (d.lastTest && d.lastTest.details) || {}; return det.model || TYPE_LABELS[d.type] || d.type; }
 
     function backhaulCard(d) {
@@ -465,6 +691,7 @@
         var det = (d.lastTest && d.lastTest.details) || {};
         var peer = peerOf(d);
         var masterName = r.remoteName || det.remote || 'Upstream';
+        var roles = linkRoles(d, peer);
         var signalTxt = r.signal != null ? (r.signal + ' dBm') : (det.signal || '');
         var linkTxt = r.linkName || det.link || '';
         var cap = (r.throughput != null && r.rxRate) ? Math.round((r.throughput / r.rxRate) * 100) : null;
@@ -480,14 +707,14 @@
             (state === 'offline' ? 'link down' : (state === 'online' ? 'connected' : (d.unreachable ? 'unreachable' : 'checking…'))) + '</div>' +
             '<div class="bh-wire ' + state + '"></div>' +
             '<div class="muted">' + esc([linkTxt, r.freq, signalTxt].filter(Boolean).join(' · ')) + '</div>' +
-            '<div class="bh-ends ' + (peer ? 'both' : 'one') + '">' + (peer ? 'Both ends monitored' : 'Slave end only') + '</div></div>';
+            '<div class="bh-ends ' + (peer ? 'both' : 'one') + '">' + (peer ? 'Both ends monitored' : roles.near + ' end only') + '</div></div>';
         return '<article class="backhaul-card ' + state + '" data-id="' + esc(d.id) + '" tabindex="0" role="button">' +
             '<div class="bh-link">' +
                 (peer
-                    ? bhEnd('remote', peer.name, 'Master · ' + modelOf(peer), peer.ip)
-                    : bhEnd('remote', masterName, 'Master' + (r.remoteModel ? ' · ' + r.remoteModel : ' · at provider'), '')) +
+                    ? bhEnd('remote', peer.name, roles.far + ' · ' + modelOf(peer), peer.ip)
+                    : bhEnd('remote', masterName, roles.far + (r.remoteModel ? ' · ' + r.remoteModel : (roles.far === 'Master' ? ' · at provider' : '')), '')) +
                 mid +
-                bhEnd('monitoring', d.name, 'Slave · ' + (det.model || TYPE_LABELS[d.type] || d.type), d.ip) +
+                bhEnd('monitoring', d.name, roles.near + ' · ' + (det.model || TYPE_LABELS[d.type] || d.type), d.ip) +
             '</div>' +
             '<dl class="bh-stats">' + strip + '</dl>' +
             '<div class="card-more"><span>Open details</span><i>›</i></div>' +
@@ -557,12 +784,12 @@
         if (has(r.txpower)) rows.push(['Tx power', r.txpower + ' dBm']);
         return rows.length ? rows : [['Data', 'Collecting…']];
     }
-    function linkEnd(side, title, sub, mono, rows, monitored, openId) {
+    function linkEnd(side, title, sub, mono, rows, monitored, openId, seenFrom) {
         return '<section class="link-end ' + side + '">' + dishArt() +
             '<div class="link-end-name">' + esc(title) + '</div><div class="muted">' + esc(sub) + '</div>' +
             (mono ? '<div class="muted mono">' + esc(mono) + '</div>' : '') +
-            '<div class="link-end-tag ' + (monitored ? 'on' : 'off') + '">' + (monitored ? '● Monitored' : '○ Not monitored — read from the slave') + '</div>' +
-            (openId ? '<button type="button" class="link-btn" data-open-id="' + esc(openId) + '">Open this end</button>' : '') +
+            '<div class="link-end-tag ' + (monitored ? 'on' : 'off') + '">' + (monitored ? '● Monitored directly' : '○ Not monitored — numbers are as the ' + (seenFrom || 'other end').toLowerCase() + ' radio sees it') + '</div>' +
+            (openId ? '<button type="button" class="btn-secondary btn-sm" data-open-id="' + esc(openId) + '">Open this end</button>' : '') +
             '<dl class="link-end-data">' + rows.map(function (x) { return '<div><dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd></div>'; }).join('') + '</dl>' +
             '</section>';
     }
@@ -589,20 +816,20 @@
             if (!far.length) far.push(['Data', 'Not reported']);
         }
         // d is drawn on the right; label the ends by which one is the master when we can tell.
-        var dIsMaster = peer ? isFarEnd(d) : false;
+        var roles = linkRoles(d, peer);
         var facts = [r.linkName || det.link, r.freq, has(r.chanbw) ? r.chanbw + ' MHz' : '', has(r.distance) ? r.distance + ' km' : ''].filter(Boolean);
         var total = top && has(top.rxBps) ? bps((top.rxBps || 0) + (top.txBps || 0)) : (has(r.throughput) ? r.throughput + ' Mb/s' : '');
         return '<div class="link-hero ' + state + '">' +
             (peer
-                ? linkEnd('far', peer.name, (dIsMaster ? 'Slave' : 'Master') + ' · ' + modelOf(peer), peer.ip, far, true, peer.id)
-                : linkEnd('far', r.remoteName || det.remote || 'Upstream', 'Master' + (r.remoteModel ? ' · ' + r.remoteModel : ''), '', far, false, '')) +
+                ? linkEnd('far', peer.name, roles.far + ' · ' + modelOf(peer), peer.ip, far, true, peer.id)
+                : linkEnd('far', r.remoteName || det.remote || 'Upstream', roles.far + (r.remoteModel ? ' · ' + r.remoteModel : ''), '', far, false, '', roles.near)) +
             '<div class="link-mid">' +
                 '<div class="bh-state ' + (state === 'online' ? 'ok' : state) + '">' + (state === 'offline' ? 'link down' : (state === 'online' ? 'connected' : (d.unreachable ? 'unreachable' : 'checking…'))) + '</div>' +
                 '<div class="link-beam ' + state + '"><span></span></div>' +
                 (total ? '<div class="link-total">' + esc(total) + '</div><div class="muted">total traffic</div>' : '') +
                 '<div class="muted link-facts">' + esc(facts.join(' · ')) + '</div>' +
             '</div>' +
-            linkEnd('near', d.name, (dIsMaster ? 'Master' : 'Slave') + ' · ' + modelOf(d), d.ip, near, true, '') +
+            linkEnd('near', d.name, roles.near + ' · ' + modelOf(d), d.ip, near, true, '') +
             '</div>';
     }
 
@@ -618,14 +845,18 @@
         var cs = window.TowerDesk.connState(d);
         var det = (d.lastTest && d.lastTest.details) || {};
         var roleLabel = { backhaul: 'Backhaul link', sector: 'Sector (PtMP)', device: 'Device' }[d.role] || 'Device';
+        var ROLE_TEXT = { backhaul: 'Backhaul: a point-to-point link between two towers', sector: 'Sector: point to multipoint, one radio serving many customers', device: 'Device' };
+        var BRAND_TEXT = { mikrotik: 'MikroTik (RouterOS)', cisco: 'Cisco', ubnt: 'Ubiquiti', mimosa: 'Mimosa', tplink: 'TP-Link', onu: 'ONU (fibre customer box)', olt: 'OLT (fibre head-end)', other: 'Not identified yet' };
+        var failText = { auth: 'the device rejected the saved username/password', timeout: 'timed out: ping works, but the login page did not answer', refused: 'refused: that login service is closed' };
+        var lastTest = d.lastTest ? (d.lastTest.ok ? '✓ ' + (d.lastTest.summary || 'OK') : '✗ ' + (failText[window.TowerDesk.loginProblem(d.lastTest.error)] || d.lastTest.error || 'failed')) : '';
         var info = [
-            ['IP', d.ip + (d.port ? ':' + d.port : '')],
-            ['Type', TYPE_LABELS[d.type] || d.type],
-            ['Role', roleLabel],
-            ['Connected via', d.method],
+            ['Address', d.ip + (d.port && d.method !== 'ping' ? ':' + d.port : '')],
+            ['Brand', (d.type && d.type !== 'other' ? BRAND_TEXT[d.type] : ({ airos: 'Ubiquiti (airOS)', mimosa: 'Mimosa', mikrotik: 'MikroTik (RouterOS)', 'mikrotik-ssl': 'MikroTik (RouterOS)', tplink: 'TP-Link' }[d.method] || BRAND_TEXT.other)) || d.type],
             ['Model', det.model],
+            ['Role', ROLE_TEXT[d.role] || 'Device'],
+            ['Connected via', methodText(d)],
             ['Firmware', det.firmware || (det.version ? 'v' + det.version : '')],
-            ['Last result', d.lastTest ? (d.lastTest.ok ? '✓ ' + (d.lastTest.summary || 'OK') : '✗ ' + (d.lastTest.error || 'failed')) : '']
+            ['Last test', lastTest]
         ].filter(function (x) { return x[1]; });
         return '<div class="detail-top">' +
                 '<div><h3>' + esc(d.name) + '</h3><div class="muted mono">' + esc(d.ip) + ' · ' + esc(roleLabel) + '</div></div>' +
@@ -635,10 +866,11 @@
                 '<a class="btn-secondary btn-sm" href="' + esc(webUrl(d)) + '" target="_blank" rel="noopener">Open device page ↗</a>' +
                 window.TowerDesk.netTools(d.ip) +
             '</div>' +
+            connBlock(d) +
             (d.role === 'backhaul' ? linkHero(d) : '') +
             '<dl class="kv detail-kv">' + info.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') + '</dl>' +
             '<h4 class="detail-sec">Live</h4>' + statGrid(d) +
-            '<h4 class="detail-sec">Latency (10 min)</h4>' + sparkline(d.history) +
+            '<h4 class="detail-sec">Latency, last 10 minutes</h4>' + latencyChart(d.history) +
             (d.online !== false && d.metrics && d.metrics.kind === 'stations' ? '<h4 class="detail-sec">Advisor</h4>' + advisorBlock(d) : '') +
             (d.online !== false && d.metrics && d.metrics.kind === 'stations' ? '<h4 class="detail-sec">Registration (connected stations)</h4>' + registrationBlock(d.metrics) : '') +
             (d.online !== false && d.metrics && d.metrics.kind === 'onus' ? '<h4 class="detail-sec">ONUs (fibre customers)</h4>' + onuBlock(d.metrics) : '') +
@@ -658,12 +890,7 @@
             if (other) { openDetail(other.dataset.openId); return; }
             if (e.target.closest('[data-export-reg]')) { exportRegistration(detailId); return; }
             if (e.target.closest('[data-export-onu]')) { exportOnus(detailId); return; }
-            var advBtn = e.target.closest('[data-adv]');
-            if (advBtn) {
-                var act = advBtn.dataset.adv;
-                if (act === 'check') advRun(false); else if (act === 'ai') advRun(true); else if (act === 'apply') advApply(); else if (act === 'preflight') advPreflight(); else advFinish(act);
-                return;
-            }
+            if (handleModalClick(e)) return;
             var staRow = e.target.closest('tr[data-sta-mac]');
             if (staRow && staRow.dataset.staMac) { toggleStationHistory(staRow); return; }
             if (e.target === m || e.target.closest('.close-btn')) closeDetail();
@@ -688,6 +915,7 @@
         var isSector = !!(d.metrics && d.metrics.kind === 'stations');
         var isOlt = !!(d.metrics && d.metrics.kind === 'onus');
         if (isSector || isOlt) loadSas();
+        if (isSector) { if (adv.id !== id) adv = blankAdv(id); loadHistory(); }
         m.querySelector('.detail-modal').classList.toggle('wide', isLink || isSector || isOlt);
         m.querySelector('.modal-header strong').textContent = isLink ? 'Link detail' : (isSector ? 'Sector detail' : (isOlt ? 'OLT detail' : 'Device detail'));
         document.getElementById('detail-modal-body').innerHTML = detailBody(d);
@@ -695,7 +923,7 @@
     }
     function closeDetail() {
         detailId = null;
-        adv = { id: null, busy: false, data: null, error: null, msg: '', pf: null };
+        adv = blankAdv();
         onuFilter = '';
         var m = document.getElementById('detail-modal');
         if (m) m.style.display = 'none';
@@ -754,11 +982,9 @@
         // A paired link is one link: fold its far end into the primary end's card, and count its
         // traffic once (both radios report the same traffic).
         var folded = function (d) { return isFarEnd(d) && shown.indexOf(peerOf(d)) >= 0; };
-        var trafficBps = shown.reduce(function (a, d) {
-            if (!d.online || folded(d)) return a;
-            var ifs = (d.metrics && d.metrics.interfaces) || [];
-            return a + ifs.reduce(function (b, i) { return b + (i.rxBps || 0) + (i.txBps || 0); }, 0);
-        }, 0);
+        // "Sector traffic": what customers are using right now, added up over the sectors only. Adding
+        // every device would count the same bits again at each router and backhaul they pass through.
+        var trafficBps = sectors.reduce(function (a, d) { return d.online ? a + I.trafficBps(d) : a; }, 0);
         renderAttention(shown);
         $('kpi-total').textContent = s.total;
         $('kpi-online').textContent = s.online;
@@ -766,7 +992,7 @@
         $('kpi-traffic').textContent = bps(trafficBps);
         $('kpi-sectors').textContent = sectors.length;
         $('kpi-subs').textContent = subs;
-        $('kpi-sectors-sub').textContent = sectors.length ? sectors.filter(function (d) { return d.online; }).length + ' online' : 'PtMP access points';
+        $('kpi-sectors-sub').textContent = sectors.length ? sectors.filter(function (d) { return d.online; }).length + ' online' : 'Point to multipoint';
         $('kpi-online-sub').textContent = s.total ? Math.round((s.online / s.total) * 100) + '% of devices' : ' ';
         $('kpi-offline-sub').textContent = s.offline ? 'Needs attention' : ' ';
         $('interval-note').textContent = 'Checked every ' + Math.round(data.intervalMs / 1000) + ' s · last 10 minutes shown';

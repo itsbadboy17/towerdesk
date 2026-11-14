@@ -14,6 +14,15 @@ const MAX_EVENTS = 100;
 
 const state = new Map(); // id -> { samples: [{t, online, ms}], online, since }
 const events = [];
+// Recent changes worth showing: customers joining or leaving a sector, devices added or removed,
+// settings changed. Online/offline flips are deliberately not here: closing the VPN would flip
+// every device and bury the real news.
+const changes = [];
+const MAX_CHANGES = 100;
+const lastClients = new Map(); // sector id -> client count at the previous poll
+const lastChangeAt = new Map(); // sector id -> time of its last client change entry (rate limit)
+const knownNames = new Map();
+let knownIds = null;
 let running = false;
 let timer = null;
 let lastRun = null;
@@ -24,6 +33,24 @@ let downNets = new Set(); // networks where nothing answers right now
 function netKey(ip) {
   const m = /^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$/.exec(String(ip || '').trim());
   return m ? m[1] + '.x' : String(ip || '').toLowerCase();
+}
+
+function pushChange(kind, id, name, text) {
+  changes.unshift({ t: new Date().toISOString(), kind, id, name, text });
+  if (changes.length > MAX_CHANGES) changes.length = MAX_CHANGES;
+}
+// For other modules (a setting applied to a radio, for example).
+function note(kind, id, name, text) { pushChange(kind, id, name, text); }
+
+function trackClients(device, count) {
+  const prev = lastClients.get(device.id);
+  lastClients.set(device.id, count);
+  if (prev === undefined || prev === count) return;
+  const now = Date.now();
+  if (now - (lastChangeAt.get(device.id) || 0) < 60000) return; // a flapping radio is one line a minute
+  lastChangeAt.set(device.id, now);
+  const n = Math.abs(count - prev);
+  pushChange('clients', device.id, device.name, device.name + ': ' + n + ' customer radio' + (n === 1 ? '' : 's') + (count > prev ? ' joined' : ' left') + ' (now ' + count + ')');
 }
 
 function pushEvent(device, online) {
@@ -81,6 +108,7 @@ async function applyResult(device, r, networkDown) {
       txBps = mx.interfaces.reduce((a, i) => a + (i.txBps || 0), 0);
     }
     if (mx && mx.cpu && typeof mx.cpu.now === 'number') cpu = mx.cpu.now;
+    if (mx && mx.stationCount != null) trackClients(device, mx.stationCount);
     if (mx && mx.stations) history.recordStations(device.id, mx.stations); // signal/CCQ per customer radio
     if (mx && mx.onus) history.recordStations(device.id, mx.onus.filter((o) => o.online)); // optical power per ONU (those with a MAC)
   } else {
@@ -100,6 +128,12 @@ async function tick() {
   try {
     const list = devices.list();
     const ids = new Set(list.map((d) => d.id));
+    if (knownIds) {
+      list.forEach((d) => { if (!knownIds.has(d.id)) pushChange('device', d.id, d.name, d.name + ' was added'); });
+      knownIds.forEach((id) => { if (!ids.has(id)) { const nm = knownNames.get(id) || 'A device'; pushChange('device', id, nm, nm + ' was removed'); } });
+    }
+    knownIds = ids;
+    list.forEach((d) => knownNames.set(d.id, d.name));
     for (const id of state.keys()) {
       if (!ids.has(id)) { state.delete(id); alerts.forgetDevice(id); metrics.forget(id); history.forget(id); }
     }
@@ -178,6 +212,7 @@ function snapshot() {
       role: resolveRole(d, mx),
       provider: d.provider || null,
       peerId: d.peerId || null,
+      parentId: d.parentId || null,
       // Not checked yet in this run (just opened) -> unknown ("checking…"), not the status saved
       // when the app was last closed.
       online: s ? s.online : null,
@@ -207,8 +242,9 @@ function snapshot() {
       avgLatencyMs: lats.length ? Math.round((lats.reduce((a, b) => a + b, 0) / lats.length) * 10) / 10 : null
     },
     devices: list,
-    events: events.slice(0, 30)
+    events: events.slice(0, 30),
+    changes: changes.slice(0, 30)
   };
 }
 
-module.exports = { start, tick, snapshot, INTERVAL_MS };
+module.exports = { start, tick, snapshot, note, INTERVAL_MS };

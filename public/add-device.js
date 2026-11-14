@@ -187,14 +187,18 @@
     });
 
     // ----- Saved devices -----
-    function statusBadge(d) {
-        var st = window.TowerDesk.connState(d);
+    // `live` is this device's entry from the live monitor (readings, online state); without it a
+    // device that is reading fine would look like it is still starting.
+    function statusBadge(d, live) {
+        var st = window.TowerDesk.connState(live ? Object.assign({}, d, { metrics: live.metrics, online: live.online, unreachable: live.unreachable, lastTest: live.lastTest || d.lastTest }) : d);
         var lat = d.status && d.status.online && d.status.latencyMs ? ' · ' + esc(d.status.latencyMs) + ' ms' : '';
         return '<span class="status-badge ' + st.badge + '" title="' + esc(st.hint) + '">● ' + esc(st.label) + lat + '</span>';
     }
 
     function loadDevices() {
-        return api('GET', '/api/devices').then(function (list) {
+        return Promise.all([api('GET', '/api/devices'), api('GET', '/api/monitor').catch(function () { return { devices: [] }; })]).then(function (r) {
+            var list = r[0], liveBy = {};
+            (r[1].devices || []).forEach(function (x) { liveBy[x.id] = x; });
             var tbody = $('device-list');
             if (!list.length) {
                 tbody.innerHTML = '<tr><td colspan="8" class="muted">No devices yet. Add one above.</td></tr>';
@@ -207,17 +211,17 @@
             list.forEach(function (d) { if (selectedIds[d.id]) alive[d.id] = true; });
             selectedIds = alive;
             tbody.innerHTML = list.map(function (d) {
-                var last = d.lastTest ? (d.lastTest.ok ? '✅ ' + esc(d.lastTest.summary || 'OK') : '❌ ' + esc(d.lastTest.error || 'Failed')) : '—';
+                var failText = { auth: 'Wrong username or password', timeout: 'Timed out: ping works, but the login page did not answer', refused: 'Login service is closed' };
+                var last = d.lastTest ? (d.lastTest.ok ? '✅ ' + esc(d.lastTest.summary || 'OK') : '❌ ' + esc(failText[window.TowerDesk.loginProblem(d.lastTest.error)] || d.lastTest.error || 'Failed')) : '—';
                 return '<tr data-id="' + esc(d.id) + '">' +
                     '<td class="col-check"><input type="checkbox" class="dev-pick"' + (selectedIds[d.id] ? ' checked' : '') + ' aria-label="Select ' + esc(d.name) + '"></td>' +
-                    '<td><button type="button" class="link-btn" data-act="detail">' + esc(d.name) + '</button>' + (d.location ? '<div class="muted">' + esc(d.location) + '</div>' : '') + '</td>' +
+                    '<td><button type="button" class="name-btn" data-act="detail" title="Open this device\'s card">' + esc(d.name) + '</button>' + (d.location ? '<div class="muted">' + esc(d.location) + '</div>' : '') + '</td>' +
                     '<td>' + esc(TYPE_LABELS[d.type] || d.type) + '</td>' +
                     '<td><span class="mono">' + esc(d.ip) + (d.port ? ':' + esc(d.port) : '') + '</span></td>' +
                     '<td>' + esc((methods[d.method] || {}).label || d.method) + (d.username ? '<div class="muted">' + esc(d.username) + (d.hasPassword ? ' · 🔒' : '') + '</div>' : '') + '</td>' +
-                    '<td>' + statusBadge(d) + '</td>' +
+                    '<td>' + statusBadge(d, liveBy[d.id]) + '</td>' +
                     '<td class="last-result">' + last + '</td>' +
-                    '<td class="row-actions"><button type="button" class="action-btn" data-act="check">Check</button> ' +
-                    (d.type === 'mikrotik' && d.method !== 'snmp' ? '<button type="button" class="btn-secondary btn-sm" data-act="enable-snmp" title="Turn on SNMP on the router and monitor it that way">📶 Enable SNMP</button> ' : '') +
+                    '<td class="row-actions"><button type="button" class="btn-primary btn-sm" data-act="detail" title="Open the card: connection, ping, advisor">Open</button> <button type="button" class="action-btn" data-act="check" title="Test the connection now">Check</button> ' +
                     '<button type="button" class="btn-secondary btn-sm" data-act="delete">Delete</button></td>' +
                     '</tr>';
             }).join('');
@@ -433,7 +437,6 @@
                 '<label class="scan-vault-toggle"><input type="checkbox" id="edit-vault" checked> Try my <strong>Saved Logins</strong> / communities for the new method</label>' +
                 '<div class="form-actions">' +
                     '<button type="submit" class="btn-primary" id="edit-save">Save &amp; test</button>' +
-                    (cfg.type === 'mikrotik' && cfg.method !== 'snmp' ? '<button type="button" class="btn-secondary" id="edit-enable-snmp">📶 Enable SNMP on router</button>' : '') +
                     '<button type="button" class="btn-secondary" id="edit-close">Close</button>' +
                 '</div>' +
             '</form>');
@@ -452,16 +455,6 @@
         stopDetailLive();
         detailLiveTimer = setInterval(function () { refreshDetailLive(cfg.id); }, 5000);
         $('edit-close').addEventListener('click', function () { stopDetailLive(); show('', '<p class="muted">Closed.</p>'); });
-        if ($('edit-enable-snmp')) $('edit-enable-snmp').addEventListener('click', function () {
-            window.TowerDesk.inlineConfirm(this, 'Turn on SNMP on the router?').then(function (yes) {
-                if (!yes) return;
-                show('', '<p class="muted">Logging in to ' + esc(cfg.name) + ' and enabling SNMP…</p>');
-                return api('POST', '/api/devices/' + encodeURIComponent(cfg.id) + '/enable-snmp').then(function (rr) {
-                    loadDevices();
-                    openDetail(cfg.id);
-                });
-            }).catch(function (err) { show('bad', '<p class="result-title bad">❌ ' + esc(err.message) + '</p>'); });
-        });
         $('edit-form').addEventListener('submit', function (ev) {
             ev.preventDefault();
             var btn = $('edit-save');
@@ -499,7 +492,8 @@
         var nameEl = row.querySelector('.link-btn') || row.querySelector('strong');
         var name = nameEl ? nameEl.textContent : '';
         if (btn.dataset.act === 'detail') {
-            openDetail(id);
+            // The device card (connection, ping, advisor) lives on the Monitoring page.
+            location.href = '/monitoring?open=' + encodeURIComponent(id);
         } else if (btn.dataset.act === 'delete') {
             window.TowerDesk.inlineConfirm(btn, 'Remove?').then(function (yes) {
                 if (!yes) return;
@@ -507,17 +501,6 @@
                     show('ok', '<p class="result-title ok">🗑️ Removed "' + esc(name) + '" (nothing was changed on the device).</p>');
                     return loadDevices();
                 });
-            }).catch(function (err) { show('bad', '<p class="result-title bad">❌ ' + esc(err.message) + '</p>'); });
-        } else if (btn.dataset.act === 'enable-snmp') {
-            // This WRITES to the router, so confirm first (per spec, every remote action asks).
-            window.TowerDesk.inlineConfirm(btn, 'Turn on SNMP on the router?').then(function (yes) {
-                if (!yes) return;
-                show('', '<p class="muted">Logging in to ' + esc(name) + ' and enabling SNMP…</p>');
-                return api('POST', '/api/devices/' + encodeURIComponent(id) + '/enable-snmp')
-                    .then(function (r) {
-                        show(r.verified ? 'ok' : 'warn', '<p class="result-title ' + (r.verified ? 'ok' : 'warn') + '">📶 ' + esc(r.message) + '</p>');
-                        return loadDevices();
-                    });
             }).catch(function (err) { show('bad', '<p class="result-title bad">❌ ' + esc(err.message) + '</p>'); });
         } else {
             busy(btn, true, 'Checking…');

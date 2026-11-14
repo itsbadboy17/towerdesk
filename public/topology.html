@@ -71,7 +71,15 @@
         <div class="source-banner warn" id="net-banner" role="status" hidden><strong>Can't reach the tower network<span id="net-banner-nets"></span>.</strong> Nothing on it answered — if you connect through a VPN, check that it is open.</div>
 
         <div class="card">
-            <div class="card-header"><h3>Network tree</h3><span class="card-actions" id="topo-note">Uplinks, devices, sectors and customer radios</span></div>
+            <div class="card-header topo-head">
+                <div class="topo-tabs" role="group" aria-label="View">
+                    <button type="button" class="topo-tab" data-view="sites">Site cards</button>
+                    <button type="button" class="topo-tab" data-view="diagram">Link diagram</button>
+                    <button type="button" class="topo-tab" data-view="trace">Trace a customer</button>
+                    <button type="button" class="topo-tab" data-view="tree">Tree</button>
+                </div>
+                <span class="card-actions" id="topo-note"></span>
+            </div>
             <div class="card-body">
                 <div class="topo" id="topo"><p class="muted">Loading…</p></div>
             </div>
@@ -79,41 +87,229 @@
     </main>
 
     <script src="/insights.js"></script>
+    <script src="/topo-model.js"></script>
     <script>
         (function () {
             'use strict';
-            var F = window.TowerDesk.fmt, I = window.TowerDesk.insights, esc = F.esc;
-            var DEMO = location.search.indexOf('demo') >= 0;
+            var F = window.TowerDesk.fmt, I = window.TowerDesk.insights, T = window.TowerDesk.topo, esc = F.esc;
+            var DEMO = !!window.TowerDesk.demo;
             var Q = DEMO ? '&demo=1' : '';
+            var CAN_EDIT = !DEMO; // demo devices are not saved, so nothing can be placed or connected there
             var $ = function (id) { return document.getElementById(id); };
-            var sasByMac = {}, sasAt = 0, openSectors = {};
+            var VIEWS = ['sites', 'diagram', 'trace', 'tree'];
+            function getPref() { try { return localStorage.getItem('td-topo-view'); } catch (e) { return null; } }
+            function setPref(v) { try { localStorage.setItem('td-topo-view', v); } catch (e) { /* storage unavailable */ } }
 
-            function dot(d) {
-                var cls = d.unreachable || d.online === null || d.online === undefined ? 'unknown' : (d.online ? 'up' : 'down');
-                return '<span class="topo-dot ' + cls + '" aria-hidden="true"></span><span class="sr-only">' + (cls === 'up' ? 'Online' : cls === 'down' ? 'Offline' : 'Unknown') + ' — </span>';
-            }
+            var view = VIEWS.indexOf(getPref()) >= 0 ? getPref() : 'sites';
+            var devices = [], sas = { byMac: {}, list: [], configured: false }, sasAt = 0;
+            var selected = {}, siteInput = '', barMsg = '', diagSel = null, lastGraph = null;
+            var traceQ = '', tracePick = '', openSectors = {};
+
+            // ---------- small helpers ----------
+            function dotClass(h) { return h === 'up' || h === 'down' || h === 'warn' ? h : 'unknown'; }
+            var STATE_TEXT = { up: 'Online', down: 'Offline', warn: 'Needs attention', unknown: 'Unknown' };
+            function dot(h) { return '<span class="topo-dot ' + dotClass(h) + '" aria-hidden="true"></span><span class="sr-only">' + STATE_TEXT[dotClass(h)] + ' — </span>'; }
             function link(d, label) { return '<a class="topo-name" href="/monitoring?open=' + encodeURIComponent(d.id) + Q + '">' + esc(label || d.name) + '</a>'; }
             function facts(list) { list = list.filter(Boolean); return list.length ? ' <span class="muted topo-facts">' + esc(list.join(' · ')) + '</span>' : ''; }
+            function cut(s, n) { s = String(s == null ? '' : s); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+            function roleLabel(d) {
+                var mx = d.metrics || {};
+                if (d.role === 'sector') return 'Sector';
+                if (d.role === 'backhaul') return 'Backhaul';
+                if (mx.onuCount != null || d.type === 'olt') return 'OLT';
+                if (d.type === 'mikrotik' || d.type === 'tplink' || d.type === 'cisco') return 'Router';
+                return '';
+            }
+            function deviceFacts(d) {
+                var mx = d.metrics || {}, r = mx.radio || {}, out = [];
+                if (d.role === 'sector') out.push(mx.stationCount != null ? mx.stationCount + ' client' + (mx.stationCount === 1 ? '' : 's') : 'client list not read');
+                else if (mx.onuCount != null) out.push(mx.onuOnline + '/' + mx.onuCount + ' ONUs online');
+                else if (d.role === 'backhaul') { if (r.signal != null) out.push(r.signal + ' dBm'); if (r.distance != null) out.push(r.distance + ' km'); }
+                if (d.online && mx.interfaces && mx.interfaces.length) { var t = I.trafficBps(d); if (t) out.push(F.bps(t)); }
+                return out;
+            }
+            function attnMap() {
+                var items = I.attention(devices, sas.byMac), by = {};
+                items.forEach(function (it) { by[it.id] = true; });
+                return { items: items, by: by };
+            }
+            function busy() {
+                var a = document.activeElement;
+                return !!(a && $('topo') && $('topo').contains(a) && /^(INPUT|SELECT|TEXTAREA)$/.test(a.nodeName));
+            }
+            function post(changes) {
+                return fetch('/api/topology/layout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ changes: changes }) })
+                    .then(function (r) { return r.json(); });
+            }
 
-            function uplinkNode(d, devices) {
+            // ---------- 1. site cards ----------
+            function siteCard(g, A) {
+                var s = T.siteSummary(g.devices, A.by);
+                var online = g.devices.filter(function (d) { return d.online === true; }).length;
+                var pill = s.down ? s.down + ' offline' : s.warn ? s.warn + ' need attention' : s.unknown === s.total ? 'state unknown' : 'all good';
+                var ids = {};
+                g.devices.forEach(function (d) { ids[d.id] = true; });
+                var issues = A.items.filter(function (it) { return ids[it.id]; }).slice(0, 4);
+                var customers = s.customers + ' customer' + (s.customers === 1 ? '' : 's') + (s.notRead ? ' (' + s.notRead + ' sector' + (s.notRead === 1 ? '' : 's') + ' not read)' : '');
+                var rows = g.devices.map(function (d) {
+                    var h = T.healthOf(d, A.by);
+                    return '<li class="site-row">' + (CAN_EDIT ? '<input type="checkbox" data-sel="' + esc(d.id) + '"' + (selected[d.id] ? ' checked' : '') + ' aria-label="Select ' + esc(d.name) + '">' : '') +
+                        dot(h) + link(d) + (roleLabel(d) ? ' <span class="site-role">' + esc(roleLabel(d)) + '</span>' : '') + facts(deviceFacts(d)) + '</li>';
+                }).join('');
+                return '<section class="site-card"><header><h4>' + (g.key ? esc(g.name) : 'Not on a site yet') + '</h4>' +
+                    '<span class="site-pill">' + dot(s.worst) + esc(pill) + '</span></header>' +
+                    (CAN_EDIT ? '<label class="site-all"><input type="checkbox" data-selall="' + esc(g.key) + '"' + (g.devices.every(function (d) { return selected[d.id]; }) ? ' checked' : '') + '> Select all in this card</label>' : '') + +
+                    '<div class="site-stats muted">' + esc(online + ' of ' + s.total + ' online') + ' · ' + esc(s.sectors + ' sector' + (s.sectors === 1 ? '' : 's')) + ' · ' + esc(customers) + '</div>' +
+                    (issues.length ? '<ul class="site-issues">' + issues.map(function (it) {
+                        return '<li class="' + esc(it.sev) + '"><a href="/monitoring?open=' + encodeURIComponent(it.id) + Q + '"><strong>' + esc(it.what) + '</strong> ' + esc(it.why) + '</a></li>';
+                    }).join('') + '</ul>' : '') +
+                    '<ul class="site-devs">' + rows + '</ul></section>';
+            }
+            function renderBar() {
+                var bar = $('topo-bar');
+                if (!bar) return;
+                var ids = Object.keys(selected).filter(function (k) { return selected[k]; });
+                if (!ids.length) { bar.innerHTML = '<span class="muted">' + esc(barMsg || 'Step 1: tick the boxes next to the devices that are on the same tower (or click a device row).') + '</span>'; return; }
+                var names = T.groupSites(devices).filter(function (g) { return g.key; }).map(function (g) { return '<option value="' + esc(g.name) + '">'; }).join('');
+                bar.innerHTML = '<strong>' + ids.length + ' selected</strong>' +
+                    '<label for="site-name" class="site-name-label">Step 2: name the site</label><input type="text" id="site-name" list="site-names" maxlength="120" placeholder="e.g. Hill tower" value="' + esc(siteInput) + '" autocomplete="off">' +
+                    '<datalist id="site-names">' + names + '</datalist>' +
+                    '<button type="button" class="btn-primary btn-sm" data-act="place">Step 3: Add to site</button>' +
+                    '<button type="button" class="btn-secondary btn-sm" data-act="unplace" title="Move the ticked devices out of their site, back to Not on a site yet">Take out of its site</button>' +
+                    '<button type="button" class="btn-secondary btn-sm" data-act="clear">Untick all</button>' + (barMsg ? '<span class="muted">' + esc(barMsg) + '</span>' : '');
+            }
+            function renderSites() {
+                var A = attnMap();
+                var groups = T.groupSites(devices);
+                var html = '';
+                if (CAN_EDIT) html += '<p class="topo-intro"><strong>What is a site?</strong> A tower or location where your devices are. Group devices by site to see each tower\'s sectors, customers and problems together. <strong>To put devices on a site:</strong> tick them, type the site name, then press <b>Add to site</b>. You can change it any time.</p>';
+                if (CAN_EDIT && groups.length === 1 && !groups[0].key) html += '<div class="topo-hint"><strong>None of your devices is on a site yet.</strong> Start by ticking the devices that share one tower.</div>';
+                if (CAN_EDIT) html += '<div class="topo-bar" id="topo-bar" role="status"></div>';
+                html += '<div class="site-grid">' + groups.map(function (g) { return siteCard(g, A); }).join('') + '</div>';
+                $('topo').innerHTML = html;
+                renderBar();
+            }
+
+            // ---------- 2. link diagram ----------
+            function descendants(n, out) {
+                out = out || {};
+                n.children.forEach(function (c) { out[c.id] = true; descendants(c, out); });
+                return out;
+            }
+            function renderEditor() {
+                var el = $('topo-edit');
+                if (!el) return;
+                var g = lastGraph, n = diagSel && g && g.nodes[diagSel];
+                if (!n) {
+                    var any = g && g.roots.length;
+                    el.innerHTML = '<p class="muted">' + (any || !CAN_EDIT ? 'Click a box to see it' + (CAN_EDIT ? ' and change what it plugs into.' : '.') : 'Nothing is connected yet. Click a box, then say what it plugs into. Start with the device that gets the internet from your provider and choose “The internet”.') + '</p>';
+                    return;
+                }
+                var h = T.healthOf(n.d, attnMap().by);
+                var head = '<div class="tp-edit-head">' + dot(h) + '<strong>' + esc(n.label) + '</strong> <a class="btn-secondary btn-sm" href="/monitoring?open=' + encodeURIComponent(n.id) + Q + '">Open in Monitoring</a></div>';
+                if (!CAN_EDIT) { el.innerHTML = head + '<p class="muted">Switch to Real data to change what connects to what.</p>'; return; }
+                var below = descendants(n);
+                var opts = '<option value=""' + (!n.parent ? ' selected' : '') + '>— not connected yet —</option><option value="internet"' + (n.parent === 'internet' ? ' selected' : '') + '>The internet (first device after my provider)</option>' +
+                    g.list.filter(function (x) { return x.id !== n.id && !below[x.id]; }).map(function (x) {
+                        return '<option value="' + esc(x.id) + '"' + (n.parent === x.id ? ' selected' : '') + '>' + esc(x.label) + '</option>';
+                    }).join('');
+                el.innerHTML = head + '<p class="muted">Which device does <b>' + esc(n.label) + '</b> get its internet from? Pick the device it is cabled or linked to, on the way to the internet.</p><div class="tp-edit-row"><label for="tp-parent">Gets its internet from</label><select id="tp-parent">' + opts + '</select>' +
+                    '<button type="button" class="btn-primary btn-sm" data-act="connect">Save</button><span class="muted" id="tp-msg" role="status"></span></div>';
+            }
+            function renderDiagram() {
+                var g = T.buildGraph(devices, I), L = T.layout(g), A = attnMap();
+                lastGraph = g;
+                var W = L.nodeW, H = L.nodeH;
+                var svg = '<svg class="tp-svg" width="' + L.width + '" height="' + L.height + '" viewBox="0 0 ' + L.width + ' ' + L.height + '" role="group" aria-label="Network diagram">';
+                L.edges.forEach(function (e) {
+                    var a = e.from === 'internet' ? L.internet : L.pos[e.from], b = L.pos[e.to];
+                    if (!a || !b) return;
+                    var x1 = a.x + W / 2, y1 = a.y + H, x2 = b.x + W / 2, y2 = b.y, my = y1 + (y2 - y1) / 2;
+                    svg += '<path class="tp-edge" d="M' + x1 + ' ' + y1 + 'V' + my + 'H' + x2 + 'V' + y2 + '"/>';
+                });
+                if (L.internet) svg += '<g class="tp-internet" transform="translate(' + L.internet.x + ' ' + L.internet.y + ')"><rect width="' + W + '" height="' + H + '" rx="8"/><text class="tp-t" x="' + W / 2 + '" y="' + (H / 2 + 5) + '" text-anchor="middle">Internet</text></g>';
+                if (L.looseTop !== null) svg += '<text class="tp-label" x="16" y="' + (L.looseTop + 14) + '">Not connected yet</text>';
+                g.list.forEach(function (n) {
+                    var p = L.pos[n.id];
+                    if (!p) return;
+                    var h = T.healthOf(n.d, A.by), sub = [roleLabel(n.d), deviceFacts(n.d)[0]].filter(Boolean).join(' · ');
+                    svg += '<g class="tp-node ' + dotClass(h) + (n.parent ? '' : ' loose') + (diagSel === n.id ? ' sel' : '') + '" data-node="' + esc(n.id) + '" tabindex="0" role="button" aria-label="' + esc(n.label + ', ' + STATE_TEXT[dotClass(h)]) + '" transform="translate(' + p.x + ' ' + p.y + ')">' +
+                        '<title>' + esc(n.label) + '</title><rect width="' + W + '" height="' + H + '" rx="8"/><circle class="tp-dot" cx="14" cy="' + H / 2 + '" r="5"/>' +
+                        '<text class="tp-t" x="28" y="22">' + esc(cut(n.label, 21)) + '</text><text class="tp-s" x="28" y="40">' + esc(cut(sub, 26)) + '</text></g>';
+                });
+                svg += '</svg>';
+                var wrap = document.querySelector('#topo .tp-wrap');
+                var sl = wrap ? wrap.scrollLeft : 0, st = wrap ? wrap.scrollTop : 0;
+                $('topo').innerHTML = '<p class="muted tp-help">Each box is a device. A line means “gets its internet from”: the box above feeds the box below. Click a box to change what it plugs into.</p><div class="tp-wrap">' + svg + '</div><div class="tp-edit" id="topo-edit"></div>';
+                var nw = document.querySelector('#topo .tp-wrap');
+                if (nw) { nw.scrollLeft = sl; nw.scrollTop = st; }
+                renderEditor();
+            }
+
+            // ---------- 3. trace a customer ----------
+            function candKey(c) { return c.type + '|' + (c.deviceId || '') + '|' + c.label; }
+            function updateTraceOut() {
+                var out = $('trace-out');
+                if (!out) return;
+                var cands = T.candidates(devices, sas.byMac, sas.list);
+                var q = traceQ.trim();
+                if (q.length < 2) {
+                    out.innerHTML = '<p class="muted">Type at least two letters. You can search by username, name, MAC address, IP address or ONU serial number.' + (sas.configured ? '' : ' SAS is not connected, so only names, MACs and addresses seen on your radios and ONUs can be found.') + '</p>';
+                    return;
+                }
+                var hits = T.search(cands, q, 12);
+                if (!hits.length) { out.innerHTML = '<p class="muted">No customer matches “' + esc(q) + '”.</p>'; return; }
+                var pick = null;
+                if (tracePick) pick = cands.filter(function (c) { return candKey(c) === tracePick; })[0] || null;
+                if (!pick && hits.length === 1) pick = hits[0];
+                var html = '';
+                if (hits.length > 1 || !pick) {
+                    html += '<div class="tp-hits">' + hits.map(function (c) {
+                        var k = candKey(c);
+                        return '<button type="button" class="tp-hit' + (pick && candKey(pick) === k ? ' on' : '') + '" data-pick="' + esc(k) + '">' + esc(c.label) + (c.st && c.st.name && c.st.name !== c.label ? ' <span class="muted">' + esc(c.st.name) + '</span>' : '') + '</button>';
+                    }).join('') + '</div>';
+                }
+                if (pick) {
+                    var res = T.chain(pick, devices, I, attnMap().by, I.ATT);
+                    html += '<div class="tp-verdict ' + dotClass(res.verdict.state) + '" role="status">' + dot(res.verdict.state) + '<span>' + esc(res.verdict.text) + '</span></div>' +
+                        '<ol class="tp-chain">' + res.hops.map(function (h) {
+                            var dev = h.deviceId ? devices.filter(function (d) { return d.id === h.deviceId; })[0] : null;
+                            var title = dev ? '<a class="topo-name" href="/monitoring?open=' + encodeURIComponent(dev.id) + Q + '">' + esc(h.title) + '</a>' : esc(h.title);
+                            return '<li class="tp-hop ' + dotClass(h.state) + ' ' + esc(h.kind) + '">' + dot(h.state) + '<div><strong>' + title + '</strong>' +
+                                (h.sub ? '<div class="muted">' + esc(h.sub) + '</div>' : '') +
+                                (h.title === 'Where does it go next?' ? '<button type="button" class="link-btn" data-go="diagram">Open the link diagram</button>' : '') + '</div></li>';
+                        }).join('') + '</ol>';
+                } else {
+                    html += '<p class="muted">Pick a customer above to see their path.</p>';
+                }
+                out.innerHTML = html;
+            }
+            function renderTrace() {
+                if (!$('trace-q')) {
+                    $('topo').innerHTML = '<div class="tp-search"><label for="trace-q">Find a customer</label><input type="search" id="trace-q" placeholder="Username, name, MAC, IP or serial" autocomplete="off" value="' + esc(traceQ) + '"></div><div id="trace-out"></div>';
+                }
+                updateTraceOut();
+            }
+
+            // ---------- 4. tree (the original outline) ----------
+            function uplinkNode(d) {
                 var r = (d.metrics || {}).radio || {};
                 var peer = I.peerOf(d, devices);
                 var far = peer ? peer.name : (r.remoteName || 'Upstream');
-                var t = I.trafficBps(d);
-                return '<li>' + dot(d) + link(d, far + ' ⇄ ' + d.name) +
-                    facts([peer ? 'both ends monitored' : 'slave end only', r.signal != null ? r.signal + ' dBm' : '', d.online ? F.bps(t) : '', r.distance != null ? r.distance + ' km' : '']) + '</li>';
+                return '<li>' + dot(T.healthOf(d, {})) + link(d, far + ' ⇄ ' + d.name) +
+                    facts([peer ? 'both ends monitored' : (/^(ap|master)/i.test(String(r.mode || '')) ? 'master' : 'slave') + ' end only', r.signal != null ? r.signal + ' dBm' : '', d.online ? F.bps(I.trafficBps(d)) : '', r.distance != null ? r.distance + ' km' : '']) + '</li>';
             }
             function deviceNode(d) {
                 var mx = d.metrics || {};
-                return '<li>' + dot(d) + link(d) + facts([d.ip, d.online && mx.interfaces && mx.interfaces.length ? F.bps(I.trafficBps(d)) : '', mx.cpu ? 'CPU ' + mx.cpu.now + '%' : '']) + '</li>';
+                return '<li>' + dot(T.healthOf(d, {})) + link(d) + facts([d.ip, d.online && mx.interfaces && mx.interfaces.length ? F.bps(I.trafficBps(d)) : '', mx.cpu ? 'CPU ' + mx.cpu.now + '%' : '']) + '</li>';
             }
             function sectorNode(d) {
                 var mx = d.metrics || {};
                 var st = mx.stations || [];
-                var head = dot(d) + link(d) + facts([d.ip, st.length + ' radio' + (st.length === 1 ? '' : 's'), d.online ? F.bps(I.trafficBps(d)) : '']);
+                var head = dot(T.healthOf(d, {})) + link(d) + facts([d.ip, mx.stationCount != null ? st.length + ' radio' + (st.length === 1 ? '' : 's') : 'client list not read', d.online ? F.bps(I.trafficBps(d)) : '']);
                 if (!st.length) return '<li>' + head + '</li>';
                 var kids = st.map(function (c) {
-                    var s = sasByMac[I.macKey(c.mac)];
+                    var s = sas.byMac[I.macKey(c.mac)];
                     var weak = (c.signal != null && c.signal <= I.ATT.staSignal) || (c.ccq != null && c.ccq < I.ATT.staCcq);
                     return '<li><span class="topo-dot ' + (weak ? 'warn' : 'up') + '" aria-hidden="true"></span><span class="topo-name">' + esc(s ? s.username : (c.name || c.mac)) + '</span>' +
                         facts([s && c.name ? c.name : '', c.signal != null ? c.signal + ' dBm' : '', c.ccq != null ? 'CCQ ' + c.ccq + '%' : '', F.bps((c.rxBps || 0) + (c.txBps || 0))]) + '</li>';
@@ -121,32 +317,123 @@
                 return '<li><details data-sector="' + esc(d.id) + '"' + (openSectors[d.id] ? ' open' : '') + '><summary>' + head + '</summary><ul>' + kids + '</ul></details></li>';
             }
             function branch(title, items, html) {
-                return '<li class="topo-branch"><span class="topo-branch-title">' + esc(title) + ' <span class="muted">(' + items.length + ')</span></span>' +
-                    (items.length ? '<ul>' + html + '</ul>' : '') + '</li>';
+                return '<li class="topo-branch"><span class="topo-branch-title">' + esc(title) + ' <span class="muted">(' + items.length + ')</span></span>' + (items.length ? '<ul>' + html + '</ul>' : '') + '</li>';
             }
-
-            function render(data) {
-                var nb = $('net-banner');
-                nb.hidden = !data.networkDown;
-                $('net-banner-nets').textContent = (data.unreachableNetworks || []).length ? ' (' + data.unreachableNetworks.join(', ') + ')' : '';
-                var devices = data.devices || [];
-                if (!devices.length) { $('topo').innerHTML = '<p class="muted">No devices yet. <a href="/add-device">Add a device</a> and it will appear here.</p>'; return; }
+            function renderTree() {
                 Array.prototype.forEach.call(document.querySelectorAll('#topo details'), function (el) { openSectors[el.dataset.sector] = el.open; });
                 var byName = function (a, b) { return a.name.localeCompare(b.name); };
                 var uplinks = devices.filter(function (d) { return d.role === 'backhaul' && !I.isFarEnd(d, devices); }).sort(byName);
                 var sectors = devices.filter(function (d) { return d.role === 'sector'; }).sort(byName);
                 var others = devices.filter(function (d) { return d.role !== 'backhaul' && d.role !== 'sector'; }).sort(byName);
                 $('topo').innerHTML = '<ul class="topo-root"><li><span class="topo-branch-title">Tower</span><ul>' +
-                    branch('Uplinks', uplinks, uplinks.map(function (d) { return uplinkNode(d, devices); }).join('')) +
+                    branch('Uplinks', uplinks, uplinks.map(uplinkNode).join('')) +
                     branch('Routers and other devices', others, others.map(deviceNode).join('')) +
-                    branch('Sectors', sectors, sectors.map(sectorNode).join('')) +
-                    '</ul></li></ul>';
-                $('topo-note').textContent = devices.length + ' devices · grouped by role';
-                if (Date.now() - sasAt > 30000 && sectors.some(function (d) { return ((d.metrics || {}).stations || []).length; })) {
-                    sasAt = Date.now();
-                    I.loadSasByMac(DEMO).then(function (r) { sasByMac = r.byMac; }).catch(function () { /* SAS optional */ });
-                }
+                    branch('Sectors', sectors, sectors.map(sectorNode).join('')) + '</ul></li></ul>';
             }
+
+            // ---------- shell ----------
+            var NOTES = {
+                sites: 'Devices grouped by site',
+                diagram: 'What connects to what',
+                trace: 'Follow one customer to the internet',
+                tree: 'Grouped by role'
+            };
+            function renderView() {
+                Array.prototype.forEach.call(document.querySelectorAll('.topo-tab'), function (b) { b.setAttribute('aria-pressed', b.dataset.view === view ? 'true' : 'false'); });
+                $('topo-note').textContent = devices.length + ' devices · ' + NOTES[view];
+                if (!devices.length) { $('topo').innerHTML = '<p class="muted">No devices yet. <a href="/add-device">Add a device</a> and it will appear here.</p>'; return; }
+                if (view === 'sites') renderSites();
+                else if (view === 'diagram') renderDiagram();
+                else if (view === 'trace') renderTrace();
+                else renderTree();
+            }
+            function loadSas() {
+                sasAt = Date.now();
+                I.loadSasByMac(DEMO).then(function (r) {
+                    sas.byMac = r.byMac; sas.configured = r.configured; sas.list = (r.data && r.data.subscribers) || [];
+                    if (!busy()) renderView();
+                }).catch(function () { /* SAS is optional */ });
+            }
+            function render(data) {
+                var nb = $('net-banner');
+                nb.hidden = !data.networkDown;
+                $('net-banner-nets').textContent = (data.unreachableNetworks || []).length ? ' (' + data.unreachableNetworks.join(', ') + ')' : '';
+                devices = data.devices || [];
+                var hasList = devices.some(function (d) { var m = d.metrics || {}; return (m.stations && m.stations.length) || (m.onus && m.onus.length); });
+                if (Date.now() - sasAt > 30000 && (hasList || view === 'trace')) loadSas();
+                if (!busy()) renderView();
+            }
+
+            // ---------- events ----------
+            var root = $('topo');
+            document.querySelector('.topo-tabs').addEventListener('click', function (e) {
+                var b = e.target.closest('.topo-tab');
+                if (!b) return;
+                view = b.dataset.view; setPref(view);
+                if (view === 'trace' && Date.now() - sasAt > 30000) loadSas();
+                renderView();
+            });
+            root.addEventListener('change', function (e) {
+                var cb = e.target.closest('input[data-sel]');
+                if (cb) { selected[cb.dataset.sel] = cb.checked; renderBar(); return; }
+                var all = e.target.closest('input[data-selall]');
+                if (all) {
+                    T.groupSites(devices).filter(function (g) { return g.key === all.dataset.selall; }).forEach(function (g) { g.devices.forEach(function (d) { selected[d.id] = all.checked; }); });
+                    renderSites();
+                }
+            });
+            root.addEventListener('input', function (e) {
+                if (e.target.id === 'site-name') siteInput = e.target.value;
+                else if (e.target.id === 'trace-q') { traceQ = e.target.value; tracePick = ''; updateTraceOut(); }
+            });
+            function selectNode(id) {
+                diagSel = id;
+                Array.prototype.forEach.call(document.querySelectorAll('.tp-node'), function (g) { g.classList.toggle('sel', g.dataset.node === id); });
+                renderEditor();
+            }
+            root.addEventListener('keydown', function (e) {
+                var n = e.target.closest && e.target.closest('.tp-node');
+                if (n && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectNode(n.dataset.node); }
+            });
+            root.addEventListener('click', function (e) {
+                // a click anywhere on a device row ticks it (links, boxes and buttons keep their own job)
+                var row = e.target.closest('.site-row');
+                if (row && CAN_EDIT && !e.target.closest('a, input, button, label')) {
+                    var rb = row.querySelector('input[data-sel]');
+                    if (rb) { rb.checked = !rb.checked; selected[rb.dataset.sel] = rb.checked; renderBar(); return; }
+                }
+                var node = e.target.closest('.tp-node');
+                if (node) { selectNode(node.dataset.node); return; }
+                var pick = e.target.closest('[data-pick]');
+                if (pick) { tracePick = pick.dataset.pick; updateTraceOut(); return; }
+                var go = e.target.closest('[data-go]');
+                if (go) { view = go.dataset.go; setPref(view); renderView(); return; }
+                var act = e.target.closest('[data-act]');
+                if (!act) return;
+                var ids = Object.keys(selected).filter(function (k) { return selected[k]; });
+                if (act.dataset.act === 'clear') { selected = {}; barMsg = ''; renderSites(); return; }
+                if (act.dataset.act === 'place' || act.dataset.act === 'unplace') {
+                    var name = act.dataset.act === 'place' ? siteInput.trim() : '';
+                    if (act.dataset.act === 'place' && !name) { barMsg = 'Type the site name first, for example “Hill tower”.'; renderBar(); return; }
+                    barMsg = 'Saving…'; renderBar();
+                    post(ids.map(function (id) { return { id: id, location: name }; })).then(function (j) {
+                        if (j.ok) { selected = {}; siteInput = ''; barMsg = act.dataset.act === 'place' ? 'Added to ' + name + '.' : 'Taken out of their sites.'; poll(); }
+                        else { barMsg = (j.errors && j.errors[0] && j.errors[0].error) || 'Could not save.'; renderBar(); }
+                    }).catch(function () { barMsg = 'Could not reach TowerDesk.'; renderBar(); });
+                    return;
+                }
+                if (act.dataset.act === 'connect') {
+                    var n = lastGraph && diagSel && lastGraph.nodes[diagSel], sel = $('tp-parent');
+                    if (!n || !sel) return;
+                    var parent = sel.value || null, msg = $('tp-msg');
+                    var changes = [{ id: n.id, parentId: parent }];
+                    if (n.far) changes.push({ id: n.far.id, parentId: parent }); // both ends of a link move together
+                    msg.textContent = 'Saving…';
+                    post(changes).then(function (j) {
+                        if (j.ok) { poll(); } else if (msg) msg.textContent = (j.errors && j.errors[0] && j.errors[0].error) || 'Could not save.';
+                    }).catch(function () { if (msg) msg.textContent = 'Could not reach TowerDesk.'; });
+                }
+            });
 
             function poll() {
                 fetch('/api/monitor' + (DEMO ? '?demo=1' : ''))

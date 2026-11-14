@@ -116,7 +116,8 @@
         <div class="card">
             <div class="card-header"><h3>AI advisor</h3><span class="card-actions">Optional · needs internet</span></div>
             <div class="card-body">
-                <p class="muted" style="margin-top:0">On a sector's card, the advisor can ask Claude to explain what is wrong and propose setting changes. It runs only when you press the button, and each run is billed to this key. Customer names, usernames, MAC and IP addresses are not sent: clients go as "client 1", "client 2". Without a key the built-in checks still work, fully offline.</p>
+                <p class="muted" style="margin-top:0">On a sector's card, the advisor can ask Claude to explain what is wrong and propose setting changes. It runs only when you press the button, and each run is billed to this key. Customer names, usernames, MAC and IP addresses are not sent: clients go as "client 1", "client 2". With no key saved, it uses Claude Code on this PC instead, if that is signed in. Without either, the built-in checks still work, fully offline.</p>
+                <p class="muted" id="ai-cc" style="margin-top:0" hidden></p>
                 <form id="ai-form" class="detail-edit" autocomplete="off">
                     <div class="form-row">
                         <div class="form-group" style="flex:1 1 100%">
@@ -297,7 +298,28 @@
                 $('ai-key-state').textContent = has ? 'A key is saved (encrypted). ' : '';
                 $('ai-key-clear').hidden = !has;
             }
-            api('GET', '/api/ai/config').then(function (r) { showAiKey(!!(r.body && r.body.hasKey)); });
+            function showClaudeCode(cc) {
+                var el = $('ai-cc');
+                if (!cc || !cc.found) { el.hidden = true; return; }
+                el.hidden = false;
+                el.textContent = '';
+                var b = document.createElement('strong');
+                if (cc.loggedIn) {
+                    b.textContent = '✓ Claude Code on this PC is signed in. ';
+                    el.appendChild(b);
+                    el.appendChild(document.createTextNode('With no key saved, Ask AI uses it (no key needed; it uses your Claude plan).'));
+                } else {
+                    b.textContent = 'Claude Code was found on this PC but is not signed in. ';
+                    el.appendChild(b);
+                    el.appendChild(document.createTextNode('To use it instead of a key, open PowerShell, run this once, sign in with your Claude account in the browser, then reload this page:'));
+                    var code = document.createElement('div');
+                    code.className = 'mono';
+                    code.style.cssText = 'margin-top:6px;word-break:break-all;user-select:all';
+                    code.textContent = cc.command || '';
+                    el.appendChild(code);
+                }
+            }
+            api('GET', '/api/ai/config').then(function (r) { showAiKey(!!(r.body && r.body.hasKey)); showClaudeCode(r.body && r.body.claudeCode); });
             $('ai-form').addEventListener('submit', function (e) {
                 e.preventDefault();
                 var key = $('ai-key').value.trim();

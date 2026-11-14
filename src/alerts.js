@@ -60,6 +60,13 @@ function open(device, kind, severity, message) {
 function resolve(deviceId, kind, note) {
   const a = findOpen(deviceId, kind);
   if (!a) return null;
+  if (kind === 'offline') {
+    // An offline alert that clears is dropped, not kept as history: a closed VPN or a brief drop
+    // would otherwise fill the history with "down" entries that say nothing about the network.
+    alerts = load().filter((x) => x !== a);
+    save();
+    return a;
+  }
   a.resolvedAt = new Date().toISOString();
   if (note) a.resolution = note;
   save();
@@ -104,7 +111,7 @@ function forgetDevice(deviceId) {
       changed = true;
     }
   }
-  if (changed) save();
+  if (changed) { alerts = load().filter((a) => !(a.deviceId === deviceId && a.kind === 'offline' && a.resolvedAt)); save(); }
 }
 
 function acknowledge(id) {
@@ -117,8 +124,11 @@ function acknowledge(id) {
   return a;
 }
 
+// Old offline entries saved before this rule are hidden too.
+function visible() { return load().filter((a) => !(a.kind === 'offline' && a.resolvedAt)); }
+
 function list() {
-  return load().slice(0, 100);
+  return visible().slice(0, 100);
 }
 
 function summary() {
@@ -129,7 +139,7 @@ function summary() {
     unacknowledged: openList.filter((a) => !a.acknowledgedAt).length,
     critical: openList.filter((a) => a.severity === 'critical').length,
     warning: openList.filter((a) => a.severity === 'warning').length,
-    resolved24h: load().filter((a) => a.resolvedAt && new Date(a.resolvedAt).getTime() > dayAgo).length,
+    resolved24h: visible().filter((a) => a.resolvedAt && new Date(a.resolvedAt).getTime() > dayAgo).length,
     latest: openList[0] ? { id: openList[0].id, severity: openList[0].severity, message: openList[0].message, openedAt: openList[0].openedAt } : null
   };
 }

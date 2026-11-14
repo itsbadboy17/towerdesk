@@ -76,7 +76,7 @@
             <div class="kpi-card"><div class="kpi-head"><h3>Sectors</h3></div><div class="kpi-value" id="ov-sectors">–</div><div class="kpi-change muted" id="ov-sectors-sub">&nbsp;</div></div>
             <div class="kpi-card"><div class="kpi-head"><h3>Customer radios</h3></div><div class="kpi-value" id="ov-radios">–</div><div class="kpi-change muted">Registered on sectors</div></div>
             <div class="kpi-card"><div class="kpi-head"><h3>Subscribers online</h3></div><div class="kpi-value" id="ov-subs">–</div><div class="kpi-change muted" id="ov-subs-sub">From SAS</div></div>
-            <div class="kpi-card"><div class="kpi-head"><h3>Total traffic</h3></div><div class="kpi-value" id="ov-traffic">–</div><div class="kpi-change muted">RX + TX, live</div></div>
+            <div class="kpi-card"><div class="kpi-head"><h3>Sector traffic</h3></div><div class="kpi-value" id="ov-traffic">–</div><div class="kpi-change muted" title="What customers are using right now, added up over all your sectors (download + upload).">Customers, all sectors</div></div>
         </div>
 
         <div class="card">
@@ -106,7 +106,7 @@
         </div>
 
         <div class="card">
-            <div class="card-header"><h3>Recent changes</h3><span class="card-actions">Since TowerDesk was opened</span></div>
+            <div class="card-header"><h3>Recent changes</h3><span class="card-actions" title="Customers joining or leaving a sector, devices added or removed, and radio settings changed through TowerDesk. Devices going online or offline are not listed here, so closing your VPN does not fill this list.">Customers and setup, since TowerDesk was opened</span></div>
             <div class="card-body"><ul class="mismatch-list" id="ov-events"><li class="muted">Loading…</li></ul></div>
         </div>
     </main>
@@ -116,7 +116,7 @@
         (function () {
             'use strict';
             var F = window.TowerDesk.fmt, I = window.TowerDesk.insights, esc = F.esc;
-            var DEMO = location.search.indexOf('demo') >= 0;
+            var DEMO = !!window.TowerDesk.demo;
             var Q = DEMO ? '&demo=1' : '';
             var $ = function (id) { return document.getElementById(id); };
             var sas = { byMac: {}, data: null, at: 0 };
@@ -137,7 +137,8 @@
                 var sectors = devices.filter(function (d) { return d.role === 'sector'; });
                 var unknown = devices.filter(function (d) { return !known(d); }).length;
                 var radios = sectors.reduce(function (a, d) { var m = d.metrics || {}; return a + ((m.stations || []).length || m.clientCount || 0); }, 0);
-                var traffic = devices.reduce(function (a, d) { return d.online && !I.isFarEnd(d, devices) ? a + I.trafficBps(d) : a; }, 0);
+                // Customers' traffic across the sectors only; routers and backhauls carry the same bits again.
+                var traffic = devices.reduce(function (a, d) { return d.online && d.role === 'sector' ? a + I.trafficBps(d) : a; }, 0);
 
                 $('ov-devices').textContent = upOf(devices) + ' / ' + devices.length;
                 $('ov-devices-sub').textContent = unknown ? unknown + ' unknown' : (devices.length ? (devices.length - upOf(devices)) + ' offline' : 'No devices yet');
@@ -177,10 +178,12 @@
                         '<td>' + (worst ? esc(who) + ' <span class="mono muted">' + esc(worst.signal) + ' dBm</span>' : '<span class="muted">–</span>') + '</td></tr>';
                 }).join('') : '<tr><td colspan="5" class="muted">No sectors found yet.</td></tr>';
 
-                $('ov-events').innerHTML = (data.events || []).length ? data.events.slice(0, 8).map(function (e) {
-                    return '<li><span class="mono muted">' + esc(new Date(e.t).toLocaleTimeString()) + '</span> <strong>' + esc(e.name) + '</strong> ' +
-                        (e.online ? 'came online' : 'went offline') + ' <span class="muted">' + esc(e.ip) + '</span></li>';
-                }).join('') : '<li class="muted">No status changes yet.</li>';
+                // Real changes only. Online/offline flips are left out on purpose: closing the VPN would
+                // flip every device and bury what matters.
+                $('ov-events').innerHTML = (data.changes || []).length ? data.changes.slice(0, 8).map(function (c) {
+                    var link = c.id && c.kind !== 'device' ? '<a class="topo-name" href="/monitoring?open=' + encodeURIComponent(c.id) + Q + '">' + esc(c.name) + '</a>' : '<strong>' + esc(c.name) + '</strong>';
+                    return '<li><span class="mono muted">' + esc(new Date(c.t).toLocaleTimeString()) + '</span> ' + link + ' <span class="muted">' + esc(String(c.text).replace(c.name + ': ', '').replace(c.name + ' ', '')) + '</span></li>';
+                }).join('') : '<li class="muted">No customer or setup changes since TowerDesk was opened. (Devices going online or offline are not listed here.)</li>';
 
                 if (Date.now() - sas.at > 20000) {
                     sas.at = Date.now();

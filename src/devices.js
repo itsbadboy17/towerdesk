@@ -144,10 +144,38 @@ function setPeer(id, peerId) {
 function remove(id) {
   const devices = load();
   const next = devices.filter((d) => d.id !== id);
-  next.forEach((d) => { if (d.peerId === id) d.peerId = null; });
+  next.forEach((d) => { if (d.peerId === id) d.peerId = null; if (d.parentId === id) d.parentId = null; });
   if (next.length === devices.length) return false;
   save(next);
   return true;
 }
 
-module.exports = { TYPES, list, get, add, update, edit, setPeer, reconfigure, remove, connectionOptions, publicView, findDuplicate };
+// Where a device sits: which site (free text) and what it connects to (another saved device, or
+// 'internet' for the top of the network). Only these two fields; nothing about how the device is
+// monitored changes, so no re-test is needed. A device cannot connect to itself or make a loop.
+// Returns { device } or { error }.
+function setLayout(id, input) {
+  const list = load();
+  const d = list.find((x) => x.id === id);
+  if (!d) return { error: 'Device not found' };
+  const inp = input || {};
+  if (inp.location !== undefined) d.location = String(inp.location || '').trim().slice(0, 120);
+  if (inp.parentId !== undefined) {
+    const pid = inp.parentId ? String(inp.parentId) : null;
+    if (pid && pid !== 'internet') {
+      if (pid === id) return { error: 'A device cannot connect to itself' };
+      const p = list.find((x) => x.id === pid);
+      if (!p) return { error: 'The device it should connect to is not saved' };
+      let cur = p, guard = 0;
+      while (cur && guard++ < 100) {
+        if (cur.parentId === id) return { error: 'That would make a loop' };
+        cur = list.find((x) => x.id === cur.parentId);
+      }
+    }
+    d.parentId = pid;
+  }
+  save(list);
+  return { device: publicView(d) };
+}
+
+module.exports = { TYPES, list, get, add, update, edit, setPeer, setLayout, reconfigure, remove, connectionOptions, publicView, findDuplicate };

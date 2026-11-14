@@ -44,6 +44,41 @@ function multipart(fields) {
 
 function num(v) { return v !== undefined && v !== null && v !== '' && Number.isFinite(Number(v)) ? Number(v) : undefined; }
 
+// Connected subscriber radios as TowerDesk models them. airMAX AC access points put them in
+// status.cgi (wireless.sta); airMAX M-series access points serve the same records from /sta.cgi,
+// where link quality is reported per-mille. Missing fields stay undefined.
+function mapStations(list, perMille) {
+  return (Array.isArray(list) ? list : []).map((x) => {
+    if (!x || typeof x !== 'object') return null;
+    const rem = x.remote || {};
+    const st = x.stats || {};
+    let ccq = (x.airmax && num(x.airmax.quality) !== undefined) ? num(x.airmax.quality) : num(x.ccq);
+    if (perMille && ccq !== undefined && ccq > 100) ccq = Math.round(ccq / 10);
+    return {
+      name: rem.hostname || x.name || rem.name || x.lastip || x.mac,
+      ip: x.lastip || rem.ip,
+      mac: x.mac,
+      signal: num(x.signal),
+      ccq,
+      txRate: num(x.tx),
+      rxRate: num(x.rx),
+      platform: rem.platform,
+      uptime: num(x.uptime),
+      rxBytes: num(st.rx_bytes),
+      txBytes: num(st.tx_bytes)
+    };
+  }).filter((x) => x && (x.mac || x.ip));
+}
+
+// airMAX M-series (airOS 6) leaves the byte counters out of status.cgi; /ifstats.cgi has them
+// (as text, and 32-bit). `up` maps an interface name to whether it is plugged in / enabled.
+function parseIfstats(j, up) {
+  return (j && Array.isArray(j.interfaces) ? j.interfaces : []).map((i) => {
+    const st = (i && i.stats) || {};
+    return { name: i && i.ifname, up: up && up[i.ifname] !== undefined ? up[i.ifname] : true, rxBytes: num(st.rx_bytes), txBytes: num(st.tx_bytes), counterBits: 32 };
+  }).filter((i) => i.name && i.rxBytes !== undefined && i.txBytes !== undefined);
+}
+
 // Turn airOS status.cgi JSON into the shape the rest of TowerDesk expects.
 function parseStatus(j) {
   const h = j.host || {};
@@ -68,23 +103,7 @@ function parseStatus(j) {
   const freqRaw = w.frequency !== undefined ? w.frequency : w.freq;
   // Connected subscriber radios (only populated on a point-to-multipoint AP). Each remote CPE
   // reports its own signal, link quality, IP and byte counters (used for live per-user throughput).
-  const stations = (Array.isArray(w.sta) ? w.sta : []).map((x) => {
-    const rem = x.remote || {};
-    const st = x.stats || {};
-    return {
-      name: rem.hostname || x.name || rem.name || x.lastip || x.mac,
-      ip: x.lastip || rem.ip,
-      mac: x.mac,
-      signal: num(x.signal),
-      ccq: (x.airmax && num(x.airmax.quality) !== undefined) ? num(x.airmax.quality) : num(x.ccq),
-      txRate: num(x.tx),
-      rxRate: num(x.rx),
-      platform: rem.platform,
-      uptime: num(x.uptime),
-      rxBytes: num(st.rx_bytes),
-      txBytes: num(st.tx_bytes)
-    };
-  }).filter((x) => x.mac || x.ip);
+  const stations = mapStations(w.sta, false);
   const radio = {
     essid: w.essid,
     mode: w.mode,
@@ -159,10 +178,56 @@ class AirosSession {
     return null; // redirected back to the login page => not authenticated / session gone
   }
 
+  // The client list of an M-series access point. Returns an array, or null when this radio has
+  // no /sta.cgi (so the caller stops asking). Read-only.
+  async fetchSta() {
+    let r;
+    try { r = await request('GET', this.base + '/sta.cgi', { headers: { Cookie: cookieHeader(this.jar) }, timeout: this.timeout }); }
+    catch (e) { throw new AirosError('network', friendlyError(e)); }
+    addCookies(this.jar, r);
+    if (r.status === 200 && /^\s*\[/.test(r.body)) {
+      try { return JSON.parse(r.body); } catch (e) { return null; }
+    }
+    return null;
+  }
+
+  // The interface byte counters of an M-series radio. An array, or null when there is no such page.
+  async fetchIfstats() {
+    let r;
+    try { r = await request('GET', this.base + '/ifstats.cgi', { headers: { Cookie: cookieHeader(this.jar) }, timeout: this.timeout }); }
+    catch (e) { throw new AirosError('network', friendlyError(e)); }
+    addCookies(this.jar, r);
+    if (r.status === 200 && /^s*{/.test(r.body)) { try { return JSON.parse(r.body); } catch (e) { return null; } }
+    return null;
+  }
+
   async readStats() {
     const j = await this.fetchStatus();
     if (!j) throw new AirosError('expired', 'airOS session expired');
-    return parseStatus(j);
+    const st = parseStatus(j);
+    // No byte counters in the status page (airOS 6): read them from /ifstats.cgi, best effort.
+    if (!st.interfaces.length && this.ifstats !== false) {
+      let raw;
+      try { raw = await this.fetchIfstats(); } catch (e) { raw = undefined; }
+      if (raw === null) this.ifstats = false;
+      else if (raw) {
+        const up = {};
+        (j.interfaces || []).forEach((i) => { const s2 = i.status || {}; up[i.ifname] = s2.plugged === 1 || s2.plugged === true || i.enabled === true || i.enabled === 1; });
+        st.interfaces = parseIfstats(raw, up);
+      }
+    }
+    // An access point whose status page lists no clients may simply keep them on /sta.cgi.
+    // Best effort: a failure here never fails the poll.
+    if (!st.stations.length && /^ap/i.test(String(st.mode || '')) && this.staCgi !== false) {
+      let list;
+      try { list = await this.fetchSta(); } catch (e) { list = undefined; }
+      if (list === null) this.staCgi = false;
+      else if (Array.isArray(list)) {
+        st.stations = mapStations(list, true);
+        if (st.radio) st.radio.stations = st.stations.length || undefined;
+      }
+    }
+    return st;
   }
 
   async logout() {
@@ -222,4 +287,4 @@ async function test(opts) {
   }
 }
 
-module.exports = { AirosSession, AirosError, test, parseStatus, formatSecs };
+module.exports = { AirosSession, AirosError, test, parseStatus, parseIfstats, mapStations, formatSecs };

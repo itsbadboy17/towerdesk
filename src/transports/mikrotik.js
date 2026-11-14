@@ -272,24 +272,6 @@ async function readWireless(session) {
   };
 }
 
-// Turn on SNMP and make sure the given read-only community exists. This WRITES to the router
-// (the only non-read-only operation in TowerDesk) and needs an API user with write permission.
-// It never changes the community's address restrictions and never removes anything.
-async function enableSnmp(session, { community = 'public' } = {}) {
-  const existing = await session.run(['/snmp/community/print', '=.proplist=name']);
-  const names = existing.map((c) => c.name);
-  let added = false;
-  if (!names.includes(community)) {
-    await session.run(['/snmp/community/add', '=name=' + community, '=read-access=yes']);
-    added = true;
-  } else {
-    // Make sure it can read (don't touch addresses or anything else).
-    await session.run(['/snmp/community/set', '=numbers=' + community, '=read-access=yes', '=disabled=no']);
-  }
-  await session.run(['/snmp/set', '=enabled=yes']);
-  return { community, added };
-}
-
 async function test(opts) {
   let session;
   try {
@@ -308,4 +290,4 @@ async function test(opts) {
   }
 }
 
-module.exports = { test, Session, readSystem, readInterfaces, readWireless, readRegistration, parseRegistration, enableSnmp, isAuthError, encodeSentence, parseSentences };
+module.exports = { test, Session, readSystem, readInterfaces, readWireless, readRegistration, parseRegistration, isAuthError, encodeSentence, parseSentences };

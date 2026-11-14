@@ -118,6 +118,13 @@ alerts.evaluate(dev, { online: false, downStreak: alerts.OFFLINE_CONFIRM });
 ok('alert after repeated failed checks', openCount() === 1);
 alerts.networkUnreachable(dev.id);
 ok('network unreachable closes device alerts', openCount() === 0);
+ok('a cleared offline alert leaves no history', !alerts.list().some((a) => a.kind === 'offline'));
+alerts.evaluate(dev, { online: false, downStreak: alerts.OFFLINE_CONFIRM });
+alerts.evaluate(dev, { online: true, recentLatencies: [10, 10, 10] });
+ok('coming back removes the offline alert instead of filing it', openCount() === 0 && !alerts.list().some((a) => a.kind === 'offline'));
+alerts.evaluate(dev, { online: true, recentLatencies: [400, 400, 400] });
+alerts.evaluate(dev, { online: true, recentLatencies: [10, 10, 10] });
+ok('a cleared latency alert stays in the history', alerts.list().some((a) => a.kind === 'latency' && a.resolvedAt));
 
 (async () => {
   // Every device unreachable at once (192.0.2.x never answers) = the path to the tower is down:
@@ -144,6 +151,18 @@ ok('network unreachable closes device alerts', openCount() === 0);
   ok('network still flagged with a local device online', m2.networkDown === true && dn('Local').online === true && dn('Local').unreachable === false);
   ok('tower devices stay unknown', dn('T1').online === null && dn('T2').online === null);
   ok('lone unreachable device is a normal offline with an alert', dn('Lone').online === false && dn('Lone').unreachable === false && openCount() === 1);
+
+  // Recent changes: setup and customer changes, never online/offline flips.
+  monitor.note('setting', 'dvx', 'Sector', 'Sector: Frequency 5180 → 5240 MHz (applied, waiting to be kept)');
+  const added = devices.add({ name: 'Brand new', type: 'other', ip: '192.0.2.77', method: 'ping' });
+  await monitor.tick();
+  const ch = monitor.snapshot().changes;
+  ok('a note appears in the changes feed', ch.some((c) => c.kind === 'setting' && /5240/.test(c.text)));
+  ok('a device added later is a change', ch.some((c) => c.kind === 'device' && /Brand new was added/.test(c.text)));
+  devices.remove(added.id);
+  await monitor.tick();
+  ok('a device removed is a change', monitor.snapshot().changes.some((c) => /Brand new was removed/.test(c.text)));
+  ok('online/offline flips are not in the changes feed', monitor.snapshot().changes.every((c) => !/online|offline|went/i.test(c.text.replace(/waiting to be kept/, ''))));
 
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log('Link pairing tests passed.');

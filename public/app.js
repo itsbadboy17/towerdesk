@@ -58,6 +58,14 @@
     window.TowerDesk = window.TowerDesk || {};
     window.TowerDesk.icon = function (name) { return ICONS[name] ? svgIcon(ICONS[name]) : ''; };
 
+    // ----- Real data / demo data -----
+    // One switch for the whole app. Demo shows a sample tower so features can be tried without
+    // touching the real network. It is remembered in this browser (td-demo); a ?demo=1 link
+    // forces it on. Pages read window.TowerDesk.demo instead of working it out themselves.
+    var DEMO_ON = /[?&]demo(=1|=true|&|$)/.test(location.search) || readPref('td-demo') === '1';
+    window.TowerDesk.demo = DEMO_ON;
+    if (DEMO_ON) root.setAttribute('data-demo', '1');
+
     function applyIcons() {
         document.querySelectorAll('.nav-section a').forEach(function (a) {
             var key = NAV_ICON[a.getAttribute('href')];
@@ -152,6 +160,36 @@
                 syncThemeBtn();
             });
             right.insertBefore(themeBtn, lang.nextSibling);
+
+            // Real data / demo data switch, next to the language selector
+            var demoBtn = document.createElement('button');
+            demoBtn.type = 'button';
+            demoBtn.id = 'demo-toggle';
+            demoBtn.className = 'demo-toggle' + (DEMO_ON ? ' is-demo' : '');
+            demoBtn.setAttribute('aria-pressed', DEMO_ON ? 'true' : 'false');
+            demoBtn.innerHTML = '<span class="demo-dot" aria-hidden="true"></span><span class="demo-label"></span>';
+            demoBtn.querySelector('.demo-label').textContent = DEMO_ON ? 'Demo data' : 'Real data';
+            demoBtn.title = DEMO_ON ? 'Showing a sample tower. Click to go back to your real data.' : 'Showing your real data. Click to switch to a sample tower for testing.';
+            demoBtn.addEventListener('click', function () {
+                writePref('td-demo', DEMO_ON ? '0' : '1');
+                var u = new URL(location.href);
+                // Going to demo also says so in the address (a fallback if the browser cannot
+                // remember it); going back to real removes it so the page cannot stay in demo.
+                if (DEMO_ON) u.searchParams.delete('demo'); else u.searchParams.set('demo', '1');
+                location.replace(u.toString());
+            });
+            right.insertBefore(demoBtn, right.firstChild);
+
+            // While demo is on, say so on every page so it can never be mistaken for real data.
+            // (The header is fixed to the top, so the notice goes first inside the page content.)
+            var mainEl = document.querySelector('.main');
+            if (DEMO_ON && mainEl) {
+                var note = document.createElement('div');
+                note.className = 'demo-banner';
+                note.setAttribute('role', 'status');
+                note.textContent = 'Demo data: a sample tower for testing. Nothing here changes your real devices. Add Device, Alerts and Settings still use your real setup.';
+                mainEl.insertBefore(note, mainEl.firstChild);
+            }
 
             // Mobile menu toggle (link to the sidebar so it still works as an anchor)
             if (sidebar) {
@@ -263,31 +301,51 @@
     // embedded browsers, so this stays on the page. Resolves true on Yes, false on No/timeout.
     window.TowerDesk = window.TowerDesk || {};
 
-    // One place that decides a device's real connection state, so the Devices table and the
-    // Monitoring page agree. "Online" (answers ping) is NOT the same as "connected" (the chosen
-    // login/method actually works) — this tells them apart.
-    //   monitored : logged in and live data is flowing (traffic graphs)
-    //   connected : login works, data not flowing yet (or method has no graphs)
-    //   reachable : answers ping/web but has no working login — status only
-    //   failed    : answers ping but the chosen method/login did not work
-    //   offline   : no reply at all
-    //   unknown   : not checked yet
-    var AUTH_METHODS = { mikrotik: 1, 'mikrotik-ssl': 1, ssh: 1, telnet: 1, snmp: 1, snmp1: 1, tplink: 1, airos: 1 };
+    // One place that decides a device's real connection state, so every page uses the same words.
+    // "Online" (answers ping) is not the same as having live data (a login or SNMP that works):
+    //   monitored : Live data      - logged in (or SNMP) and readings are flowing
+    //   connected : Starting…      - the login works; the first readings are still arriving
+    //   noData    : No live data   - the login worked once but reading it now fails
+    //   reachable : Ping only      - answers ping/web, nothing to log in with, so no signal/traffic
+    //   failed    : why the login failed: Wrong login / Not answering / Login closed / Login failed
+    //   offline   : Offline        - no reply at all
+    //   unknown   : Checking…      - not checked yet
+    var AUTH_METHODS = { mikrotik: 1, 'mikrotik-ssl': 1, ssh: 1, telnet: 1, snmp: 1, snmp1: 1, tplink: 1, airos: 1, mimosa: 1 };
+    // Why a login test failed, in the owner's words. 'auth' is the only one that means a wrong password.
+    window.TowerDesk.loginProblem = function (err) {
+        err = String(err || '');
+        if (/wrong (user|pass)|password|credential|denied|unauthori|authenticat/i.test(err)) return 'auth';
+        if (/timed out|timeout|filtered|no reply|no snmp/i.test(err)) return 'timeout';
+        if (/refused|closed|disabled/i.test(err)) return 'refused';
+        return 'other';
+    };
+    var PROBLEMS = {
+        auth: { label: 'Wrong login', hint: 'The device answered but rejected the saved username/password. Open the device and press Connect to enter the right one.' },
+        timeout: { label: 'Not answering', hint: 'Ping works, but the login page did not answer in time. This is not a wrong password: the device may be overloaded, or the link to it is unstable (lost packets).' },
+        refused: { label: 'Login closed', hint: 'The device refused the connection: that service is switched off or uses another port.' },
+        other: { label: 'Login failed', hint: 'The device answers ping, but the chosen connection method did not work.' }
+    };
     window.TowerDesk.connState = function (d) {
         var online = d.online;
         if (online === undefined || online === null) online = d.status ? d.status.online : online;
         var test = d.lastTest || null;
         var auth = !!AUTH_METHODS[d.method];
         var mx = d.metrics;
-        var hasData = !!(mx && !mx.error && !mx.waiting && mx.interfaces && mx.interfaces.length);
+        // Live data = traffic counters flowing, or (for devices with none) other readings arriving.
+        var hasData = !!(mx && !mx.error && ((!mx.waiting && mx.interfaces && mx.interfaces.length) || (mx.lastPoll && (mx.signal != null || mx.stationCount != null || mx.cpu || mx.onuCount != null))));
         if (d.unreachable) return { key: 'unknown', label: 'Unreachable', badge: 'warning', hint: 'Nothing on this device\'s network answers — the VPN may be closed. Its real status is unknown.' };
         if (online === false) return { key: 'offline', label: 'Offline', badge: 'critical', hint: 'No reply to ping or the management port.' };
         if (online === null || online === undefined) return { key: 'unknown', label: 'Checking…', badge: 'warning', hint: 'Not checked yet.' };
-        if (test && test.ok === false) return { key: 'failed', label: 'Login failed', badge: 'warning', hint: (test.error || 'The chosen connection did not work') + ' — the device answers ping, but this method/login is not working. Fix it or run Auto-detect.' };
-        if (auth && (!test || test.ok)) return hasData
-            ? { key: 'monitored', label: 'Monitored', badge: 'healthy', hint: 'Logged in and collecting live data.' }
-            : { key: 'connected', label: 'Connected', badge: 'healthy', hint: 'Logged in' + (mx ? ', collecting data…' : '.') };
-        return { key: 'reachable', label: 'Reachable', badge: 'info', hint: 'Answers ping/web, but with no login — status only, no traffic graphs. Add a login or SNMP to monitor it fully.' };
+        if (test && test.ok === false) {
+            var p = PROBLEMS[window.TowerDesk.loginProblem(test.error)];
+            return { key: 'failed', label: p.label, badge: 'warning', hint: p.hint + (test.error ? ' (' + test.error + ')' : '') };
+        }
+        if (auth && (!test || test.ok)) {
+            if (hasData) return { key: 'monitored', label: 'Live data', badge: 'healthy', hint: 'Logged in and collecting live data (signal, traffic).' };
+            if (mx && mx.error) return { key: 'noData', label: 'No live data', badge: 'warning', hint: mx.error + ' The login worked before, so this is usually a slow or unstable device.' };
+            return { key: 'connected', label: 'Starting…', badge: 'healthy', hint: 'Logged in. Waiting for the first readings (about 20 seconds).' };
+        }
+        return { key: 'reachable', label: 'Ping only', badge: 'info', hint: 'Only answers ping. TowerDesk has no working login for it, so there is no signal or traffic. Open the device and press Connect.' };
     };
 
     // ----- Shared formatting helpers for newer pages -----
@@ -334,27 +392,66 @@
     };
 
     // Ping / traceroute buttons for a host. Returns HTML; clicks are handled once, page-wide.
+    // Ping and traceroute from this PC, shown as a readable result (per-packet bars, a summary and a
+    // plain verdict) with the raw text kept under "Technical output". The parsing lives in
+    // /nettools-model.js, loaded the first time one of these buttons is used.
     window.TowerDesk.netTools = function (host) {
         if (!host) return '';
         return '<div class="net-tools" data-host="' + esc(host) + '">' +
-            '<button type="button" class="btn-secondary btn-sm" data-tool="ping">Ping</button>' +
-            '<button type="button" class="btn-secondary btn-sm" data-tool="trace">Traceroute</button>' +
-            '<pre class="net-tools-out" hidden></pre></div>';
+            '<button type="button" class="btn-secondary btn-sm" data-tool="ping" title="Sends 4 small test packets and shows how many come back and how fast">Ping</button>' +
+            '<button type="button" class="btn-secondary btn-sm" data-tool="trace" title="Shows each router between this PC and the device">Traceroute</button>' +
+            '<div class="net-tools-out" hidden></div></div>';
     };
+    function loadNetModel(cb) {
+        if (window.TowerDesk.nettools) return cb(window.TowerDesk.nettools);
+        var el = document.createElement('script');
+        el.src = '/nettools-model.js';
+        el.onload = function () { cb(window.TowerDesk.nettools); };
+        el.onerror = function () { cb(null); };
+        document.head.appendChild(el);
+    }
+    function ms1(v) { return v === null || v === undefined ? '–' : (v < 1 ? '<1' : (v < 10 ? String(Math.round(v * 10) / 10) : String(Math.round(v)))) + ' ms'; }
+    function rawFold(text) { return '<details class="nt-raw"><summary>Technical output</summary><pre>' + esc(text) + '</pre></details>'; }
+    function pingHtml(M, host, text) {
+        var r = M.parsePing(text), v = M.pingVerdict(r);
+        if (r.error) return '<div class="nt-verdict ' + v.tone + '">' + esc(v.text) + '</div>' + rawFold(text);
+        var top = Math.max(20, r.maxMs || 0);
+        var chips = '<div class="nt-chips"><span><b>' + r.sent + '</b> sent</span><span><b>' + r.received + '</b> replied</span><span class="' + (r.lost ? 'bad' : '') + '"><b>' + r.lossPct + '%</b> lost</span><span><b>' + ms1(r.avgMs) + '</b> average</span></div>';
+        var bars = '<div class="nt-packets" role="img" aria-label="Result of each of the ' + r.sent + ' packets">' + r.replies.map(function (p, i) {
+            return '<div class="nt-pk ' + (p.ok ? 'ok' : 'lost') + '"><div class="nt-barwrap"><div class="nt-bar" style="height:' + (p.ok ? Math.max(8, Math.round((p.ms / top) * 100)) : 100) + '%"></div></div><span>' + (p.ok ? esc(ms1(p.ms)) : 'lost') + '</span></div>';
+        }).join('') + '</div>';
+        return '<div class="nt-title">Ping ' + esc(host) + '</div>' + chips + bars + '<div class="nt-verdict ' + v.tone + '">' + esc(v.text) + '</div>' + rawFold(text);
+    }
+    function traceHtml(M, host, text) {
+        var r = M.parseTrace(text, host), v = M.traceVerdict(r);
+        var rows = r.hops.map(function (h) {
+            return '<tr class="' + (h.silent ? 'silent' : '') + '"><td>' + h.n + '</td><td class="mono">' + (h.host ? esc(h.host) : '<span class="muted">no answer (some routers never do)</span>') + '</td><td class="mono">' + esc(ms1(h.avgMs)) + '</td></tr>';
+        }).join('');
+        return '<div class="nt-title">Route to ' + esc(host) + '</div>' + (rows ? '<table class="nt-route"><thead><tr><th>Step</th><th>Router</th><th>Time</th></tr></thead><tbody>' + rows + '</tbody></table>' : '') +
+            '<div class="nt-verdict ' + v.tone + '">' + esc(v.text) + '</div>' + rawFold(text);
+    }
     document.addEventListener('click', function (e) {
         var btn = e.target.closest && e.target.closest('.net-tools button[data-tool]');
         if (!btn) return;
         var box = btn.closest('.net-tools');
         var out = box.querySelector('.net-tools-out');
-        var label = btn.textContent;
+        var host = box.dataset.host, tool = btn.dataset.tool;
         out.hidden = false;
-        out.textContent = (btn.dataset.tool === 'trace' ? 'Tracing the route to ' : 'Pinging ') + box.dataset.host + '…';
+        out.innerHTML = '<div class="nt-wait" role="status"><span class="spin" aria-hidden="true"></span> ' + (tool === 'trace' ? 'Tracing the route to ' + esc(host) + '… this can take up to 30 seconds.' : 'Pinging ' + esc(host) + '… sending 4 packets, about 5 seconds.') + '</div>';
         box.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
-        fetch('/api/tools/' + btn.dataset.tool, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host: box.dataset.host }) })
+        fetch('/api/tools/' + tool, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host: host }) })
             .then(function (r) { return r.json(); })
-            .then(function (j) { out.textContent = j.output || j.error || 'No output.'; })
-            .catch(function () { out.textContent = 'Could not run the command.'; })
-            .then(function () { box.querySelectorAll('button').forEach(function (b) { b.disabled = false; }); btn.textContent = label; });
+            .then(function (j) {
+                if (!j.output) { out.innerHTML = '<div class="nt-verdict bad">' + esc(j.error || 'No output.') + '</div>'; return; }
+                return new Promise(function (resolve) {
+                    loadNetModel(function (M) {
+                        out.innerHTML = M ? (tool === 'trace' ? traceHtml(M, host, j.output) : pingHtml(M, host, j.output)) : '<pre>' + esc(j.output) + '</pre>';
+                        resolve();
+                    });
+                });
+            })
+            .catch(function () { out.innerHTML = '<div class="nt-verdict bad">Could not run the command.</div>'; })
+            .then(function () { box.querySelectorAll('button').forEach(function (b) { b.disabled = false; }); });
     });
 
     window.TowerDesk.inlineConfirm = function (button, question) {

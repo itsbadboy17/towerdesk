@@ -8,6 +8,7 @@ const path = require('path');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'towerdesk-adv-'));
 process.env.TOWERDESK_DATA_DIR = tmp;
+process.env.TOWERDESK_CLAUDE_BIN = path.join(tmp, 'no-claude-here.js'); // nothing to find: the earlier tests must not touch a real Claude Code
 
 const advisor = require('../src/advisor');
 const radio = require('../src/radio');
@@ -73,6 +74,23 @@ ok('channel width is shown but never applicable', (S({ setting: 'channelWidth', 
 ok('one change per setting', S([{ setting: 'frequency', to: 5240 }, { setting: 'frequency', to: 5260 }]).length === 1);
 ok('applicable only when this radio can be changed', advisor.sanitize(advisor.context(sectorDevice(), [], []), [{ setting: 'frequency', to: 5240 }])[0].applicable === false);
 
+// ---- channel suggestions ----
+const plan = advisor.channelPlan(ctx);
+ok('the current channel is reported with what it overlaps', plan.current.frequencyMHz === 5180 && plan.current.overlaps.indexOf('radio A') > -1);
+ok('every suggestion keeps clear of your own radios', plan.options.length > 0 && plan.options.every((o) => !o.overlaps && o.clearanceMHz >= 0));
+ok('suggestions stay in the 5 GHz range and never repeat the current channel', plan.options.every((o) => o.frequencyMHz >= 5180 && o.frequencyMHz <= 5825 && o.frequencyMHz !== 5180));
+ok('the nearest of your radios is named for each suggestion', plan.options.every((o) => /^radio /.test(o.nearest)));
+ok('the plan says what it cannot see', /other networks/.test(plan.note));
+const pick = plan.options[0];
+const chg = advisor.channelChange(ctx, pick.frequencyMHz);
+ok('a suggested channel becomes a change that passes the limits', !!chg && advisor.sanitize(ctx, [chg]).length === 1 && /clear of radio/.test(chg.reason));
+ok('a channel that was not suggested is refused', advisor.channelChange(ctx, 5200) === null);
+ok('a radio with no frequency gets no suggestions', advisor.channelPlan(advisor.context(sectorDevice({ metrics: { radio: {}, stations: [] } }), [], [])).options.length === 0);
+const lone = advisor.channelPlan(advisor.context(sectorDevice(), [sectorDevice()], []));
+ok('with none of your other radios near, every channel is free and it says so', lone.options.length > 0 && /equally free/.test(lone.note));
+const band24 = advisor.channelPlan(advisor.context(sectorDevice({ metrics: { radio: { freq: '2437 MHz', chanbw: 20 }, stations: [] } }), [], []));
+ok('2.4 GHz suggests channels 1 and 11', band24.options.map((o) => o.frequencyMHz).sort().join() === '2412,2462');
+
 // ---- asking Claude, with a fake client ----
 async function ai() {
   let seen = null;
@@ -125,6 +143,74 @@ async function ai() {
   ok('without the AI switch nothing is asked', r.ai === null && r.aiError === null);
   advisor.setConfig({ clearKey: true });
   ok('key can be removed', advisor.getConfig().hasKey === false);
+}
+
+
+// ---- Claude Code on this PC, used when no key is saved (a stand-in program, no real call) ----
+async function claudeCode() {
+  const fake = path.join(__dirname, 'fake-claude.js');
+  const log = path.join(tmp, 'fake-claude.log');
+  const calls = () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split(/\r?\n/).filter(Boolean).map((l) => JSON.parse(l)) : []);
+  process.env.TOWERDESK_CLAUDE_BIN = fake;
+  process.env.FAKE_LOG = log;
+  process.env.ANTHROPIC_API_KEY = 'sk-ant-in-the-parent-environment';
+  const run = (mode, extra) => { process.env.FAKE_MODE = mode; advisor.setConfig({ clearKey: true }); return advisor.advise(sectorDevice(), [sectorDevice(), other], Object.assign({ canApply: ['frequency', 'txPower'], useAi: true }, extra || {})); };
+  try {
+    advisor._resetStatusCache(); process.env.FAKE_LOGGED = '1';
+    let st = await advisor.status();
+    ok('settings shows Claude Code found and signed in', st.claudeCode.found && st.claudeCode.loggedIn === true && st.hasKey === false);
+    advisor._resetStatusCache(); process.env.FAKE_LOGGED = '0';
+    st = await advisor.status();
+    ok('settings shows it found but not signed in, with the sign-in command', st.claudeCode.found && st.claudeCode.loggedIn === false && /auth login/.test(st.claudeCode.command) && st.claudeCode.command.indexOf(fake) > -1);
+
+    let r = await run('structured');
+    ok('no key: the advisor asks Claude Code and says so', r.via === 'claude-code' && r.ai && /overlaps/.test(r.ai.summary) && r.aiError === null);
+    ok('its proposed change goes through the same limits', r.changes.length === 1 && r.changes[0].to === 5260 && r.changes[0].applicable === true && !!r.proposalId);
+    const c = calls().filter((x) => x.args[0] === '-p').pop();
+    ok('it runs with no tools, no saved session and a JSON answer', c.args.indexOf('--tools') > -1 && c.args[c.args.indexOf('--tools') + 1] === '' && c.args.includes('--no-session-persistence') && c.args[c.args.indexOf('--output-format') + 1] === 'json');
+    const schema = JSON.parse(c.args[c.args.indexOf('--json-schema') + 1]);
+    ok('it is given the answer schema', schema.required.includes('summary') && schema.properties.changes.type === 'array');
+    ok('it runs in an empty temporary folder, not the project', c.cwd !== process.cwd() && c.cwd.startsWith(os.tmpdir()) && !fs.existsSync(c.cwd));
+    ok('a stray API key in the environment is not passed on', c.keyInEnv === false);
+    ok('what it is sent has no names, MACs or IPs', !/ali@isp|AA:BB:CC|10\.5\.5\.|Secret/i.test(c.stdin) && /client 1/.test(c.stdin));
+    ok('the system prompt asks for JSON only', /JSON object/.test(c.args[c.args.indexOf('--system-prompt') + 1]));
+
+    r = await run('fenced');
+    ok('an answer wrapped in a code fence is read', r.via === 'claude-code' && r.ai && r.changes.length === 1);
+    r = await run('notlogged');
+    ok('not signed in: says so and gives the command', /not signed in/.test(r.aiError) && /auth login/.test(r.aiError) && r.ai === null);
+    r = await run('apierror');
+    ok('another Claude Code error is passed on plainly', /Claude Code could not answer: Overloaded/.test(r.aiError));
+    r = await run('garbage');
+    ok('an answer with no JSON is reported', /unexpected form/.test(r.aiError));
+    r = await run('nojson');
+    ok('output that is not JSON is reported', /could not be run/.test(r.aiError));
+    process.env.TOWERDESK_CLAUDE_TIMEOUT_MS = '600';
+    r = await run('hang');
+    ok('a Claude Code that never answers times out', /did not answer in time/.test(r.aiError));
+    delete process.env.TOWERDESK_CLAUDE_TIMEOUT_MS;
+
+    // a saved key wins; Claude Code is not used then
+    const before = calls().length;
+    advisor.setConfig({ key: 'sk-ant-test-1234567890' });
+    advisor._setClientFactory(() => ({ beta: { messages: { create: async () => ({ stop_reason: 'tool_use', content: [{ type: 'tool_use', name: 'sector_advice', input: { summary: 'From the API.', causes: [], manual: [], changes: [], confidence: 'high' } }] }) } } }));
+    process.env.FAKE_MODE = 'structured';
+    r = await advisor.advise(sectorDevice(), [], { canApply: [], useAi: true });
+    ok('with a key saved the API is used and Claude Code is left alone', r.via === 'api' && /From the API/.test(r.ai.summary) && calls().length === before);
+    advisor._setClientFactory(null);
+    advisor.setConfig({ clearKey: true });
+
+    // nothing at all
+    process.env.TOWERDESK_CLAUDE_BIN = path.join(tmp, 'no-claude-here.js');
+    advisor._resetStatusCache();
+    r = await advisor.advise(sectorDevice(), [], { canApply: [], useAi: true });
+    ok('no key and no Claude Code: says what to do', /No AI key saved.*Claude Code/.test(r.aiError));
+    st = await advisor.status();
+    ok('settings shows no Claude Code when there is none', st.claudeCode.found === false);
+  } finally {
+    delete process.env.ANTHROPIC_API_KEY; delete process.env.FAKE_MODE; delete process.env.FAKE_LOGGED; delete process.env.FAKE_LOG;
+    process.env.TOWERDESK_CLAUDE_BIN = path.join(tmp, 'no-claude-here.js');
+  }
 }
 
 // ---- a stateful fake MikroTik wireless router ----
@@ -212,12 +298,26 @@ async function applying() {
     threw = false;
     try { await radio.keep(dev); } catch (e) { threw = true; }
     ok('keeping after the revert time is refused', threw);
+
+    // the history records every step, newest first, and never a password
+    const radioHistory = require('../src/radio-history');
+    const hist = radioHistory.list(dev.id, 20);
+    const acts = hist.map((e) => e.action);
+    ok('history records apply, keep, undo and the radio reverting by itself', ['applied', 'kept', 'undone', 'expired'].every((a) => acts.indexOf(a) > -1));
+    ok('history keeps the values before and after', hist.some((e) => e.action === 'applied' && e.changes.some((c) => c.setting === 'frequency' && c.from === 5180 && c.to === 5240)));
+    ok('history never holds a password', JSON.stringify(hist).indexOf('pw-test-1') === -1);
+    ok('history is newest first', hist.every((e, i) => i === 0 || hist[i - 1].t >= e.t));
+    const first = hist.find((e) => e.action === 'applied');
+    ok('an entry can be found again by its time', radioHistory.find(dev.id, first.t).t === first.t && radioHistory.find('other', first.t) === null);
+    ok('junk entries are not recorded', radioHistory.add({ deviceId: 'x', action: 'bogus', changes: [{ setting: 'frequency', to: 1 }] }) === null && radioHistory.add({ deviceId: 'x', action: 'applied', changes: [{ setting: 'ssid', to: 1 }] }) === null);
+    radioHistory.forget(dev.id);
+    ok('history can be forgotten with the device', radioHistory.list(dev.id).length === 0);
   } finally {
     srv.close();
   }
 }
 
-ai().then(applying).catch((e) => { console.log('FAIL  threw: ' + (e && e.stack || e)); failed++; }).then(() => {
+ai().then(claudeCode).then(applying).catch((e) => { console.log('FAIL  threw: ' + (e && e.stack || e)); failed++; }).then(() => {
   if (failed) { console.log(failed + ' advisor test(s) failed.'); process.exit(1); }
   console.log('Advisor tests passed.');
   process.exit(0);

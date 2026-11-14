@@ -134,3 +134,32 @@
 ## 0.1.6 QA
 - Full QA suite: round 1 passed 705 of 705. Unit tests: 286 checks.
 - Unverified on real hardware: OLT readers (all brands), sector advisor with a real key, MikroTik one-click apply, Ubiquiti airOS one-click apply (experimental).
+
+## Real data / Demo data switch (unreleased)
+- Button next to the language selector on every page. One shared flag `window.TowerDesk.demo` (app.js), remembered in the browser (`td-demo`); a `?demo=1` link forces it on. Monitoring, Overview, Topology and SAS follow it; an amber notice sits at the top of the page content while demo is on. Alerts, Add Device and Settings always use the real setup (the notice says so).
+- Demo never writes to a real radio and never calls the AI service (server-side `?demo=1` checks), so it is safe to try the advisor's apply flow there.
+- Arabic text added. Full QA not re-run (header gained a button, visual captures will differ).
+
+## Topology views (unreleased)
+- The Topology page now has a switcher: Site cards, Link diagram, Trace a customer, and the original Tree. The last view is remembered (`td-topo-view`).
+- Site cards: devices grouped by their Location. Tick devices, type a site name, "Place on site" (saved through POST /api/topology/layout; only `location` and `parentId` are written, no re-test). A sector whose client list was not read says "client list not read" instead of "0 clients".
+- Link diagram: boxes and lines from a new optional `parentId` on each device ("connects to": another device, or `internet`); the two ends of a paired link are one box; loops are refused (server and page); devices with no connection sit in a "Not connected yet" row. Click a box to change what it connects to.
+- Trace a customer: search a username, name, MAC, IP or ONU serial; shows customer -> radio/ONU -> sector/OLT -> each device it connects to -> Internet, with a plain verdict (offline upstream device, weak radio, weak fibre, PPPoE offline, or an incomplete path). Works without SAS using names/MACs seen on radios.
+- Logic lives in `public/topo-model.js` (pure, unit-tested in test/topology.js).
+- airOS M-series access points keep their clients on /sta.cgi, not in status.cgi: TowerDesk now reads it (once per poll, best effort, asked only of AP-mode radios). Verified on the real tower: the five M-series sectors that showed 0 clients now list 2-12 clients each with MAC, signal and CCQ.
+- Demo mode has sites and connections so all views can be tried; editing is disabled in demo (nothing is saved there).
+
+## Ask AI without an API key (stopgap, unreleased)
+- With no key saved, "Ask AI" uses Claude Code on the PC: `src/advisor.js` finds `claude` (PATH, or the Claude desktop app's own copy under %LOCALAPPDATA%\Claude-Data\...\claude-code\...\claude.exe; override with TOWERDESK_CLAUDE_BIN) and runs it with `-p --output-format json --json-schema ... --tools "" --no-session-persistence --setting-sources project,local`, in an empty temp folder, with ANTHROPIC_API_KEY stripped from its environment. Same anonymised snapshot as the API path; same limits on proposed changes. A saved API key still wins.
+- The bundled Claude Code on this PC was NOT signed in (`claude auth status` -> loggedIn false); the owner must run `claude auth login` once. Settings shows the exact command, and "Ask AI" says so if it is not signed in.
+- NOT verified with a signed-in Claude Code: the success output shape is parsed defensively (structured_output, or JSON in `result`, code fences stripped) but has only been seen against a stand-in program. Only works on a PC that has Claude Code; copies sent to others still need a key.
+- Tests: test/advisor.js (+19 checks) with test/fake-claude.js.
+
+## After 0.1.6 (uncommitted): clarity pass
+- Status words (Live data / Ping only / Wrong login / Not answering...), Mimosa master/slave roles, sector-traffic KPI.
+- Recent changes feed (no online/offline); offline alerts are not kept in history.
+- airOS M-series counters from /ifstats.cgi and clients from /sta.cgi.
+- Charts (public/charts.js, no dependency), ping/traceroute formatter (public/nettools-model.js).
+- Device card: Connection box + POST /api/devices/:id/connect (optional "save as default"); Enable SNMP removed (read-only).
+- Advisor: channel finder, change history with go back, progress/error boxes.
+- Topology: plain-language site/diagram wording, select all in card, row click.

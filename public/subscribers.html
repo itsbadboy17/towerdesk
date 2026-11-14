@@ -216,7 +216,7 @@
             var search = document.getElementById('sub-search');
             var filter = document.getElementById('sub-filter');
             var $ = function (id) { return document.getElementById(id); };
-            var DEMO = location.search.indexOf('demo') >= 0 || (function () { try { return localStorage.getItem('td-demo') === '1'; } catch (e) { return false; } })();
+            var DEMO = !!window.TowerDesk.demo;
             var URL = DEMO ? '/api/radius/subscribers?demo=1' : '/api/radius/subscribers';
             var data = { subscribers: [], summary: {} };
             var lastOk = 0;

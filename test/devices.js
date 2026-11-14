@@ -398,6 +398,7 @@ async function freeUdpPort() {
   srv.stdout.on('data', (d) => { serverLog += d; });
   srv.stderr.on('data', (d) => { serverLog += d; });
   const base = 'http://127.0.0.1:' + port;
+  const ok_ = (c, m) => assert.ok(c, m);
   const call = (m, u, b) => fetch(base + u, { method: m, headers: b ? { 'Content-Type': 'application/json' } : {}, body: b ? JSON.stringify(b) : undefined })
     .then(async (res) => ({ status: res.status, body: await res.json() }));
   try {
@@ -515,9 +516,10 @@ async function freeUdpPort() {
     for (let i = 0; i < 20 && !resolved; i++) {
       await sleep(300);
       res = await call('GET', '/api/alerts');
-      resolved = res.body.alerts.some((a) => a.id === alert.id && a.resolvedAt);
+      resolved = !res.body.alerts.some((a) => a.id === alert.id);
     }
-    assert.ok(resolved, 'alert resolved when device came back');
+    assert.ok(resolved, 'offline alert is gone when the device came back');
+    assert.ok(!res.body.alerts.some((a) => a.kind === 'offline' && a.resolvedAt), 'a cleared offline alert leaves no history');
     assert.strictEqual(res.body.summary.active, 0);
 
     res = await call('DELETE', '/api/devices/' + snmpId);
@@ -559,24 +561,36 @@ async function freeUdpPort() {
     assert.strictEqual((await call('DELETE', '/api/credentials/' + res.body.item.id)).status, 200);
     assert.strictEqual((await call('DELETE', '/api/credentials/nope')).status, 404);
 
-    // Enable SNMP on a MikroTik (the one write action). It must log in, add the missing community,
-    // turn SNMP on, and — since there's no SNMP agent at 127.0.0.1:161 here — report that it could
-    // not read it back yet and leave the method unchanged. The community value is never echoed.
-    res = await call('POST', '/api/devices', { name: 'Edge MT', type: 'mikrotik', ip: host, method: 'mikrotik', port: mtPort, username: USER, password: PASS });
-    const edgeId = res.body.device.id;
-    mtStats.snmpEnabled = false; mtStats.snmpAddedCommunity = null;
-    res = await call('POST', '/api/devices/' + edgeId + '/enable-snmp', { community: 'scan-ro' });
-    assert.ok(res.body.enabled === true && typeof res.body.verified === 'boolean', 'enable-snmp result: ' + JSON.stringify(res.body));
-    assert.ok(mtStats.snmpEnabled && mtStats.snmpAddedCommunity === 'scan-ro', 'router received enable + community add: ' + JSON.stringify(mtStats));
-    assert.ok(!JSON.stringify(res.body).includes('scan-ro'), 'enable-snmp must not echo the community value');
-    if (!res.body.verified) {
-      const after = (await call('GET', '/api/devices')).body.find((x) => x.id === edgeId);
-      assert.strictEqual(after.method, 'mikrotik', 'method unchanged when SNMP cannot be read back');
-    }
-    // Not a MikroTik -> refused (reuse the ONU added in the vault test, avoid a duplicate).
-    const onu = (await call('GET', '/api/devices')).body.find((x) => x.type === 'onu');
-    res = await call('POST', '/api/devices/' + onu.id + '/enable-snmp', {});
-    assert.strictEqual(res.status, 400, 'enable-snmp only for MikroTik');
+    // Connect from a device card: a wrong login asks for another one, a typed one is tried first,
+    // "save as default" adds it to the saved logins, and ping only needs nothing.
+    for (const l of (await call('GET', '/api/credentials')).body.logins) await call('DELETE', '/api/credentials/' + l.id); // start from no saved logins
+    const base0 = (await call('GET', '/api/credentials')).body;
+    res = await call('POST', '/api/devices', { name: 'Connect me', type: 'mikrotik', ip: host, method: 'mikrotik', port: mtPort, username: USER, password: 'wrong-' + PASS });
+    const cid = res.body.device.id;
+    ok_(res.body.test && res.body.test.ok === false, 'starts with a login that does not work');
+    res = await call('POST', '/api/devices/' + cid + '/connect', { mode: 'login', username: USER, password: 'still-wrong' });
+    assert.ok(res.body.ok === false && res.body.needLogin === true && res.body.typed === true, 'a wrong typed login asks for another: ' + JSON.stringify(res.body));
+    res = await call('POST', '/api/devices/' + cid + '/connect', { mode: 'login' });
+    assert.ok(res.body.ok === false && res.body.needLogin === true && res.body.typed === false, 'no saved logins that work: ' + JSON.stringify(res.body));
+    res = await call('POST', '/api/devices/' + cid + '/connect', { mode: 'login', username: USER, password: PASS, saveAsDefault: true, label: 'Tower default' });
+    assert.ok(res.body.ok === true && res.body.device.method === 'mikrotik' && res.body.savedAsDefault === true, 'a right typed login connects and is saved: ' + JSON.stringify(res.body));
+    assert.ok(!JSON.stringify(res.body).includes(PASS), 'connect never echoes the password');
+    const vaultAfter = (await call('GET', '/api/credentials')).body;
+    assert.ok(vaultAfter.logins.length === base0.logins.length + 1 && vaultAfter.logins.some((l) => l.label === 'Tower default' && !('password' in l)), 'saved as a default login, without its password in the list');
+    res = await call('POST', '/api/devices/' + cid + '/connect', { mode: 'ping' });
+    assert.ok(res.body.device.method === 'ping' && res.body.ok === true, 'ping only needs no login: ' + JSON.stringify(res.body));
+    assert.strictEqual((await call('DELETE', '/api/devices/' + cid)).status, 200);
+    res = await call('POST', '/api/devices', { name: 'Auto me', type: 'mikrotik', ip: host, method: 'mikrotik', port: mtPort, username: USER, password: 'wrong-' + PASS });
+    const aid = res.body.device.id;
+    res = await call('POST', '/api/devices/' + aid + '/connect', { mode: 'auto' });
+    assert.ok(res.body.ok === true && res.body.matched, 'auto finds the saved default login: ' + JSON.stringify(res.body));
+    assert.strictEqual((await call('POST', '/api/devices/dev-nope/connect', { mode: 'auto' })).status, 404);
+    await call('DELETE', '/api/devices/' + aid);
+
+    // TowerDesk no longer writes to routers: the old Enable SNMP route is gone.
+    const anyDevice = (await call('GET', '/api/devices')).body[0];
+    const gone = await fetch(base + '/api/devices/' + anyDevice.id + '/enable-snmp', { method: 'POST' });
+    assert.strictEqual(gone.status, 404, 'enable-snmp route removed');
   } finally {
     srv.kill();
     mt.close(); tn.close(); web.close(); sshSrv.close(); airosSrv.close(); mimosaSrv.close(); tpFake.server.close(); clearInterval(agent.counterTimer); agent.close();

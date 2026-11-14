@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "set-password": "node scripts/set-password.js",
-    "test": "node test/test.js && node test/devices.js && node test/subscribers.js && node test/history.js && node test/updater.js && node test/links.js && node test/tools.js && node test/olt.js && node test/advisor.js && node test/airos-apply.js",
+    "test": "node test/test.js && node test/devices.js && node test/subscribers.js && node test/history.js && node test/updater.js && node test/links.js && node test/tools.js && node test/olt.js && node test/advisor.js && node test/airos-apply.js && node test/topology.js && node test/nettools.js",
     "test:e2e": "node test/e2e.js",
     "build:portable": "powershell -ExecutionPolicy Bypass -File scripts/make-portable.ps1 -Zip",
     "test:qa": "playwright test tests/qa",

@@ -23,10 +23,12 @@
     }
 
     function topIface(d) { var mx = d.metrics || {}; return mx.interfaces && mx.interfaces[0]; }
-    // Traffic of a device in bits per second (rx + tx of every interface), 0 when unknown.
+    // Traffic through a device in bits per second: download + upload of its busiest interface,
+    // 0 when unknown.
     function trafficBps(d) {
-        var ifs = (d.metrics && d.metrics.interfaces) || [];
-        return ifs.reduce(function (a, i) { return a + (i.rxBps || 0) + (i.txBps || 0); }, 0);
+        var ifs = (d.metrics && d.metrics.interfaces) || [], best = 0;
+        ifs.forEach(function (i) { var v = (i.rxBps || 0) + (i.txBps || 0); if (v > best) best = v; });
+        return best;
     }
     function capacityPct(d) {
         var r = (d.metrics || {}).radio || {};
@@ -53,7 +55,10 @@
             if (d.online === false) { add('critical', d.id, d.name, 'offline' + (d.since ? ' for ' + ago(d.since) : ''), 0); return; }
             var mx = d.metrics || {};
             var r = mx.radio || {};
-            if (d.lastTest && d.lastTest.ok === false) add('warning', d.id, d.name, 'answers, but the login is not working', 1);
+            if (d.lastTest && d.lastTest.ok === false) {
+                var kind = window.TowerDesk.loginProblem ? window.TowerDesk.loginProblem(d.lastTest.error) : 'other';
+                add('warning', d.id, d.name, { auth: 'answers ping, but the saved username/password is wrong', timeout: 'answers ping, but its login page is not responding (timed out)', refused: 'answers ping, but its login port is closed' }[kind] || 'answers ping, but the login did not work', 1);
+            }
             if (mx.cpu && mx.cpu.now >= ATT.cpu) add('warning', d.id, d.name, 'CPU at ' + mx.cpu.now + '%', 4);
             if (d.role === 'backhaul' && !isFarEnd(d, devices)) {
                 if (r.signal != null && r.signal <= ATT.linkSignal) add('warning', d.id, d.name, 'weak link signal, ' + r.signal + ' dBm', 2);

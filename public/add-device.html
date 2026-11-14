@@ -268,6 +268,16 @@
         <div class="card">
             <div class="card-header"><h3>My Devices</h3><span class="card-actions"><button type="button" class="btn-secondary btn-sm" id="autoconnect-btn" title="Try your saved logins & SNMP communities on every device that isn't connected yet">🔧 Fix unconnected</button> · Live status every 10 s · <a href="/monitoring">open Monitoring</a></span></div>
             <div class="card-body">
+                <details class="status-legend"><summary>What do the status words mean?</summary>
+                    <dl>
+                        <dt>Live data</dt><dd>Logged in (or SNMP) and readings such as signal and traffic are arriving.</dd>
+                        <dt>Starting…</dt><dd>The login works; the first readings are still coming (about 20 seconds).</dd>
+                        <dt>Ping only</dt><dd>Answers ping, but TowerDesk has no login for it. Open the device and press <b>Connect</b>.</dd>
+                        <dt>Wrong login</dt><dd>It answered but rejected the saved username/password.</dd>
+                        <dt>Not answering</dt><dd>Ping works but its login page did not answer in time. Not a wrong password: the device is slow or the link to it loses packets.</dd>
+                        <dt>Offline</dt><dd>No reply at all.</dd>
+                    </dl>
+                </details>
                 <div id="bulk-bar" class="bulk-bar" hidden>
                     <span id="bulk-count" class="bulk-count"></span>
                     <label class="bulk-field">Monitor via
