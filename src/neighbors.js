@@ -100,12 +100,16 @@ function analyse(devices, observations, macsById) {
 
   // One entity per box: a known device, or something only seen on the network.
   const unknown = {};
+  let gateway = '', gwByRow = null; // the default gateway's address, and the device it turned out to be (matched by name when TowerDesk knows it by another address)
   function entityFor(r) {
     let d = (r.ip && byIp[r.ip]) || (r.mac && macOwner[r.mac] && byId[macOwner[r.mac]]);
     if (!d && r.name) d = devices.find((x) => nameKey(x.name) === nameKey(r.name));
-    if (d) return { key: d.id, id: d.id, name: d.name, ip: d.ip, known: true };
+    if (d) { if (r.mac && !macOwner[r.mac]) macOwner[r.mac] = d.id; if (r.ip && r.ip === gateway && !gwByRow) gwByRow = d; return { key: d.id, id: d.id, name: d.name, ip: d.ip, known: true }; }
     const key = r.mac ? 'mac:' + r.mac : r.ip ? 'ip:' + r.ip : 'name:' + nameKey(r.name);
-    const u = unknown[key] || (unknown[key] = { key, id: null, name: r.name || r.ip || r.mac, ip: r.ip || macIp[r.mac] || '', mac: r.mac || '', platform: r.platform || '', known: false, seenBy: [], seenById: [], via: r.via });
+    const all = Object.keys(unknown).map((k) => unknown[k]);
+    const same = unknown[key] || (r.mac && all.find((x) => x.mac && x.mac === r.mac)) || (r.ip && all.find((x) => x.ip && x.ip === r.ip)) || null;
+    if (same) { if (!same.mac && r.mac) same.mac = r.mac; if (!same.ip && r.ip) same.ip = r.ip; }
+    const u = same || (unknown[key] = { key, id: null, name: r.name || r.ip || r.mac, ip: r.ip || macIp[r.mac] || '', mac: r.mac || '', platform: r.platform || '', known: false, seenBy: [], seenById: [], via: r.via });
     if (r.platform && !u.platform) u.platform = r.platform;
     if (r.name && (!u.name || u.name === u.ip || u.name === u.mac)) u.name = r.name;
     return u;
@@ -115,7 +119,6 @@ function analyse(devices, observations, macsById) {
   // groups[`${collector}|${port}`] = { collector, port, members: Map(key -> {entity, via, remotePort}) }
   const groups = {};
   const grp = (c, port) => groups[c + '|' + port] || (groups[c + '|' + port] = { collector: c, port: port || '', members: new Map() });
-  let gateway = '';
   observations.forEach((o) => {
     if (!byId[o.deviceId]) return;
     gateway = gateway || normIp(o.gateway);
@@ -137,7 +140,7 @@ function analyse(devices, observations, macsById) {
       if (!g.members.has(id)) g.members.set(id, { entity: entityOfId(id), via: 'mac table', remotePort: '', direct: false });
     });
   });
-  const gwDev = gateway && byIp[gateway] ? byIp[gateway] : null;
+  const gwDev = gateway && byIp[gateway] ? byIp[gateway] : gwByRow;
 
   // ---- who is next to whom (both ways, plus everything on the same wire)
   const nearby = {};
@@ -170,7 +173,7 @@ function analyse(devices, observations, macsById) {
     if (cur && cur.confidence === 'high' && how !== 'high') return;
     suggestions[id] = { parentId: parentId || null, parentName: parentName || '', reason, confidence: how || 'medium' };
   };
-  const isSwitch = (e) => kindOf(e.platform, e.name) === 'switch' || (e.known && byId[e.id] && byId[e.id].type === 'cisco');
+  const isSwitch = (e) => kindOf(e.platform, e.name) === 'switch' || (e.known && byId[e.id] && (byId[e.id].type === 'cisco' || byId[e.id].type === 'switch'));
   const nm = (e) => (e.known ? e.name : '"' + e.name + '" (' + (e.platform ? e.platform + ', ' : '') + 'not added yet)');
   if (gwDev) suggest(gwDev.id, 'internet', 'The internet', 'It is the default gateway that ' + (observations[0] && byId[observations[0].deviceId] ? byId[observations[0].deviceId].name : 'your routers') + ' use.', 'high');
   const byCollector = {};
@@ -214,6 +217,39 @@ function analyse(devices, observations, macsById) {
       if (sw.known && gwDev && members.some((m) => m.entity.id === gwDev.id)) suggest(sw.id, gwDev.id, gwDev.name, 'The switch and the gateway are on the same wire.', 'medium');
     });
   });
+  // ---- the tree, from the MAC tables (the most reliable evidence when devices are bridges on one wire).
+  // Every switch/bridge knows which of its ports leads towards the gateway (the port where the gateway's MAC is learnt).
+  // Whatever it has learnt on any OTHER port is below it. A device's parent is the closest device that has it below:
+  // the one with the fewest devices below it. This works even when all the devices see each other on one wire.
+  const portOf = {};
+  observations.forEach((o) => {
+    if (!byId[o.deviceId]) return;
+    const m = {};
+    (o.fdb || []).forEach((x) => { const id = macOwner[x.mac]; if (id && id !== o.deviceId && byId[id]) m[id] = x.port; });
+    if (Object.keys(m).length) portOf[o.deviceId] = m;
+  });
+  if (gwDev && Object.keys(portOf).length) {
+    const below = {}; // collector id -> Set of device ids below it (null = everything, the gateway itself)
+    below[gwDev.id] = null;
+    Object.keys(portOf).forEach((cid) => {
+      if (cid === gwDev.id) return;
+      const m = portOf[cid], up = m[gwDev.id];
+      if (!up) return; // it never learnt the gateway: cannot tell which way is up
+      below[cid] = new Set(Object.keys(m).filter((id) => m[id] !== up));
+    });
+    devices.forEach((d) => {
+      if (d.id === gwDev.id) return;
+      // A device that plugs into a switch TowerDesk does not have yet: the tree only knows added devices, so leave it.
+      if (suggestions[d.id] && suggestions[d.id].parentId === null) return;
+      const cands = Object.keys(below).filter((cid) => cid !== d.id && (below[cid] === null || below[cid].has(d.id)));
+      if (!cands.length) return;
+      const size = (cid) => (below[cid] === null ? Infinity : below[cid].size);
+      cands.sort((a, b) => size(a) - size(b));
+      const best = cands[0];
+      suggestions[d.id] = { parentId: best, parentName: byId[best].name, reason: 'The MAC tables put it behind ' + byId[best].name + ' and not behind anything closer.', confidence: 'high' };
+    });
+  }
+
   // Never suggest a loop or something that is already so.
   const loops = (id, pid) => { let cur = pid, n = 0; while (cur && cur !== 'internet' && n++ < 20) { if (cur === id) return true; const s = suggestions[cur]; cur = s ? s.parentId : (byId[cur] || {}).parentId; } return false; };
   Object.keys(suggestions).forEach((id) => {
