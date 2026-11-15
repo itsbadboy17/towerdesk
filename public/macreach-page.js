@@ -57,6 +57,9 @@
         api('POST', '/api/macreach/look', { relayId: r.id }).then(function (j) {
             if (!j.ok) { done(false, j.error || 'Could not read that MikroTik.'); return; }
             found = j.found || []; foundFor = r.id;
+            // A free address next to the chosen MikroTik, so TowerDesk can reach the new router. Never over what was typed.
+            if (j.suggest && (!val('mr-ip') || $('mr-ip').dataset.auto === '1')) { $('mr-ip').value = j.suggest.ip; $('mr-ip').dataset.auto = '1'; }
+            if (j.suggest) { $('mr-ip').placeholder = j.suggest.ip; $('mr-gw').placeholder = j.suggest.gateway; }
             var can = found.filter(function (c) { return c.can; }), typed = val('mr-mac').toUpperCase();
             var again = can.filter(function (c) { return c.mac === typed; })[0];
             if (again) pick(again);
@@ -85,7 +88,8 @@
     // ---------------- its address, then the preview ----------------
     S.enter('address', function () {
         var c = picked;
-        $('mr-sum').innerHTML = 'Setting up <strong>' + esc(c && c.name ? c.name : 'the new router') + '</strong>' + (c && c.model ? ' (' + esc(c.model) + ')' : '') + ', MAC address <span class="mono">' + esc(val('mr-mac').toUpperCase()) + '</span>, through <strong>' + esc(relayName()) + '</strong>' + (c && c.port ? ', which sees it on ' + esc(c.port) : '') + '.';
+        $('mr-sum').innerHTML = 'Setting up <strong>' + esc(c && c.name ? c.name : 'the new router') + '</strong>' + (c && c.model ? ' (' + esc(c.model) + ')' : '') + ', MAC address <span class="mono">' + esc(val('mr-mac').toUpperCase()) + '</span>, through <strong>' + esc(relayName()) + '</strong>' + (c && c.port ? ', which sees it on ' + esc(c.port) : '') + '.' +
+            (c && c.ip ? ' It already has the address <span class="mono">' + esc(c.ip) + '</span> (usually from DHCP). That one stays; the address below is added as its fixed address.' : '');
     });
     // Leaving the address step asks the relay about that MAC and the address, and builds the preview. Nothing is typed.
     S.guard('address', function (done) {
@@ -115,8 +119,8 @@
 
     function done(r) {
         var ip = r.ip, name = r.name || '';
-        $('mr-out').innerHTML = '<p class="nb-ok">✓ Done. The router answers on ' + esc(ip) + (r.identity ? ' as “' + esc(r.identity) + '”' : '') + '.</p>' +
-            '<div class="form-actions"><a class="btn-primary" href="/add-device?name=' + encodeURIComponent(name) + '&ip=' + encodeURIComponent(ip) + '&type=mikrotik">Add it to TowerDesk</a>' +
+        $('mr-out').innerHTML = '<p class="nb-ok">✓ Done. The router answers on ' + esc(ip) + (r.identity ? ' as “' + esc(r.identity) + '”' : '') + (r.deviceId ? ' and is now in TowerDesk.' : '.') + '</p>' +
+            '<div class="form-actions">' + (r.deviceId ? '<a class="btn-primary" href="/monitoring?open=' + encodeURIComponent(r.deviceId) + '">Open it</a>' : '<a class="btn-primary" href="/add-device?name=' + encodeURIComponent(name) + '&ip=' + encodeURIComponent(ip) + '&type=mikrotik">Add it to TowerDesk</a>') +
             '<a class="btn-secondary" href="/provision?brand=mikrotik&ip=' + encodeURIComponent(ip) + '">Then set up its radio</a></div>';
     }
 
@@ -148,7 +152,7 @@
         if (e.target.id === 'mr-mac') {
             picked = null;
             Array.prototype.forEach.call(document.querySelectorAll('#mr-found .mr-dev'), function (l) { l.querySelector('input').checked = false; l.classList.remove('on'); });
-        } else if (e.target.id === 'mr-if') delete e.target.dataset.auto;
+        } else if (e.target.id === 'mr-if' || e.target.id === 'mr-ip') delete e.target.dataset.auto;
     });
 
     api('GET', '/api/devices').then(function (list) {

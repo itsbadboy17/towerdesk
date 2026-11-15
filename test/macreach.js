@@ -21,6 +21,7 @@ function fakeShell(opts) {
   const say = (t) => setImmediate(() => sh.emit('data', t));
   sh.write = (line) => {
     const text = String(line).replace(/\r$/, '');
+    if (text === '\u0003' && sh.state !== 'new1') return;
     sh.log.push(text);
     if (sh.state === 'relay') {
       if (/^\/tool mac-telnet /i.test(text)) {
@@ -38,6 +39,7 @@ function fakeShell(opts) {
       sh.state = 'inner'; return say('MikroTik RouterOS 7.11 (c) 1999-2023\r\n[admin@NewRouter] > ');
     }
     if (sh.state === 'licence') { sh.answeredLicence = text; if (opts.forced) { sh.state = 'new1'; return say('Please change your password\r\nnew password> '); } sh.state = 'inner'; return say('[admin@NewRouter] > '); }
+    if (sh.state === 'new1' && text.startsWith('\u0003')) { sh.skipped = true; sh.state = 'inner'; return say('\r\n[admin@NewRouter] > '); }
     if (sh.state === 'new1') { sh.state = 'new2'; return say('repeat new password> '); }
     if (sh.state === 'new2') { sh.state = 'inner'; return say('[admin@NewRouter] > '); }
     if (sh.state === 'inner') {
@@ -56,6 +58,17 @@ function fakeShell(opts) {
   await check('a good setup passes', () => assert.ok(M.validate(GOOD).ok));
   await check('the MAC address is checked and upper-cased', () => { assert.ok(M.validate(Object.assign({}, GOOD, { mac: 'nope' })).errors.mac); assert.strictEqual(M.validate(GOOD).clean.mac, '4C:5E:0C:8A:1F:88'); });
   await check('only private addresses can be given', () => { assert.ok(M.validate(Object.assign({}, GOOD, { ip: '8.8.8.8' })).errors.ip); assert.ok(M.validate(Object.assign({}, GOOD, { ip: '10.1.1.300' })).errors.ip); });
+  await check('a new password of any length is accepted (still no spaces or quotes)', () => { assert.ok(M.validate(Object.assign({}, GOOD, { newPassword: 'abc' })).ok); assert.ok(M.validate(Object.assign({}, GOOD, { newPassword: 'a"b' })).errors.newPassword); });
+  await check('empty network size means 24 and empty gateway means the .1 of the network', () => {
+    const v = M.validate(Object.assign({}, GOOD, { prefix: '', gateway: '' })).clean; assert.strictEqual(v.prefix, 24); assert.strictEqual(v.gateway, '10.118.82.1');
+    assert.strictEqual(M.validate(Object.assign({}, GOOD, { ip: '10.118.82.1', gateway: '' })).clean.gateway, undefined, 'the router itself is not its own gateway');
+    assert.strictEqual(M.validate(Object.assign({}, GOOD, { ip: '10.9.0.77', prefix: 16, gateway: '' })).clean.gateway, '10.9.0.1');
+  });
+  await check('the suggested address is free and next to the relay', () => {
+    assert.strictEqual(M.suggestIp('192.168.229.23', ['192.168.229.1', '192.168.229.2', '192.168.229.3']), '192.168.229.4');
+    assert.strictEqual(M.suggestIp('nope', []), '');
+    assert.ok(M.sameNet('192.168.229.5', '192.168.229.23', 24)); assert.ok(!M.sameNet('10.172.192.5', '192.168.229.23', 24));
+  });
   await check('the gateway must be in the same network', () => assert.ok(M.validate(Object.assign({}, GOOD, { gateway: '10.99.0.1' })).errors.gateway));
   await check('nothing typed can add a second command', () => {
     ['ether1;/system reset-configuration', 'ether1 x', 'a"b', 'e/1'].forEach((i) => assert.ok(M.validate(Object.assign({}, GOOD, { interface: i })).errors.interface, i));
@@ -109,8 +122,8 @@ function fakeShell(opts) {
   await check('a MAC the relay cannot reach is explained', async () => { await assert.rejects(() => D.run(fakeShell({ knownMac: '00:00:00:00:00:01' }), { mac: c.mac, user: 'admin', pass: '', lines }), /did not reach that MAC/); });
   await check('a relay without the MAC-Telnet tool is explained', async () => { await assert.rejects(() => D.run(fakeShell({ knownMac: GOOD.mac, noTool: true }), { mac: c.mac, user: 'admin', pass: '', lines }), /cannot use MAC-Telnet/); });
   await check('a wrong factory password is explained, with the label hint', async () => { await assert.rejects(() => D.run(fakeShell({ knownMac: GOOD.mac, pass: 'secretlabel' }), { mac: c.mac, user: 'admin', pass: 'wrong', lines }), /unique password printed on their label/); });
-  await check('a forced password change stops with a clear message unless a new password was given', async () => {
-    await assert.rejects(() => D.run(fakeShell({ knownMac: GOOD.mac, forced: true }), { mac: c.mac, user: 'admin', pass: '', lines }), /asks for a new password on first login/);
+  await check('a forced password change is skipped with Ctrl+C when no new password was given, and answered when one was', async () => {
+    const sk = fakeShell({ knownMac: GOOD.mac, forced: true }); const r0 = await D.run(sk, { mac: c.mac, user: 'admin', pass: '', lines }); assert.ok(r0.done); assert.ok(sk.skipped, 'Ctrl+C was not sent');
     const sh = fakeShell({ knownMac: GOOD.mac, forced: true }); const r = await D.run(sh, { mac: c.mac, user: 'admin', pass: '', newPassword: 'N3w_pass-2026', lines }); assert.ok(r.done);
   });
   await check('a first-login licence question is answered (no), then the commands go in', async () => {
@@ -118,7 +131,7 @@ function fakeShell(opts) {
   });
   await check('licence question AND forced new password, in that order, are both handled', async () => {
     const sh = fakeShell({ knownMac: GOOD.mac, license: true, forced: true }); const r = await D.run(sh, { mac: c.mac, user: 'admin', pass: '', newPassword: 'N3w_pass-2026', lines }); assert.ok(r.done);
-    await assert.rejects(() => D.run(fakeShell({ knownMac: GOOD.mac, license: true, forced: true }), { mac: c.mac, user: 'admin', pass: '', lines }), /asks for a new password on first login/);
+    const sk = fakeShell({ knownMac: GOOD.mac, license: true, forced: true }); assert.ok((await D.run(sk, { mac: c.mac, user: 'admin', pass: '', lines })).done); assert.ok(sk.skipped);
   });
   await check('a command the router refuses stops everything and the error hides the password', async () => {
     try { await D.run(fakeShell({ knownMac: GOOD.mac, pass: 'factory-pw-1', failOn: /identity/ }), { mac: c.mac, user: 'admin', pass: 'factory-pw-1', newPassword: 'N3w_pass-2026', lines }); assert.fail('should have refused'); }
@@ -164,6 +177,12 @@ function fakeShell(opts) {
       assert.ok(/SNMP only/.test(r.found[1].why), 'known by a MAC the monitor read'); assert.ok(/SNMP only/.test(r.found[2].why), 'known by its address');
     } finally { api.neighborRows = one; api.selfMacs = []; }
   });
+  await check('looking also suggests a free address next to the relay', async () => { const r = await R.look({ relayId: relay.id }, {}); assert.ok(/^10\.118\.82\.\d+$/.test(r.suggest.ip)); assert.ok(!['10.118.82.18', '10.118.82.19'].includes(r.suggest.ip)); assert.strictEqual(r.suggest.gateway, '10.118.82.1'); });
+  await check('an address in another network than the relay is flagged, and a DHCP address it already has is explained', async () => {
+    const p = await R.plan(Object.assign({}, body, { ip: '10.172.192.5', gateway: '' })); assert.ok(p.notes.some((n) => /another network/.test(n)));
+    api.neighborRows[0].address = '10.118.82.134'; const q = await R.plan(body); api.neighborRows[0].address = '';
+    assert.ok(q.notes.some((n) => /already has the address 10\.118\.82\.134/.test(n))); assert.ok(!q.notes.some((n) => /another network/.test(n)));
+  });
   await check('a new router is not mistaken for a device that merely has the same name', async () => {
     devices.add({ name: 'MikroTik', type: 'mikrotik', ip: '10.118.82.50', method: 'snmp', community: 'public' }, { ok: true });
     const r = await R.look({ relayId: relay.id }, {});
@@ -184,6 +203,8 @@ function fakeShell(opts) {
     shells = []; api.reachable = true; const r = await R.apply(Object.assign({}, body, { newPassword: 'N3w_pass-2026' }));
     assert.ok(r.ok && r.verified); assert.strictEqual(r.ip, '10.118.82.40'); assert.strictEqual(r.identity, 'HRINS-Sm40');
     assert.ok(shells[0].log.some((l) => l.startsWith('/ip address add'))); assert.ok(!JSON.stringify(r).includes('N3w_pass'));
+    const added = devices.get(r.deviceId); assert.ok(added, 'it is added to TowerDesk'); assert.strictEqual(added.ip, '10.118.82.40'); assert.strictEqual(added.method, 'mikrotik'); assert.strictEqual(added.username, 'admin'); assert.strictEqual(devices.connectionOptions(added).password, 'N3w_pass-2026');
+    devices.remove(r.deviceId);
   });
   await check('if the new router cannot be reached afterwards, the address is taken back', async () => {
     shells = []; api.reachable = false;

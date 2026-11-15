@@ -15,11 +15,25 @@
     var IP_RE = /^(\d{1,3}\.){3}\d{1,3}$/;
     var NAME_RE = /^[A-Za-z0-9._-]{1,32}$/;
     var IFACE_RE = /^[A-Za-z0-9_-]{1,24}$/;
-    var PASS_RE = /^[A-Za-z0-9._@#%+=:,!^*()-]{8,64}$/;
+    var PASS_RE = /^[A-Za-z0-9._@#%+=:,!^*()-]{1,64}$/;
     var FACTORY_USER_RE = /^[A-Za-z0-9._-]{1,32}$/;
     var FACTORY_PASS_RE = /^[A-Za-z0-9._@#%+=:,!^*()-]{0,64}$/;
     var COMMENT = 'TowerDesk setup';
 
+    function ipNum(a) { return String(a).split('.').reduce(function (n, x) { return n * 256 + Number(x); }, 0) >>> 0; }
+    function numIp(n) { return [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.'); }
+    function maskOf(prefix) { return prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0; }
+    function sameNet(a, b, prefix) { return ((ipNum(a) & maskOf(prefix)) >>> 0) === ((ipNum(b) & maskOf(prefix)) >>> 0); }
+    function firstHost(ip, prefix) { return numIp((((ipNum(ip) & maskOf(prefix)) >>> 0) + 1) >>> 0); }
+    // A free address next to the relay (same /24), so TowerDesk can reach the new router the way it reaches the relay.
+    // taken: addresses already in use (devices, ARP, neighbours). Starts at .2 (.1 is usually the gateway).
+    function suggestIp(relayIp, taken) {
+        if (!okIp(relayIp)) return '';
+        var used = {}; (taken || []).concat([relayIp]).forEach(function (t) { used[t] = 1; });
+        var base = (ipNum(relayIp) & maskOf(24)) >>> 0;
+        for (var h = 2; h < 255; h++) { var ip = numIp(base + h); if (!used[ip]) return ip; }
+        return '';
+    }
     function okIp(v) { return IP_RE.test(String(v)) && String(v).split('.').every(function (n) { return Number(n) <= 255; }); }
     function privateIp(v) { var p = String(v).split('.').map(Number); return p[0] === 10 || (p[0] === 172 && p[1] >= 16 && p[1] <= 31) || (p[0] === 192 && p[1] === 168); }
 
@@ -43,11 +57,13 @@
         var name = String(input.name || '').trim();
         if (name && !NAME_RE.test(name)) e.name = 'Use letters, numbers, dot, dash or underscore, up to 32.'; else if (name) c.name = name;
         var np = String(input.newPassword || '');
-        if (np && !PASS_RE.test(np)) e.newPassword = 'Use 8 to 64 of: letters, numbers and . _ @ # % + = : , ! ^ * ( ) -'; else if (np) c.newPassword = np;
+        if (np && !PASS_RE.test(np)) e.newPassword = 'Use letters, numbers and . _ @ # % + = : , ! ^ * ( ) - (up to 64).'; else if (np) c.newPassword = np;
         var ifc = String(input.interface || 'ether1').trim();
         if (!IFACE_RE.test(ifc)) e.interface = 'An interface name such as ether1 or bridge.'; else c.interface = ifc;
         var af = String(input.allowApiFrom || '').trim();
         if (af && !/^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/.test(af)) e.allowApiFrom = 'An address range like 10.118.82.0/24, or empty.'; else if (af) c.allowApiFrom = af;
+        // Left empty: the first address of its network (10.118.82.1 for 10.118.82.40/24), unless that is the router itself.
+        if (c.ip && !gw && c.prefix !== undefined) { var g = firstHost(c.ip, c.prefix); if (g !== c.ip) c.gateway = g; }
         if (c.ip && c.gateway) {
             // the gateway must be inside the same network, or the router could not reach it
             var mask = c.prefix === 0 ? 0 : (~0 << (32 - c.prefix)) >>> 0;
@@ -100,5 +116,5 @@
         return IFACE_RE.test(p) ? p : '';
     }
 
-    return { validate: validate, script: script, revertScript: revertScript, maskLine: maskLine, candidates: candidates, facingPort: facingPort, ERROR_RE: ERROR_RE, COMMENT: COMMENT, MAC_RE: MAC_RE };
+    return { suggestIp: suggestIp, sameNet: sameNet, firstHost: firstHost, validate: validate, script: script, revertScript: revertScript, maskLine: maskLine, candidates: candidates, facingPort: facingPort, ERROR_RE: ERROR_RE, COMMENT: COMMENT, MAC_RE: MAC_RE };
 }));

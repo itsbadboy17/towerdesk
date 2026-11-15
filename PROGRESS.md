@@ -218,6 +218,13 @@ Not done: the phone app (left out on purpose); airOS radios cannot report neighb
 - Tested: test/provision.js (flow), test/macreach.js (candidates, facingPort, look), test/neighbors.js (ownerIndex); by hand on the GNS3 lab: Slave listed a brand-new CHR by itself and the preview reached "Run it" (not run).
 - GNS3 lab: the GNS3 VM has no KVM on this PC, so both MikroTik templates now carry `-machine accel=tcg` (a new MikroTik node starts). See lab/README.md.
 
+## New MikroTik setup: fixes from the owner's first real run (features branch)
+- A forced "new password" question at first login is skipped with Ctrl+C when no new password is chosen (as a person does in a terminal); a new password may be any length.
+- Network size empty = 24; gateway empty = the .1 of its network. "Port that faces the switch" and "Allow the API from" moved under More options.
+- The relay suggests a free address in its own /24 (the network TowerDesk already reaches it on); an address in another network gets a warning (the owner's 10.172.192.5 run timed out for that reason). A DHCP address the router already has is explained.
+- After a verified setup the router is added to TowerDesk automatically (MikroTik API, the login that worked).
+- Tested: test/macreach.js; on the GNS3 lab a fresh CHR set up through Slave with no password, address and gateway left to defaults, added automatically.
+
 ## Add Device redesign, device card, auto type/name (features branch)
 - Add Device is one card, 3 steps in order (Find it, Log in, Name it): type and connection method are worked out (hand choice only under "set it yourself"); Log in is skipped when a saved login (or a new MikroTik's factory login on the API) already works; the name comes from the device. Shared step helper `public/stepper.js` (also used by Set up a device); add-wizard.js removed.
 - Server: type follows what a successful login proves (`vendorFromTest`; switch/ONU/OLT never changed; wrong types corrected at start-up); only the IP is required; empty username = admin (ubnt for airOS; telnet only with a password); `/connect` takes `credentialId` for one saved login/community; CPU/RAM stored as whole numbers.

@@ -45,7 +45,9 @@ async function look(body, macsById) {
     return { mac: r.mac, name: r.name, model: r.board || r.platform, version: r.version, ip: r.ip, port: r.localPort, farPort: r.remotePort,
       mikrotik: neighbors.typeHint(r.platform) === 'mikrotik', knownAs: d ? d.name : '', self: !!d && d.id === relay.id };
   }).filter((r) => !r.self);
-  return { ok: true, relay: { id: relay.id, name: relay.name, ip: relay.ip }, found: model.candidates(rows) };
+  const taken = devices.list().map((d) => d.ip).concat(t.arp.map((a) => a.ip), t.rows.map((r) => r.ip)).filter(Boolean);
+  const suggest = model.suggestIp(relay.ip, taken);
+  return { ok: true, relay: { id: relay.id, name: relay.name, ip: relay.ip }, found: model.candidates(rows), suggest: suggest ? { ip: suggest, prefix: 24, gateway: model.firstHost(suggest, 24) } : null };
 }
 
 async function plan(body) {
@@ -70,7 +72,9 @@ async function plan(body) {
     notes: [
       'TowerDesk will log in to ' + relay.name + ' over SSH (port ' + (relay.sshPort || 22) + ') with its saved login. SSH must be switched on there (IP, Services).',
       'The new router must be on the same switch or VLAN as ' + relay.name + '.'
-    ].concat(seen === false ? ['The relay does not see that MAC address right now. Plug the router into the switch, wait a few seconds, and preview again.'] : [])
+    ].concat(model.sameNet(v.clean.ip, relay.ip, 24) ? [] : ['TowerDesk reaches ' + relay.name + ' at ' + relay.ip + ', but ' + v.clean.ip + ' is in another network. TowerDesk can only check and monitor the new router there if your VPN or router sends that network to it. An address like ' + (model.suggestIp(relay.ip, devices.list().map((d) => d.ip).concat(t.arp.map((a) => a.ip))) || relay.ip.replace(/\d+$/, 'x')) + ' always works.'])
+    .concat(row && row.ip && row.ip !== v.clean.ip ? ['It already has the address ' + row.ip + ' (usually from DHCP). That one stays; ' + v.clean.ip + ' is added as its fixed address.'] : [])
+    .concat(seen === false ? ['The relay does not see that MAC address right now. Plug the router into the switch, wait a few seconds, and preview again.'] : [])
   };
 }
 
@@ -126,7 +130,16 @@ async function apply(body) {
   }
   try { shell.end(); } catch (e) { /* closed */ }
   const check = await verify(c);
-  if (check.ok) return { ok: true, verified: true, ip: c.ip, identity: check.identity, name: c.name || check.identity, sent: result.sent };
+  if (check.ok) {
+    // It answers: add it to TowerDesk straight away, with the login that just worked (never the relay's).
+    let added = null;
+    if (!devices.list().some((d) => d.ip === c.ip)) {
+      const name = c.name || check.identity || ('MikroTik ' + c.ip);
+      added = devices.add({ name, type: 'mikrotik', ip: c.ip, method: 'mikrotik', username: c.factoryUser, password: c.newPassword !== undefined ? c.newPassword : c.factoryPass },
+        { ok: true, method: 'mikrotik', summary: 'Set up through ' + relay.name, details: { identity: check.identity } });
+    }
+    return { ok: true, verified: true, ip: c.ip, identity: check.identity, name: c.name || check.identity, deviceId: added ? added.id : null, sent: result.sent };
+  }
   // Not reachable at the new address: take the address back so nothing half-done is left.
   const undone = await revert(c, shellOpts, base);
   throw new Error('The commands were typed, but TowerDesk cannot reach the router at ' + c.ip + ' (' + check.error + '). ' + (undone ? 'The address was removed again.' : 'TowerDesk could not remove the address: check the router.') + ' If the router has the default firewall, add an API rule for your management network and try again.');

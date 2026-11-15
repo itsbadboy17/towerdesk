@@ -72,8 +72,10 @@ async function run(shell, p) {
     if (r2.index === 2 || r2.index === 3) throw new MacError('login', 'The new router refused that username and password. Newer MikroTik models have a unique password printed on their label.');
     if (r2.index === 4) ex.send('n');
     else {
-      if (!p.newPassword) { ex.send('\u0003'); throw new MacError('forced', 'This router asks for a new password on first login. Type the new admin password in the form and run it again.'); }
-      ex.send(p.newPassword);
+      // No new password chosen: Ctrl+C skips the question and the router keeps its empty password, exactly as when a
+      // person presses Ctrl+C in WinBox's terminal or MAC-Telnet.
+      if (!p.newPassword) { ex.buf = ''; shell.write('\u0003'); }
+      else ex.send(p.newPassword);
     }
     r2 = await ex.waitFor(AFTER, waitMs).catch(() => { throw new MacError('login', 'The router did not accept the answer in time.'); });
   }
