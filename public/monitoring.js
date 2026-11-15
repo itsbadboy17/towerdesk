@@ -34,6 +34,11 @@
         return (v < 10 ? v.toFixed(1).replace(/\.0$/, '') : Math.round(v)) + ' ms';
     }
 
+    // CPU and RAM are shown as whole numbers everywhere: nobody needs "13.111%".
+    function pct(v) { return Math.round(Number(v)); }
+    // How loaded a CPU or the memory is: the same limits for the Live tiles and the System meters.
+    function loadTone(n) { return n >= 90 ? 'bad' : n >= 75 ? 'warn' : 'ok'; }
+
     // Latency sparkline: gaps (offline samples) are drawn as red ticks on the baseline.
     function sparkline(history) {
         var W = 240, H = 48, pad = 3;
@@ -126,12 +131,9 @@
         if (m.lastPoll && !m.interfaces.length) return '<p class="muted live-info">This device does not report traffic counters, so there is no traffic graph. The signal and client numbers above are live.</p>';
         if (m.waiting || !m.interfaces.length) return '<p class="muted live-info"><span class="spin" aria-hidden="true"></span> Waiting for the first readings from this device (' + esc(m.source) + '). A traffic graph needs two readings, about 20 seconds apart. If this stays, the device is slow to answer.</p>';
         var top = m.interfaces[0];
-        var sys = [];
-        if (m.signal !== null && m.signal !== undefined) sys.push('signal <strong>' + esc(m.signal) + ' dBm</strong>');
-        if (m.ccq !== null && m.ccq !== undefined) sys.push('CCQ <strong>' + esc(m.ccq) + '%</strong>');
-        if (m.cpu) sys.push('CPU <strong>' + esc(m.cpu.now) + '%</strong>');
-        if (m.memPct !== null && m.memPct !== undefined) sys.push('RAM <strong>' + esc(m.memPct) + '%</strong>');
-        if (m.uptime) sys.push('up ' + esc(m.uptime));
+        // CPU, RAM and uptime have their own System section below. Signal and CCQ are in the Live
+        // tiles; the signal is repeated here only for a device whose radio details are not read.
+        var lone = m.signal !== null && m.signal !== undefined && !(m.radio && m.radio.signal !== null && m.radio.signal !== undefined && m.radio.signal !== '');
         return '<div class="traffic">' +
             '<div class="traffic-head"><span><strong>' + esc(top.name) + '</strong> <span class="muted">· ' + esc(m.source) + '</span></span>' +
             '<span class="legend"><span class="rx">↓ ' + esc(bps(top.rxBps)) + '</span><span class="tx">↑ ' + esc(bps(top.txBps)) + '</span></span></div>' +
@@ -148,7 +150,52 @@
                   m.interfaces.map(function (i) {
                       return '<tr class="' + (i.up ? '' : 'down') + '"><td>' + (i.up ? '🟢' : '⚫') + ' ' + esc(i.name) + '</td><td class="mono">' + esc(bps(i.rxBps)) + '</td><td class="mono">' + esc(bps(i.txBps)) + '</td></tr>';
                   }).join('') + '</tbody></table>') +
-            (sys.length ? '<p class="muted">' + sys.join(' · ') + '</p>' : '') +
+            (lone ? '<p class="muted">Signal <strong>' + esc(m.signal) + ' dBm</strong></p>' : '') +
+            '</div>';
+    }
+
+    // ----- System: how busy the device itself is (CPU, RAM) and how long it has been running -----
+    var LOAD_TEXT = { ok: 'Normal', warn: 'High', bad: 'Very high' };
+    // One meter: the name, how it is doing in a word, a big whole number, and a bar filled to it.
+    function sysMeter(label, about, n, extra) {
+        var tone = loadTone(n);
+        var fill = Math.max(0, Math.min(100, n));
+        return '<div class="sys-tile ' + tone + '">' +
+            '<div class="sys-head"><span class="sys-k">' + esc(label) + '</span><span class="sys-level">' + esc(LOAD_TEXT[tone]) + '</span></div>' +
+            '<div class="sys-v">' + esc(n) + '<span class="sys-unit">%</span></div>' +
+            '<div class="sys-bar" role="meter" aria-label="' + esc(about) + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + fill + '" aria-valuetext="' + esc(n + ' percent, ' + LOAD_TEXT[tone].toLowerCase()) + '"><span style="inline-size:' + fill + '%"></span></div>' +
+            (extra || '') + '</div>';
+    }
+    // The recent CPU readings as a small line, with the lowest and highest in words. The latency
+    // sparkline() is not reused: it stretches to the highest reading (13% would look like a full
+    // spike) and draws missing readings as "offline" ticks. This one keeps a scale of at least 0-20%.
+    function cpuTrend(history) {
+        var vals = (history || []).filter(function (v) { return typeof v === 'number' && !isNaN(v); });
+        if (vals.length < 2) return '';
+        var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+        var top = Math.min(100, Math.max(20, Math.ceil(hi / 10) * 10));
+        var W = 240, H = 36, pad = 2, step = (W - pad * 2) / (vals.length - 1);
+        var xs = vals.map(function (v, i) { return (pad + i * step).toFixed(1); });
+        var line = vals.map(function (v, i) { return xs[i] + ',' + (H - pad - (Math.max(0, Math.min(v, top)) / top) * (H - pad * 2)).toFixed(1); }).join('L');
+        var secs = (vals.length - 1) * stepSec();
+        var span = secs >= 90 ? Math.round(secs / 60) + ' minutes' : secs + ' seconds';
+        return '<svg class="spark sys-spark" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true">' +
+            '<path class="spark-area" d="M' + xs[0] + ',' + (H - pad) + 'L' + line + 'L' + xs[xs.length - 1] + ',' + (H - pad) + 'Z"/>' +
+            '<path class="spark-line" d="M' + line + '"/></svg>' +
+            '<div class="sys-note">Last ' + esc(span) + ': ' + (pct(lo) === pct(hi) ? 'steady at ' + pct(lo) + '%' : pct(lo) + '% to ' + pct(hi) + '%') + '</div>';
+    }
+    // Shown under the traffic block, also for a device that reports CPU or RAM but no traffic.
+    // Nothing at all when the device tells us none of the three.
+    function systemBlock(m) {
+        if (!m || m.error) return '';
+        var known = function (v) { return v !== null && v !== undefined && v !== '' && !isNaN(pct(v)); };
+        var cpu = m.cpu && known(m.cpu.now) ? pct(m.cpu.now) : null;
+        var ram = known(m.memPct) ? pct(m.memPct) : null;
+        if (cpu === null && ram === null && !m.uptime) return '';
+        return '<h4 class="detail-sec">System</h4><div class="sys-grid">' +
+            (cpu === null ? '' : sysMeter('CPU', 'CPU load', cpu, cpuTrend(m.cpu.history))) +
+            (ram === null ? '' : sysMeter('RAM', 'RAM in use', ram, '<div class="sys-note">Memory in use</div>')) +
+            (m.uptime ? '<div class="sys-tile"><div class="sys-head"><span class="sys-k">Up for</span></div><div class="sys-up">' + esc(m.uptime) + '</div><div class="sys-note">Since it last restarted</div></div>' : '') +
             '</div>';
     }
 
@@ -173,7 +220,7 @@
                 if (detailId && lastData) {
                     var dd = lastData.devices.find(function (x) { return x.id === detailId; });
                     var body = document.getElementById('detail-modal-body');
-                    if (dd && (dd.role === 'sector' || hasList(dd)) && body && !detailBusy(body)) body.innerHTML = detailBody(dd);
+                    if (dd && (dd.role === 'sector' || hasList(dd)) && body && !detailBusy(body)) drawDetail(body, dd);
                 }
             })
             .catch(function () { sas.loading = false; sas.loadedAt = Date.now(); });
@@ -181,10 +228,10 @@
     // A sector's stations or an OLT's ONUs: both are "the customers on this device".
     function hasList(d) { var k = d && d.metrics && d.metrics.kind; return k === 'stations' || k === 'onus'; }
     // Do not redraw the card under the user: an open ping result, a history chart, or the ONU
-    // search box while it is being typed in.
+    // search box while it is being typed in. (The connection box is kept as it is by drawDetail.)
     function detailBusy(body) {
         if (document.activeElement && document.activeElement.id === 'dev-notes') return true;
-        return !!body.querySelector('.net-tools-out:not([hidden]), .sta-history, .adv-open') || !!document.getElementById('conn-dialog') || !!(document.activeElement && /^(onu-filter|conn-mode)$/.test(document.activeElement.id));
+        return !!body.querySelector('.net-tools-out:not([hidden]), .sta-history, .adv-open') || !!(document.activeElement && document.activeElement.id === 'onu-filter');
     }
 
     // ----- OLT: the ONU table (optical power, temperature) -----
@@ -450,69 +497,312 @@
         airos: 'Username and password, Ubiquiti airOS login', mimosa: 'Password, Mimosa login', http: 'Web page only (no login)', https: 'Web page only (no login)'
     };
     function methodText(d) { return (METHOD_TEXT[d.method] || d.method) + (d.port && d.method !== 'ping' ? ' (port ' + d.port + ')' : ''); }
-    function connBlock(d) {
+    // What kind of connection a device has now: a login, SNMP, or nothing to log in with.
+    function connKind(d) { return /^snmp/.test(d.method || '') ? 'snmp' : (!d.method || d.method === 'ping' || d.method === 'http' || d.method === 'https') ? 'ping' : 'login'; }
+    // Demo devices are not saved, and viewers may only look (the server refuses them too).
+    function canConn() { return CAN_EDIT && window.TowerDesk.role !== 'viewer'; }
+    function connDevice() { return lastData && lastData.devices.find(function (x) { return x.id === detailId; }); }
+
+    // What the owner has chosen and typed in the connection box. It lives here, not only in the
+    // page, so the box can always be drawn again exactly as it was. A typed password stays in
+    // memory only while the box is open: it is never put into the HTML, and it is forgotten when
+    // the box or the card is closed and after a successful connect.
+    // mode: '' means "not chosen yet" (the way the device is connected now is preselected).
+    // loginPick / snmpPick: '' (not chosen yet), 'all', 'new', or 'id:<id of one saved item>'.
+    function blankConn() { return { mode: '', loginPick: '', snmpPick: '', user: '', pass: '', comm: 'public', save: false, label: '', busy: false, msg: '', tone: '' }; }
+    var conn = blankConn();
+
+    // The saved logins and SNMP communities: names only, the server never sends the secrets.
+    // state: '' not asked yet, 'ok', or 'fail' (for example a technician may not list them).
+    var creds = { logins: [], communities: [], state: '', loading: false };
+    function loadCreds(force) {
+        if (creds.loading || (creds.state === 'ok' && !force)) return;
+        creds.loading = true;
+        fetch('/api/credentials').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+            if (j) creds = { logins: j.logins || [], communities: j.communities || [], state: 'ok', loading: false };
+            else { creds.loading = false; if (creds.state !== 'ok') creds.state = 'fail'; }
+            connSync();
+        }).catch(function () { creds.loading = false; if (creds.state !== 'ok') creds.state = 'fail'; connSync(); });
+        connSync();
+    }
+    function savedList(kind) { return kind === 'snmp' ? creds.communities : creds.logins; }
+    function noneSaved(kind) { return creds.state === 'ok' && !savedList(kind).length; }
+    function connMode(d) { if (conn.mode) return conn.mode; var k = connKind(d); return k === 'ping' ? 'auto' : k; }
+    // Which saved item is chosen for 'login' or 'snmp': 'all', 'new', or 'id:<id>'.
+    function connPick(kind) {
+        var want = kind === 'snmp' ? conn.snmpPick : conn.loginPick;
+        if (want === 'new' || noneSaved(kind)) return 'new';
+        if (want.indexOf('id:') === 0 && savedList(kind).some(function (c) { return 'id:' + c.id === want; })) return want;
+        return 'all';
+    }
+    function savedName(kind, pick) {
+        var c = savedList(kind).filter(function (x) { return 'id:' + x.id === pick; })[0];
+        return c ? (c.label || c.username || '') : '';
+    }
+    // The choices of the "Login" / "Community" list. pick '' marks none as selected.
+    function pickOptions(kind, pick) {
+        var opt = function (v, text) { return '<option value="' + esc(v) + '"' + (v === pick ? ' selected' : '') + '>' + esc(text) + '</option>'; };
+        return opt('all', kind === 'snmp' ? 'Try all my saved communities' : 'Try all my saved logins') +
+            savedList(kind).map(function (c) {
+                return opt('id:' + c.id, kind === 'snmp' ? (c.label || 'Saved community') : (c.label || 'Saved login') + (c.username ? ' (' + c.username + ')' : ''));
+            }).join('') +
+            opt('new', 'A new one…');
+    }
+    function savedText() {
+        if (creds.state !== 'ok') return creds.loading ? 'Looking up what you saved…' : '';
+        var l = creds.logins.length, c = creds.communities.length, parts = [];
+        if (!l && !c) return 'Nothing is saved yet.';
+        if (l) parts.push(l + (l === 1 ? ' login' : ' logins'));
+        if (c) parts.push(c + (c === 1 ? ' SNMP community' : ' SNMP communities'));
+        return parts.join(' and ') + ' saved.';
+    }
+    function autoNote() {
+        if (noneSaved('login') && noneSaved('snmp')) return 'You have not saved a login or an SNMP community yet. To add one, choose “Username and password” or “SNMP community”, type it, and tick “Also save it for my other devices”.';
+        return 'TowerDesk tries each saved login and SNMP community on this device and keeps the first one that works.';
+    }
+    function defaultUser(d) { return d.method === 'airos' || d.type === 'ubnt' ? 'ubnt' : 'admin'; }
+    function userHint(d) {
+        if (d.type === 'mimosa' || d.type === 'tplink' || d.method === 'mimosa' || d.method === 'tplink') return 'This device needs only a password. Leave the username empty.';
+        return 'Leave it empty to use ' + defaultUser(d) + '. Mimosa and TP-Link need only a password.';
+    }
+    function goText(mode) { return conn.busy ? (mode === 'ping' ? 'Switching…' : 'Trying…') : (mode === 'ping' ? 'Use ping only' : 'Connect'); }
+    function showSave(mode) { return (mode === 'login' && connPick('login') === 'new') || (mode === 'snmp' && connPick('snmp') === 'new'); }
+    function hid(yes) { return yes ? ' hidden' : ''; }
+
+    // How it connects now and whether that works. The saved username is shown when the server
+    // sends one; a password or a community never is.
+    function connNow(d) {
         var cs = window.TowerDesk.connState(d);
-        var h = '<details class="conn-box" id="conn-box"' + (connOpen ? ' open' : '') + '><summary><span class="conn-sum"><strong>Connection</strong> ' + esc(methodText(d)) + '</span><span class="conn-change">' + (CAN_EDIT ? 'Change' : 'Details') + '</span></summary>' +
-            '<div class="conn-inner"><p class="muted conn-text">' + esc(cs.hint) + '</p>';
-        if (!CAN_EDIT) return h + '<p class="muted">Switch to Real data to change how a device is connected.</p></div></details>';
-        return h + '<div class="conn-row"><label for="conn-mode">Change to</label><select id="conn-mode">' +
-            '<option value="auto">Automatic: try my saved logins</option><option value="login">Username and password…</option><option value="snmp">SNMP community…</option><option value="ping">Ping only (no login)</option></select>' +
-            '<button type="button" class="btn-primary btn-sm" data-conn="go">Connect</button><span class="muted" id="conn-msg" role="status"></span></div></div></details>';
+        return '<span class="status-badge ' + esc(cs.badge) + '">● ' + esc(cs.label) + '</span> <strong>Now:</strong> ' + esc(methodText(d)) +
+            (d.username && connKind(d) === 'login' ? ', as <strong>' + esc(d.username) + '</strong>' : '') + '. ' + esc(cs.hint);
     }
-    function connMsg(text) { var el = document.getElementById('conn-msg'); if (el) el.textContent = text; }
-    function postConnect(body) {
-        return fetch('/api/devices/' + encodeURIComponent(detailId) + '/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) { return r.json(); });
+    function connSum(d) { return '<strong>Connection</strong> ' + esc(methodText(d)); }
+
+    // The form inside the open box: four ways to connect as radio cards, the fields for the chosen
+    // way right under them (no pop-up), one Connect button and one status line.
+    function connForm(d) {
+        var mode = connMode(d), lp = connPick('login'), sp = connPick('snmp');
+        var card = function (value, title, text, extra) {
+            return '<label class="pv-card' + (mode === value ? ' on' : '') + '"><input type="radio" name="conn-mode" value="' + value + '"' + (mode === value ? ' checked' : '') + '>' +
+                '<strong>' + esc(title) + '</strong><span class="muted">' + esc(text) + '</span>' + (extra || '') + '</label>';
+        };
+        return '<div class="conn-form" id="conn-form">' +
+            '<div class="pv-cards conn-modes" role="radiogroup" aria-label="How TowerDesk connects to this device">' +
+                card('auto', 'Automatic', 'Try the logins and SNMP communities you saved.', '<span class="conn-count" id="conn-count">' + esc(savedText()) + '</span>') +
+                card('login', 'Username and password', 'Log in to the device to read its signal and traffic.') +
+                card('snmp', 'SNMP community', 'Read the device with SNMP.') +
+                card('ping', 'Ping only', 'No login. TowerDesk only watches whether it is up.') +
+            '</div>' +
+            '<div class="conn-detail">' +
+                '<p class="muted" id="conn-auto"' + hid(mode !== 'auto') + '>' + esc(autoNote()) + '</p>' +
+                '<div class="conn-part" id="conn-login"' + hid(mode !== 'login') + '>' +
+                    '<div class="form-group" id="conn-login-pick-row"' + hid(noneSaved('login')) + '><label for="conn-login-pick">Login</label><select id="conn-login-pick">' + pickOptions('login', lp) + '</select></div>' +
+                    '<p class="muted" id="conn-login-none"' + hid(!noneSaved('login')) + '>You have no saved logins yet. Type the one for this device.</p>' +
+                    '<div class="conn-new" id="conn-login-new"' + hid(lp !== 'new') + '>' +
+                        '<div class="form-group"><label for="conn-user">Username</label><input type="text" id="conn-user" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="64" placeholder="' + esc(defaultUser(d)) + '" aria-describedby="conn-user-hint" value="' + esc(conn.user) + '">' +
+                            '<span class="muted conn-hint" id="conn-user-hint">' + esc(userHint(d)) + '</span></div>' +
+                        '<div class="form-group"><label for="conn-pass">Password</label><input type="password" id="conn-pass" autocomplete="new-password" maxlength="200"></div>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="conn-part" id="conn-snmp"' + hid(mode !== 'snmp') + '>' +
+                    '<div class="form-group" id="conn-snmp-pick-row"' + hid(noneSaved('snmp')) + '><label for="conn-snmp-pick">Community</label><select id="conn-snmp-pick">' + pickOptions('snmp', sp) + '</select></div>' +
+                    '<p class="muted" id="conn-snmp-none"' + hid(!noneSaved('snmp')) + '>You have no saved SNMP communities yet. Type the one for this device.</p>' +
+                    '<div class="conn-new" id="conn-snmp-new"' + hid(sp !== 'new') + '>' +
+                        '<div class="form-group"><label for="conn-comm">Community name</label><input type="text" id="conn-comm" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="100" aria-describedby="conn-comm-hint" value="' + esc(conn.comm) + '">' +
+                            '<span class="muted conn-hint" id="conn-comm-hint">Most devices use public until someone changes it.</span></div>' +
+                    '</div>' +
+                '</div>' +
+                '<p class="muted" id="conn-ping"' + hid(mode !== 'ping') + '>TowerDesk stops logging in to this device. You still see whether it is up and how fast it answers, but no signal and no traffic.</p>' +
+                '<div class="conn-part" id="conn-save-box"' + hid(!showSave(mode)) + '>' +
+                    '<label class="conn-check"><input type="checkbox" id="conn-save"' + (conn.save ? ' checked' : '') + '> Also save it for my other devices</label>' +
+                    '<div class="form-group" id="conn-label-row"' + hid(!conn.save) + '><label for="conn-label">Name for it <span class="muted">(you can leave it empty)</span></label><input type="text" id="conn-label" autocomplete="off" maxlength="40" placeholder="For example: Ubiquiti radios" value="' + esc(conn.label) + '"></div>' +
+                '</div>' +
+            '</div>' +
+            '<div class="conn-row conn-go"><button type="button" class="btn-primary" id="conn-go" data-conn="go"' + (conn.busy ? ' disabled' : '') + '>' + esc(goText(mode)) + '</button>' +
+                '<span class="conn-msg' + (conn.tone ? ' ' + conn.tone : '') + '" id="conn-msg" role="status">' + esc(conn.msg) + '</span></div>' +
+            '</div>';
     }
-    function closeConnDialog() { var el = document.getElementById('conn-dialog'); if (el) el.remove(); }
-    function openConnDialog(mode, info) {
-        closeConnDialog();
-        var d = lastData && lastData.devices.find(function (x) { return x.id === detailId; });
-        var snmp = mode === 'snmp';
-        var intro = info && info.auto
-            ? (info.tried ? 'TowerDesk tried ' + info.tried + ' saved login' + (info.tried === 1 ? '' : 's') + ' on this device and none of them worked. ' : 'There are no saved logins yet. ') + 'Add the ' + (snmp ? 'SNMP community' : 'username and password') + ' for this device.'
-            : (snmp ? 'Enter the SNMP community this device answers to.' : 'Enter the username and password for this device. Mimosa and TP-Link radios need only a password: leave the username empty.');
-        var el = document.createElement('div');
-        el.className = 'modal-overlay';
-        el.id = 'conn-dialog';
-        el.style.display = 'flex';
-        el.innerHTML = '<div class="modal conn-dialog" role="dialog" aria-modal="true" aria-labelledby="conn-d-title"><div class="modal-header"><strong id="conn-d-title">' + (snmp ? 'SNMP community' : 'Login') + ' for ' + esc(d ? d.name : 'this device') + '</strong><button type="button" class="close-btn" data-conn="cancel" aria-label="Close">×</button></div>' +
-            '<div class="modal-body"><p class="muted">' + esc(intro) + ' TowerDesk tests it first and keeps it with this device only if it works.</p>' +
-            (snmp ? '<div class="form-group"><label for="conn-comm">SNMP community</label><input type="text" id="conn-comm" value="public" autocomplete="off"></div>'
-                : '<div class="form-group"><label for="conn-user">Username</label><input type="text" id="conn-user" autocomplete="off"></div><div class="form-group"><label for="conn-pass">Password</label><input type="password" id="conn-pass" autocomplete="new-password"></div>') +
-            '<label class="conn-check"><input type="checkbox" id="conn-default"> Also save it as a <strong>default ' + (snmp ? 'community' : 'login') + '</strong>: TowerDesk will try it on the other devices when I add devices in bulk.</label>' +
-            '<div class="form-group" id="conn-label-row" hidden><label for="conn-label">Name for this default</label><input type="text" id="conn-label" placeholder="e.g. Ubiquiti radios" autocomplete="off"></div>' +
-            '<p class="live-error" id="conn-err" role="alert" hidden></p>' +
-            '<div class="form-actions"><button type="button" class="btn-secondary" data-conn="cancel">Cancel</button><button type="button" class="btn-primary" data-conn="try" data-mode="' + esc(mode) + '">Try and save</button></div></div></div>';
-        document.body.appendChild(el);
-        var first = el.querySelector('input[type=text], input[type=password]');
-        if (first) first.focus();
+    function connBlock(d) {
+        var edit = canConn();
+        var h = '<details class="conn-box" id="conn-box"' + (connOpen ? ' open' : '') + '><summary><span class="conn-sum">' + connSum(d) + '</span><span class="conn-change">' + (edit ? 'Change' : 'Details') + '</span></summary>' +
+            '<div class="conn-inner"><p class="muted conn-text conn-now" id="conn-now">' + connNow(d) + '</p>';
+        if (!edit) return h + '<p class="muted">' + (CAN_EDIT ? 'Only an admin or a technician can change how a device is connected.' : 'Switch to Real data to change how a device is connected.') + '</p></div></details>';
+        return h + connForm(d) + '</div></details>';
     }
-    function connTry(mode) {
-        var g = function (id) { var x = document.getElementById(id); return x ? x.value : ''; };
-        var body = { mode: mode, saveAsDefault: !!(document.getElementById('conn-default') || {}).checked, label: g('conn-label').trim() };
-        if (mode === 'snmp') body.community = g('conn-comm').trim(); else { body.username = g('conn-user').trim(); body.password = g('conn-pass'); }
-        var err = document.getElementById('conn-err');
-        var btn = document.querySelector('#conn-dialog [data-conn=try]');
-        if (mode === 'snmp' ? !body.community : !body.username && !body.password) { err.hidden = false; err.textContent = mode === 'snmp' ? 'Enter the community name.' : 'Enter a username and password (or just a password).'; return; }
-        err.hidden = true; btn.disabled = true; btn.textContent = 'Trying…';
-        postConnect(body).then(function (r) {
-            btn.disabled = false; btn.textContent = 'Try and save';
-            if (r.ok) { closeConnDialog(); connMsg('Connected' + (r.matched ? '' : '') + '. ' + (r.savedAsDefault ? 'Saved as a default too.' : '')); poll(); return; }
-            err.hidden = false;
-            err.textContent = r.needLogin ? 'That did not work on this device. Check the ' + (mode === 'snmp' ? 'community' : 'username and password') + ' and try again.' : (r.error || 'Could not connect: ' + ((r.test && r.test.error) || 'the device did not answer.'));
-        }).catch(function () { btn.disabled = false; btn.textContent = 'Try and save'; err.hidden = false; err.textContent = 'Could not reach TowerDesk.'; });
+
+    // Bring the box that is on the page in line with `conn` and the saved lists, touching only
+    // what differs. Nothing is rebuilt, so the focus, the caret and an open list stay where they are.
+    function connSync() {
+        var form = document.getElementById('conn-form');
+        var d = connDevice();
+        if (!form || !d) return;
+        var mode = connMode(d), lp = connPick('login'), sp = connPick('snmp');
+        var el = function (id) { return document.getElementById(id); };
+        var show = function (id, yes) { var x = el(id); if (x && x.hidden === yes) x.hidden = !yes; };
+        // `_txt` remembers the English text we last wrote, so a translated page is not rewritten on every poll.
+        var text = function (id, t) { var x = el(id); if (x && x._txt !== t) { x.textContent = t; x._txt = t; } };
+        var value = function (id, v) { var x = el(id); if (x && x.value !== v) x.value = v; };
+        var list = function (id, kind, pick) {
+            var x = el(id), sig = pickOptions(kind, '');
+            if (!x) return;
+            if (x._sig !== sig) { x.innerHTML = pickOptions(kind, pick); x._sig = sig; }
+            if (x.value !== pick) x.value = pick;
+        };
+        Array.prototype.forEach.call(form.querySelectorAll('input[name="conn-mode"]'), function (r) {
+            var on = r.value === mode;
+            if (r.checked !== on) r.checked = on;
+            r.parentNode.classList.toggle('on', on);
+        });
+        text('conn-count', savedText());
+        text('conn-auto', autoNote());
+        show('conn-auto', mode === 'auto');
+        show('conn-login', mode === 'login');
+        show('conn-snmp', mode === 'snmp');
+        show('conn-ping', mode === 'ping');
+        list('conn-login-pick', 'login', lp);
+        list('conn-snmp-pick', 'snmp', sp);
+        show('conn-login-pick-row', !noneSaved('login'));
+        show('conn-login-none', noneSaved('login'));
+        show('conn-login-new', lp === 'new');
+        show('conn-snmp-pick-row', !noneSaved('snmp'));
+        show('conn-snmp-none', noneSaved('snmp'));
+        show('conn-snmp-new', sp === 'new');
+        show('conn-save-box', showSave(mode));
+        show('conn-label-row', conn.save);
+        var save = el('conn-save');
+        if (save && save.checked !== conn.save) save.checked = conn.save;
+        value('conn-user', conn.user);
+        value('conn-pass', conn.pass); // set as a property, never written into the HTML
+        value('conn-comm', conn.comm);
+        value('conn-label', conn.label);
+        var go = el('conn-go');
+        if (go) { if (go.disabled !== conn.busy) go.disabled = conn.busy; text('conn-go', goText(mode)); }
+        text('conn-msg', conn.msg);
+        var msg = el('conn-msg');
+        if (msg) msg.className = 'conn-msg' + (conn.tone ? ' ' + conn.tone : '');
     }
+
+    // Draw the card. While the connection box is open it is left exactly as it is (the same
+    // elements stay on the page) and everything around it is replaced, so a new reading never
+    // takes away what is being chosen or typed, the focus, or an open list. Only its two lines of
+    // read-only text (the summary and "Now: …") are refreshed.
+    function drawDetail(body, d) {
+        if (!body) return;
+        var html = detailBody(d);
+        var keep = connOpen && canConn() ? document.getElementById('conn-box') : null;
+        if (!keep || keep.parentNode !== body || !keep.querySelector('#conn-form')) { body.innerHTML = html; connSync(); return; }
+        var tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        var fresh = tmp.querySelector('#conn-box');
+        if (!fresh || fresh.parentNode !== tmp || !fresh.querySelector('#conn-form')) { body.innerHTML = html; connSync(); return; }
+        while (keep.previousSibling) body.removeChild(keep.previousSibling);
+        while (keep.nextSibling) body.removeChild(keep.nextSibling);
+        while (tmp.firstChild !== fresh) body.insertBefore(tmp.firstChild, keep);
+        tmp.removeChild(fresh);
+        while (tmp.firstChild) body.appendChild(tmp.firstChild);
+        var sum = keep.querySelector('.conn-sum'), now = keep.querySelector('#conn-now');
+        var sumHtml = connSum(d), nowHtml = connNow(d);
+        if (sum && sum._html !== sumHtml) { sum.innerHTML = sumHtml; sum._html = sumHtml; }
+        if (now && now._html !== nowHtml) { now.innerHTML = nowHtml; now._html = nowHtml; }
+        connSync();
+    }
+
+    // The box was opened or closed. Opening it the first time fetches the saved logins and
+    // communities; closing it forgets a typed password.
+    function connToggled(e) {
+        if (e.target.id !== 'conn-box') return;
+        connOpen = e.target.open;
+        if (connOpen) { if (canConn()) loadCreds(); return; }
+        conn.pass = '';
+        var p = document.getElementById('conn-pass');
+        if (p) p.value = '';
+    }
+    // Something in the box was chosen or typed: remember it, then show or hide what depends on it.
+    function connChanged(e) {
+        var t = e.target;
+        if (!t.closest || !t.closest('#conn-form')) return;
+        var key = t.name === 'conn-mode' ? 'mode' : { 'conn-login-pick': 'loginPick', 'conn-snmp-pick': 'snmpPick', 'conn-save': 'save', 'conn-user': 'user', 'conn-pass': 'pass', 'conn-comm': 'comm', 'conn-label': 'label' }[t.id];
+        if (!key || (key === 'mode' && !t.checked)) return;
+        var v = key === 'save' ? t.checked : t.value;
+        if (conn[key] === v) return;
+        conn[key] = v;
+        if (!conn.busy) { conn.msg = ''; conn.tone = ''; } // an old result no longer describes what is on screen
+        connSync();
+    }
+    function postConnect(id, body) {
+        return fetch('/api/devices/' + encodeURIComponent(id) + '/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) { return r.json(); });
+    }
+    function connSay(text, tone, focusId) {
+        conn.msg = text; conn.tone = tone || '';
+        connSync();
+        var f = focusId && document.getElementById(focusId);
+        if (f) f.focus();
+    }
+    // Why it did not work, in a plain sentence. pick: '' (automatic or ping), 'all', 'new' or 'id:<id>'.
+    function connFailText(r, mode, pick, name) {
+        r = r || {};
+        if (!r.needLogin) return r.error || 'Could not connect: ' + ((r.test && r.test.error) || 'the device did not answer.');
+        var typeIt = mode === 'auto' ? 'Choose “Username and password” or “SNMP community” and type the right one.' : 'Choose “A new one…” and type the right one.';
+        if (pick === 'new') return 'That did not work on this device. Check the ' + (mode === 'snmp' ? 'community' : 'username and password') + ' and try again.';
+        if (pick && pick !== 'all') return (name ? '“' + name + '”' : 'It') + ' did not work on this device. Pick another one, or choose “A new one…” and type it.';
+        if (!r.tried) return mode === 'auto' ? 'Nothing is saved yet. ' + typeIt : 'There are no saved ' + (mode === 'snmp' ? 'communities' : 'logins') + ' yet. Type the one for this device.';
+        if (r.tried === 1) return 'TowerDesk tried the one you saved on this device and it did not work. ' + typeIt;
+        return 'TowerDesk tried ' + r.tried + ' saved ' + (mode === 'snmp' ? 'communities' : mode === 'login' ? 'logins' : 'logins and communities') + ' on this device and none of them worked. ' + typeIt;
+    }
+    // Connect was pressed: try what is chosen, and say what happened in the box itself.
     function connGo() {
-        var sel = document.getElementById('conn-mode');
-        if (!sel) return;
-        var mode = sel.value;
-        if (mode === 'login' || mode === 'snmp') { openConnDialog(mode, null); return; }
-        connMsg(mode === 'ping' ? 'Switching…' : 'Trying the saved logins…');
-        postConnect({ mode: mode }).then(function (r) {
-            if (r.ok) { connMsg(mode === 'ping' ? 'Now monitored with ping only.' : 'Connected' + (r.matched ? ' with “' + r.matched + '”.' : '.')); poll(); }
-            else if (r.needLogin) { connMsg(''); openConnDialog('login', { auto: true, tried: r.tried }); }
-            else connMsg(r.error || 'Could not connect.');
-        }).catch(function () { connMsg('Could not reach TowerDesk.'); });
+        var d = connDevice();
+        if (!d || conn.busy || !canConn()) return;
+        // Take the fields as they are on the page (a password manager may fill one without telling us).
+        [['conn-user', 'user'], ['conn-pass', 'pass'], ['conn-comm', 'comm'], ['conn-label', 'label']].forEach(function (p) { var x = document.getElementById(p[0]); if (x) conn[p[1]] = x.value; });
+        var mode = connMode(d);
+        var kind = mode === 'snmp' ? 'snmp' : 'login';
+        var pick = mode === 'login' || mode === 'snmp' ? connPick(kind) : '';
+        var body = { mode: mode }, name = '';
+        if (pick === 'new') {
+            if (mode === 'snmp') {
+                body.community = conn.comm.trim();
+                if (!body.community) { connSay('Type the community name.', 'bad', 'conn-comm'); return; }
+            } else {
+                body.username = conn.user.trim();
+                body.password = conn.pass;
+                if (!body.username && !body.password) { connSay('Type the password. If the device has no password, type its username.', 'bad', 'conn-pass'); return; }
+            }
+            if (conn.save) { body.saveAsDefault = true; body.label = conn.label.trim(); }
+        } else if (pick && pick !== 'all') {
+            body.credentialId = pick.slice(3);
+            name = savedName(kind, pick);
+        }
+        var mine = conn; // if the card is closed or another device is opened meanwhile, `conn` is a new object
+        conn.busy = true;
+        connSay(mode === 'ping' ? 'Switching to ping only…' : pick === 'new' || body.credentialId ? 'Trying it on this device…' : 'Trying what you saved. This can take a minute.', '');
+        postConnect(d.id, body).then(function (r) {
+            var ok = !!(r && r.ok);
+            if (conn !== mine) { if (ok) poll(); return; }
+            conn.busy = false;
+            if (!ok) {
+                // Nothing saved to try: open the fields so the owner can type one.
+                if (r && r.needLogin && !r.tried && pick === 'all') { if (mode === 'snmp') conn.snmpPick = 'new'; else conn.loginPick = 'new'; }
+                // The picked one was removed somewhere else meanwhile: fetch the list again.
+                if (r && r.error && body.credentialId) loadCreds(true);
+                connSay(connFailText(r, mode, pick, name), 'bad');
+                return;
+            }
+            conn.pass = '';
+            if (r.savedAsDefault) {
+                // It is in the saved list now: go back to the list and fetch it again.
+                conn.save = false; conn.label = ''; conn.user = '';
+                if (mode === 'snmp') { conn.snmpPick = ''; conn.comm = 'public'; } else conn.loginPick = '';
+                loadCreds(true);
+            }
+            connSay(mode === 'ping' ? 'Now watched with ping only.'
+                : 'Connected' + (pick !== 'new' && r.matched ? ' with “' + r.matched + '”.' : '.') + (r.savedAsDefault ? ' Saved for your other devices too.' : ''), 'ok');
+            poll(); // the next snapshot carries the new connection
+        }).catch(function () {
+            if (conn !== mine) return;
+            conn.busy = false;
+            connSay('Could not reach TowerDesk.', 'bad');
+        });
     }
     // One click handler for everything in the advisor and the connection box.
     function handleModalClick(e) {
@@ -546,27 +836,11 @@
             detailTab = tabBtn.dataset.dtab;
             var dd = lastData && lastData.devices.find(function (x) { return x.id === detailId; });
             var bodyEl = document.getElementById('detail-modal-body');
-            if (dd && bodyEl) { bodyEl.innerHTML = detailBody(dd); bodyEl.scrollTop = 0; }
+            if (dd && bodyEl) { drawDetail(bodyEl, dd); bodyEl.scrollTop = 0; }
             return true;
         }
         return false;
     }
-    // The login dialog lives outside the card, so it has its own handler.
-    document.addEventListener('click', function (e) {
-        var c = e.target.closest('#conn-dialog [data-conn]');
-        if (!c) return;
-        if (c.dataset.conn === 'cancel') closeConnDialog();
-        else if (c.dataset.conn === 'try') connTry(c.dataset.mode);
-    });
-    document.addEventListener('change', function (e) {
-        if (e.target.id === 'conn-default') { var row = document.getElementById('conn-label-row'); if (row) row.hidden = !e.target.checked; }
-    });
-    document.addEventListener('keydown', function (e) {
-        if (!document.getElementById('conn-dialog')) return;
-        if (e.key === 'Escape') { closeConnDialog(); e.stopPropagation(); }
-        else if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox') { var t = document.querySelector('#conn-dialog [data-conn=try]'); if (t && !t.disabled) { e.preventDefault(); connTry(t.dataset.mode); } }
-    }, true);
-
     function registrationBlock(m) {
         var rows = (m && m.stations) || [];
         if (!rows.length) return '<p class="muted">No stations registered right now.</p>';
@@ -765,8 +1039,8 @@
         if (has(r.distance)) t.push(['Distance', r.distance + ' km']);
         if (has(r.availability)) t.push(['Availability', r.availability + '%']);
         if (has(r.remoteName)) t.push(['Remote end', r.remoteName]);
-        if (mx.cpu) t.push(['CPU', mx.cpu.now + '%', Number(mx.cpu.now), true]);
-        if (has(mx.memPct)) t.push(['RAM', mx.memPct + '%', Number(mx.memPct), true]);
+        if (mx.cpu && has(mx.cpu.now)) t.push(['CPU', pct(mx.cpu.now) + '%', pct(mx.cpu.now), true]);
+        if (has(mx.memPct)) t.push(['RAM', pct(mx.memPct) + '%', pct(mx.memPct), true]);
         if (has(mx.stationCount)) t.push(['Clients', mx.stationCount]);
         if (has(mx.onuCount)) t.push(['ONUs online', mx.onuOnline + ' / ' + mx.onuCount]);
         t.push(['Latency', ms(d.latencyMs), d.latencyMs == null ? NaN : Number(d.latencyMs)]);
@@ -781,7 +1055,7 @@
             if (x[0] === 'SNR') return n >= 25 ? 'ok' : n >= 15 ? 'warn' : 'bad';
             if (x[0] === 'CCQ') return n >= 85 ? 'ok' : n >= 70 ? 'warn' : 'bad';
             if (x[0] === 'Latency') return n <= 50 ? 'ok' : n <= 200 ? 'warn' : 'bad';
-            if (x[3]) return n >= 90 ? 'bad' : n >= 75 ? 'warn' : 'ok';
+            if (x[3]) return loadTone(n);
             return '';
         };
         var tile = function (x) { return '<div class="stat-tile"><div class="k">' + esc(x[0]) + '</div><div class="v ' + tone(x) + '">' + esc(x[1]) + '</div></div>'; };
@@ -877,7 +1151,8 @@
         return scheme + '://' + d.ip + (web && d.port ? ':' + d.port : '');
     }
 
-    // Planned work and customer notices. Hidden for viewers; the server refuses them too.
+    // Notes and customer notices, and the way out of a maintenance window that is already running
+    // (starting one from the card was removed). Hidden for viewers; the server refuses them too.
     function opsBlock(d) {
         if (window.TowerDesk.role === 'viewer') return '';
         var IM = window.TowerDesk.impactModel;
@@ -886,11 +1161,8 @@
         var h = '<div class="ops-box">';
         if (d.maintenance) {
             h += '<div class="ops-row"><span class="maint-tag">🔧 In maintenance until ' + esc(new Date(d.maintenance.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) + (d.maintenance.reason ? ' · ' + esc(d.maintenance.reason) : '') + '</span>' +
-                '<button type="button" class="btn-secondary btn-sm" data-maint="end" data-mid="' + esc(d.maintenance.id) + '">End maintenance</button></div>' +
+                '<button type="button" class="btn-secondary btn-sm" data-maint="end" data-mid="' + esc(d.maintenance.id) + '">End maintenance</button><span class="muted" id="maint-msg" role="status"></span></div>' +
                 '<p class="muted">No alerts and no messages for this device until then.</p>';
-        } else if (CAN_EDIT) {
-            h += '<div class="ops-row"><label for="maint-hours">Planned work?</label><select id="maint-hours"><option value="1">1 hour</option><option value="2">2 hours</option><option value="4">4 hours</option><option value="8">8 hours</option><option value="24">1 day</option></select>' +
-                '<button type="button" class="btn-secondary btn-sm" data-maint="start">Start maintenance</button><span class="muted" id="maint-msg" role="status"></span></div>';
         }
         var canNote = window.TowerDesk.role !== 'viewer' && CAN_EDIT;
         if (canNote || d.notes) {
@@ -903,10 +1175,11 @@
         return h + '</div>';
     }
     function maintMsg(t) { var el = document.getElementById('maint-msg'); if (el) el.textContent = t; }
+    // End a maintenance window that is running (the only thing left to do with one from the card).
     function maintAct(kind, mid) {
-        var body = kind === 'start' ? { scope: 'device', id: detailId, hours: Number((document.getElementById('maint-hours') || {}).value) || 1 } : null;
+        if (kind !== 'end' || !mid) return;
         maintMsg('Saving…');
-        return fetch(kind === 'start' ? '/api/maintenance' : '/api/maintenance/' + encodeURIComponent(mid), { method: kind === 'start' ? 'POST' : 'DELETE', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+        return fetch('/api/maintenance/' + encodeURIComponent(mid), { method: 'DELETE' })
             .then(function (r) { return r.json(); }).then(function (j) {
                 if (j.error) { maintMsg(j.error); return; }
                 poll(); // the next snapshot carries the new state
@@ -1000,7 +1273,7 @@
             '<dl class="kv detail-kv">' + info.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') + '</dl>' + opsBlock(d) +
             '<h4 class="detail-sec">Live</h4>' + statGrid(d) +
             '<h4 class="detail-sec">Latency, last 10 minutes</h4>' + latencyChart(d.history) +
-            (d.online === false ? '' : '<h4 class="detail-sec">Traffic' + (mxk === 'stations' ? '' : ' &amp; ' + (mxk === 'clients' ? 'clients' : 'interfaces')) + '</h4>' + metricsBlock(d.metrics));
+            (d.online === false ? '' : '<h4 class="detail-sec">Traffic' + (mxk === 'stations' ? '' : ' &amp; ' + (mxk === 'clients' ? 'clients' : 'interfaces')) + '</h4>' + metricsBlock(d.metrics) + systemBlock(d.metrics));
         var pane = tab === 'ports' ? portsBlock(d.metrics)
             : tab === 'advisor' ? advisorBlock(d)
             : tab === 'customers' ? (isSta ? registrationBlock(d.metrics) : onuBlock(d.metrics))
@@ -1042,14 +1315,23 @@
             if (d && tb) tb.innerHTML = onuRows(d.metrics);
         });
         document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDetail(); });
-        m.addEventListener('toggle', function (e) { if (e.target.id === 'conn-box') connOpen = e.target.open; }, true);
+        m.addEventListener('toggle', connToggled, true);
+        m.addEventListener('change', connChanged);
+        m.addEventListener('input', connChanged);
+        // Enter in a field of the connection box presses Connect.
+        m.addEventListener('keydown', function (e) {
+            if (e.key !== 'Enter' || e.isComposing || e.target.tagName !== 'INPUT' || !e.target.closest('#conn-form')) return;
+            if (e.target.type === 'checkbox' || e.target.type === 'radio') return;
+            e.preventDefault();
+            connGo();
+        });
         return m;
     }
     function openDetail(id) {
         if (!lastData) return;
         var d = lastData.devices.find(function (x) { return x.id === id; });
         if (!d) return;
-        if (detailId !== id) { detailTab = 'overview'; connOpen = false; }
+        if (detailId !== id) { detailTab = 'overview'; connOpen = false; conn = blankConn(); }
         detailId = id;
         var m = ensureModal();
         var isLink = d.role === 'backhaul';
@@ -1060,13 +1342,16 @@
         if (isSector) { if (adv.id !== id) adv = blankAdv(id); loadHistory(); }
         m.querySelector('.detail-modal').classList.toggle('wide', isLink || isSector || isOlt || isSwitchKind);
         m.querySelector('.modal-header strong').textContent = isLink ? 'Link detail' : (isSector ? 'Sector detail' : (isOlt ? 'OLT detail' : (isSwitchKind ? 'Switch detail' : 'Device detail')));
-        document.getElementById('detail-modal-body').innerHTML = detailBody(d);
+        drawDetail(document.getElementById('detail-modal-body'), d);
         m.style.display = 'flex';
     }
     function closeDetail() {
         detailId = null;
         detailTab = 'overview';
         connOpen = false;
+        conn = blankConn(); // forgets a typed password too
+        var pw = document.getElementById('conn-pass');
+        if (pw) pw.value = '';
         adv = blankAdv();
         onuFilter = '';
         var m = document.getElementById('detail-modal');
@@ -1162,7 +1447,7 @@
                 var body = document.getElementById('detail-modal-body');
                 // Leave the card alone while a ping/traceroute result or a station's history is
                 // open in it — refreshing would wipe what the user is reading.
-                if (body && !detailBusy(body)) body.innerHTML = detailBody(dd);
+                if (body && !detailBusy(body)) drawDetail(body, dd);
             }
             else closeDetail();
         }

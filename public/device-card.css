@@ -1,0 +1,58 @@
+/* Device card on the Monitoring page: the connection panel and the System meters.
+   Only what app.css does not already have. Colours come from the theme variables (so the dark
+   theme works), and sizes use logical properties (so the card also reads right in Arabic). */
+
+/* ---------- Connection panel ---------- */
+.conn-now { margin: 4px 0 12px; line-height: 1.6; }
+.conn-now .status-badge { margin-inline-end: 6px; }
+.conn-form { display: grid; gap: 12px; min-inline-size: 0; }
+
+/* The four ways to connect: radio cards (app.css .pv-card) with a visible radio dot, so the
+   chosen one does not depend on colour alone. */
+.conn-modes { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.conn-modes .pv-card { position: relative; align-content: start; min-inline-size: 0; }
+.conn-modes .pv-card strong::before {
+    content: ""; display: inline-block; inline-size: 14px; block-size: 14px; margin-inline-end: 8px; vertical-align: -2px;
+    border: 2px solid var(--text-muted); border-radius: 50%; background: var(--bg-card);
+}
+.conn-modes .pv-card.on strong::before { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 42%, var(--bg-card) 48%); }
+.conn-modes .pv-card:hover { border-color: var(--accent); }
+.conn-count { font-size: 0.8rem; font-weight: 600; color: var(--text-main); min-block-size: 1em; }
+
+/* The fields for the chosen way, right under the cards. */
+.conn-detail { display: grid; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-subtle); min-inline-size: 0; }
+.conn-detail p { margin: 0; }
+.conn-part { display: grid; gap: 10px; min-inline-size: 0; }
+.conn-new { display: grid; gap: 10px 14px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); align-items: start; }
+.conn-detail .form-group { max-inline-size: 380px; }
+.conn-detail .form-group select, .conn-detail .form-group input { inline-size: 100%; }
+.conn-detail .conn-hint { margin: 0; font-size: 0.8rem; }
+.conn-detail .conn-check { margin: 0; align-items: center; cursor: pointer; justify-self: start; }
+.conn-detail .conn-check input { margin: 0; }
+
+/* Connect and what happened. */
+.conn-go { gap: 10px 14px; }
+.conn-msg { flex: 1 1 220px; min-inline-size: 0; font-size: 0.88rem; color: var(--text-muted); overflow-wrap: anywhere; }
+.conn-msg.ok { color: var(--success); font-weight: 600; }
+.conn-msg.bad { color: var(--danger); font-weight: 600; }
+
+/* ---------- System: CPU, RAM, uptime ---------- */
+.sys-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.sys-tile { display: grid; gap: 6px; align-content: start; min-inline-size: 0; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-subtle); }
+.sys-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.sys-k { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.02em; }
+.sys-level { font-size: 0.78rem; font-weight: 600; color: var(--success); }
+.sys-tile.warn .sys-level { color: var(--warning); }
+.sys-tile.bad .sys-level { color: var(--danger); }
+.sys-v { font-size: 1.9rem; font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text-main); }
+.sys-unit { margin-inline-start: 2px; font-size: 1rem; font-weight: 600; letter-spacing: 0; color: var(--text-muted); }
+.sys-up { font-size: 1.35rem; font-weight: 700; line-height: 1.3; color: var(--text-main); overflow-wrap: anywhere; }
+.sys-bar { block-size: 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-hover); overflow: hidden; }
+.sys-bar > span { display: block; block-size: 100%; border-radius: inherit; background: var(--success); }
+.sys-tile.warn .sys-bar > span { background: var(--warning); }
+.sys-tile.bad .sys-bar > span { background: var(--danger); }
+.spark.sys-spark { block-size: 36px; margin-block-start: 2px; }
+.sys-note { font-size: 0.78rem; color: var(--text-muted); }
+
+/* Arabic (right to left): numbers with a unit still read left to right, as in the Live tiles. */
+html[dir="rtl"] .sys-v, html[dir="rtl"] .sys-up { direction: ltr; unicode-bidi: isolate; text-align: right; }

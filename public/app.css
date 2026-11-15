@@ -619,8 +619,14 @@ button:disabled { opacity: 0.6; cursor: progress; }
 .btn-sm { padding: 6px 12px; font-size: 0.8rem; border-radius: 8px; }
 .btn-danger { background: #b91c1c; color: #fff; border: 1px solid transparent; font-weight: 600; cursor: pointer; }
 .btn-danger:hover { background: #991b1b; }
-.inline-confirm { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.inline-confirm-q { font-size: 0.8rem; font-weight: 600; color: var(--danger); }
+/* "Are you sure?" dialog (TowerDesk.confirm) */
+.td-confirm-box { max-width: 420px; padding: 20px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; overflow-x: hidden; }
+.td-confirm-icon { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: var(--accent-soft); color: var(--accent); }
+.td-confirm-icon.danger { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+.td-confirm-main h3 { margin: 6px 0 4px; font-size: 1.02rem; line-height: 1.35; overflow-wrap: anywhere; }
+.td-confirm-main p { margin: 0; line-height: 1.5; }
+.td-confirm-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.td-confirm-actions button { padding: 9px 16px; border-radius: 8px; font-size: 0.9rem; }
 .row-actions { white-space: nowrap; }
 .last-result { max-width: 280px; font-size: 0.82rem; overflow-wrap: anywhere; }
 

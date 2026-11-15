@@ -588,30 +588,53 @@
             .then(function () { box.querySelectorAll('button').forEach(function (b) { b.disabled = false; }); });
     });
 
-    window.TowerDesk.inlineConfirm = function (button, question) {
+    // "Are you sure?" as a small dialog in the middle of the page. Resolves true or false.
+    // o: { title, text (a sentence under the title), yes (button label), no, danger (a removal), returnTo (element) }.
+    // Escape, the backdrop and the No button all mean no. Focus starts on No and returns to the button that asked.
+    window.TowerDesk.confirm = function (o) {
+        o = o || {};
         return new Promise(function (resolve) {
-            var box = document.createElement('span');
-            box.className = 'inline-confirm';
-            box.setAttribute('role', 'group');
-            box.innerHTML = '<span class="inline-confirm-q"></span>' +
-                '<button type="button" class="btn-danger btn-sm" data-answer="yes">Yes</button>' +
-                '<button type="button" class="btn-secondary btn-sm" data-answer="no">No</button>';
-            box.querySelector('.inline-confirm-q').textContent = question || 'Are you sure?';
-            button.hidden = true;
-            button.parentNode.insertBefore(box, button.nextSibling);
+            if (document.getElementById('td-confirm')) { resolve(false); return; } // one question at a time
+            var back = o.returnTo || document.activeElement;
+            var el = document.createElement('div');
+            el.className = 'modal-overlay td-confirm';
+            el.id = 'td-confirm';
+            el.style.display = 'flex';
+            el.innerHTML = '<div class="modal td-confirm-box" role="alertdialog" aria-modal="true" aria-labelledby="td-confirm-title"' + (o.text ? ' aria-describedby="td-confirm-text"' : '') + '>' +
+                '<div class="td-confirm-icon' + (o.danger ? ' danger' : '') + '" aria-hidden="true">' + (o.danger ? '!' : '?') + '</div>' +
+                '<div class="td-confirm-main"><h3 id="td-confirm-title"></h3>' + (o.text ? '<p class="muted" id="td-confirm-text"></p>' : '') + '</div>' +
+                '<div class="td-confirm-actions"><button type="button" class="btn-secondary" data-answer="no"></button>' +
+                '<button type="button" class="' + (o.danger ? 'btn-danger' : 'btn-primary') + '" data-answer="yes"></button></div></div>';
+            el.querySelector('#td-confirm-title').textContent = o.title || 'Are you sure?';
+            if (o.text) el.querySelector('#td-confirm-text').textContent = o.text;
+            var no = el.querySelector('[data-answer="no"]'), yes = el.querySelector('[data-answer="yes"]');
+            yes.textContent = o.yes || 'Yes';
+            no.textContent = o.no || (o.yes ? 'Cancel' : 'No');
+            document.body.appendChild(el);
             var done = function (answer) {
-                clearTimeout(timer);
-                box.remove();
-                button.hidden = false;
+                document.removeEventListener('keydown', onKey, true);
+                el.remove();
+                if (back && back.focus && document.contains(back)) back.focus();
                 resolve(answer);
             };
-            var timer = setTimeout(function () { done(false); }, 10000);
-            box.addEventListener('click', function (e) {
+            var onKey = function (e) {
+                if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); }
+                else if (e.key === 'Tab') { e.preventDefault(); (document.activeElement === no ? yes : no).focus(); } // only two things to reach
+            };
+            document.addEventListener('keydown', onKey, true);
+            el.addEventListener('click', function (e) {
                 var b = e.target.closest('button[data-answer]');
                 if (b) done(b.dataset.answer === 'yes');
+                else if (e.target === el) done(false);
             });
-            box.querySelector('[data-answer="no"]').focus();
+            no.focus();
         });
+    };
+    // The older name, used all over the app: inlineConfirm(button, question, { text, yes, danger }).
+    window.TowerDesk.inlineConfirm = function (button, question, opts) {
+        var o = { title: question, returnTo: button };
+        Object.keys(opts || {}).forEach(function (k) { o[k] = opts[k]; });
+        return window.TowerDesk.confirm(o);
     };
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

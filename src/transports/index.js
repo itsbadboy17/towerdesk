@@ -10,20 +10,31 @@ const tplink = require('./tplink');
 const airos = require('./airos');
 const mimosa = require('./mimosa');
 
+// defaultUser: the username used when the owner leaves it empty (password-only methods have none).
 const METHODS = {
   ping:       { label: 'Ping only (no login)',            port: null, needsLogin: false },
-  mikrotik:   { label: 'MikroTik API',                    port: 8728, needsLogin: true },
-  'mikrotik-ssl': { label: 'MikroTik API-SSL',            port: 8729, needsLogin: true },
-  ssh:        { label: 'SSH',                             port: 22,   needsLogin: true },
-  telnet:     { label: 'Telnet',                          port: 23,   needsLogin: true },
+  mikrotik:   { label: 'MikroTik API',                    port: 8728, needsLogin: true, defaultUser: 'admin' },
+  'mikrotik-ssl': { label: 'MikroTik API-SSL',            port: 8729, needsLogin: true, defaultUser: 'admin' },
+  ssh:        { label: 'SSH',                             port: 22,   needsLogin: true, defaultUser: 'admin' },
+  telnet:     { label: 'Telnet',                          port: 23,   needsLogin: true, defaultUser: 'admin' },
   snmp:       { label: 'SNMP v2c',                        port: 161,  needsLogin: false, community: true },
   snmp1:      { label: 'SNMP v1',                         port: 161,  needsLogin: false, community: true },
   tplink:     { label: 'TP-Link router login',            port: 80,   needsLogin: true, passwordOnly: true },
-  airos:      { label: 'Ubiquiti airOS login',            port: 443,  needsLogin: true },
+  airos:      { label: 'Ubiquiti airOS login',            port: 443,  needsLogin: true, defaultUser: 'ubnt' },
   mimosa:     { label: 'Mimosa login',                    port: 80,   needsLogin: true, passwordOnly: true },
   http:       { label: 'Web UI (HTTP)',                   port: 80,   needsLogin: false },
   https:      { label: 'Web UI (HTTPS)',                  port: 443,  needsLogin: false }
 };
+
+// The username a method logs in with when none was typed ("admin" on a MikroTik, "ubnt" on airOS),
+// or '' when the method has none. Telnet with nothing typed at all stays a plain "is it open"
+// check (no login is tried), so it only gets the default once there is a password to send.
+function defaultUsername(method, hasPassword) {
+  const def = METHODS[method];
+  if (!def || !def.defaultUser) return '';
+  if (method === 'telnet' && !hasPassword) return '';
+  return def.defaultUser;
+}
 
 // Best method to monitor a device, in order of preference, keyed by vendor.
 const METHOD_PREFERENCE = {
@@ -43,7 +54,9 @@ async function test(opts) {
   if (!def) return { ok: false, error: 'Unknown connection method' };
   if (!isValidHost(opts.host)) return { ok: false, error: 'Invalid IP address or host name' };
   const port = toPort(opts.port, def.port);
-  const base = { host: opts.host, port, username: opts.username, password: opts.password };
+  // An empty username means the method's usual one (admin / ubnt).
+  const username = opts.username || defaultUsername(method, !!opts.password) || undefined;
+  const base = { host: opts.host, port, username, password: opts.password };
   const started = Date.now();
   let result;
   switch (method) {
@@ -61,7 +74,7 @@ async function test(opts) {
     case 'snmp': result = await snmp.test({ host: opts.host, port, community: opts.community, version: '2c' }); break;
     case 'snmp1': result = await snmp.test({ host: opts.host, port, community: opts.community, version: '1' }); break;
     case 'tplink': result = await tplink.test({ host: opts.host, port, password: opts.password }); break;
-    case 'airos': result = await airos.test({ host: opts.host, port: opts.port || undefined, username: opts.username, password: opts.password }); break;
+    case 'airos': result = await airos.test({ host: opts.host, port: opts.port || undefined, username, password: opts.password }); break;
     case 'mimosa': result = await mimosa.test({ host: opts.host, port: opts.port || undefined, password: opts.password }); break;
     case 'http':
     case 'https':
@@ -74,6 +87,25 @@ async function test(opts) {
       break;
   }
   return { method, port, ms: Date.now() - started, ...result };
+}
+
+// The brand (device type) a SUCCESSFUL test proves, or null when it proves none. A MikroTik API
+// login can only be a MikroTik, whatever type was picked when the device was added. SNMP says it
+// with its sysObjectID (which can also say "olt"), else with its description and name.
+function vendorFromTest(t) {
+  if (!t || !t.ok) return null;
+  const d = t.details || {};
+  switch (t.method) {
+    case 'mikrotik':
+    case 'mikrotik-ssl': return 'mikrotik';
+    case 'airos': return 'ubnt';
+    case 'mimosa': return 'mimosa';
+    case 'tplink': return 'tplink';
+    case 'snmp':
+    case 'snmp1': return snmp.vendorFromObjectId(d.objectId) || web.guessVendor(String(d.description || '') + ' ' + String(d.name || ''));
+    case 'ssh': return t.vendor || null;
+    default: return null;
+  }
 }
 
 // Probe common management ports and fingerprint the vendor. Sends no login credentials;
@@ -133,7 +165,7 @@ async function detect(host, { community } = {}) {
 // first, then the vendor's fallback methods (so a MikroTik with the API off falls back to SSH,
 // and so on). Only verifiable methods are tried — a plain web page can't confirm a login.
 // Attempts are bounded by the vault size, so it won't spray a device with endless guesses.
-async function probeCredentials({ host, method, port, vendor, logins = [], communities = [], perTry = 6000 }) {
+async function probeCredentials({ host, method, port, vendor, logins = [], communities = [], perTry = 6000, factory = false }) {
   if (!isValidHost(host)) return { ok: false };
   // When the vendor is unknown, still try the common authenticated methods so "Fix unconnected"
   // can reach a device we couldn't fingerprint.
@@ -150,6 +182,9 @@ async function probeCredentials({ host, method, port, vendor, logins = [], commu
       logins.forEach((l) => attempts.push({ password: l.password, _label: l.label, _credentialId: l.id }));
     } else {
       logins.forEach((l) => attempts.push({ username: l.username, password: l.password, _label: l.label, _credentialId: l.id }));
+      // A brand-new MikroTik still has its factory login (admin, no password). With `factory`, try that on the API before
+      // falling back to SSH: a router with no password lets ANY password in over SSH, which would look like a match.
+      if (factory && (m === 'mikrotik' || m === 'mikrotik-ssl')) attempts.push({ username: def.defaultUser, password: '', _label: 'factory login (no password)' });
     }
     for (const a of attempts) {
       const r = await test({ host, method: m, type: vendor, port: onDetected ? port : undefined, timeout: perTry, username: a.username, password: a.password, community: a.community });
@@ -173,4 +208,4 @@ async function reachable(device) {
   return { online: t.open, latencyMs: t.ms };
 }
 
-module.exports = { METHODS, DETECT_PORTS, METHOD_PREFERENCE, test, detect, probeCredentials, reachable };
+module.exports = { METHODS, DETECT_PORTS, METHOD_PREFERENCE, test, detect, probeCredentials, reachable, vendorFromTest, defaultUsername };

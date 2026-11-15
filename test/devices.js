@@ -384,6 +384,46 @@ async function freeUdpPort() {
   r = await transports.test({ host: 'bad host;rm', method: 'ping' });
   assert.ok(!r.ok && /Invalid/.test(r.error));
 
+  // An empty username means the method's usual one: the fake MikroTik and Telnet both expect "admin".
+  assert.strictEqual(transports.METHODS.mikrotik.defaultUser, 'admin');
+  assert.strictEqual(transports.METHODS['mikrotik-ssl'].defaultUser, 'admin');
+  assert.strictEqual(transports.METHODS.ssh.defaultUser, 'admin');
+  assert.strictEqual(transports.METHODS.telnet.defaultUser, 'admin');
+  assert.strictEqual(transports.METHODS.airos.defaultUser, 'ubnt');
+  assert.ok(!('defaultUser' in transports.METHODS.tplink) && !('defaultUser' in transports.METHODS.mimosa) && !('defaultUser' in transports.METHODS.snmp), 'password-only and SNMP methods have no default username');
+  r = await t('mikrotik no username', { method: 'mikrotik', port: mtPort, password: PASS });
+  assert.ok(r.ok && r.details.identity === 'TowerNorth', 'mikrotik with an empty username logs in as admin: ' + r.error);
+  r = await t('mikrotik "" username', { method: 'mikrotik', port: mtPort, username: '', password: PASS });
+  assert.ok(r.ok, 'mikrotik with username "" logs in as admin: ' + r.error);
+  r = await t('telnet no username', { method: 'telnet', port: tnPort, password: PASS });
+  assert.ok(r.ok && /login OK/.test(r.summary), 'telnet with an empty username logs in as admin: ' + JSON.stringify(r));
+  r = await t('ssh no username', { method: 'ssh', port: sshPort, password: PASS });
+  assert.ok(r.ok, 'ssh with an empty username logs in as admin: ' + r.error);
+  // Telnet with nothing typed at all is still only an "is it open" check: no login is tried.
+  r = await t('telnet nothing typed', { method: 'telnet', port: tnPort });
+  assert.ok(r.ok && /login not attempted/.test(r.summary), 'telnet with no login stays a reachability check: ' + JSON.stringify(r));
+
+  // The brand a successful test proves (the device type follows it), and nothing from a failed one.
+  const vft = transports.vendorFromTest;
+  assert.strictEqual(vft(results['mikrotik ok']), 'mikrotik');
+  assert.strictEqual(vft({ ok: true, method: 'mikrotik-ssl', details: {} }), 'mikrotik');
+  assert.strictEqual(vft({ ok: true, method: 'airos', details: {} }), 'ubnt');
+  assert.strictEqual(vft({ ok: true, method: 'mimosa', details: {} }), 'mimosa');
+  assert.strictEqual(vft(results['tplink ok']), 'tplink');
+  assert.strictEqual(vft(results['snmp ok']), 'mimosa', 'snmp: from the sysObjectID');
+  assert.strictEqual(vft({ ok: true, method: 'snmp', details: { objectId: '1.3.6.1.4.1.3320.1', description: 'x' } }), 'olt', 'snmp: an OLT maker');
+  assert.strictEqual(vft({ ok: true, method: 'snmp1', details: { objectId: '1.3.6.1.4.1.99999.1', description: 'RouterOS RB4011', name: 'core' } }), 'mikrotik', 'snmp: from the description');
+  assert.strictEqual(vft({ ok: true, method: 'snmp', details: { description: 'Linux box', name: 'edge airos unit' } }), 'ubnt', 'snmp: from the name');
+  assert.strictEqual(vft({ ok: true, method: 'snmp', details: {} }), null, 'snmp that says nothing');
+  assert.strictEqual(vft(results['ssh ok']), 'mikrotik', 'ssh: from the banner');
+  assert.strictEqual(vft({ ok: true, method: 'ssh', details: {} }), null, 'ssh with an unknown banner');
+  assert.strictEqual(vft(results['telnet ok']), null);
+  assert.strictEqual(vft(results['ping localhost']), null);
+  assert.strictEqual(vft(results['http no creds']), null, 'a web page guess proves nothing');
+  assert.strictEqual(vft(results['mikrotik bad']), null, 'a failed test proves nothing');
+  assert.strictEqual(vft({ ok: false, method: 'mikrotik', vendor: 'mikrotik' }), null);
+  assert.strictEqual(vft(null), null);
+
   // No result may contain the password.
   assert.ok(!JSON.stringify(results).includes(PASS), 'password leaked into a result');
 
@@ -586,6 +626,92 @@ async function freeUdpPort() {
     assert.ok(res.body.ok === true && res.body.matched, 'auto finds the saved default login: ' + JSON.stringify(res.body));
     assert.strictEqual((await call('POST', '/api/devices/dev-nope/connect', { mode: 'auto' })).status, 404);
     await call('DELETE', '/api/devices/' + aid);
+
+    // ---- Add Device asks for less: the type, the name and the username come from the device ----
+    const seen = []; // every response below, to check that none carries a secret
+    const say = async (m, u, b) => { const x = await call(m, u, b); seen.push(x.body); return x; };
+    const mtLogin = { ip: host, method: 'mikrotik', port: mtPort, username: USER, password: PASS };
+
+    res = await say('GET', '/api/devices/methods');
+    assert.ok(res.body.mikrotik.defaultUser === 'admin' && res.body.airos.defaultUser === 'ubnt' && !res.body.tplink.defaultUser, 'methods list carries the default usernames');
+
+    // Picked "Cisco" by mistake, but it answers on the MikroTik API: it is saved as a MikroTik.
+    res = await say('POST', '/api/devices', { ...mtLogin, name: 'Wrong brand', type: 'cisco' });
+    assert.ok(res.body.test.ok && res.body.device.type === 'mikrotik', 'type follows the MikroTik API: ' + JSON.stringify(res.body.device));
+    assert.strictEqual(res.body.device.name, 'Wrong brand', 'a name the owner chose is kept');
+    assert.strictEqual((await call('DELETE', '/api/devices/' + res.body.device.id)).status, 200);
+
+    // A role is never changed: a MikroTik CRS saved as a switch stays a switch.
+    res = await say('POST', '/api/devices', { ...mtLogin, name: 'CRS', type: 'switch' });
+    assert.ok(res.body.test.ok && res.body.device.type === 'switch', 'a switch stays a switch: ' + JSON.stringify(res.body.device));
+    assert.strictEqual((await call('DELETE', '/api/devices/' + res.body.device.id)).status, 200);
+
+    // Only the IP is needed: no name, no type and an empty username.
+    res = await say('POST', '/api/devices', { ip: host, method: 'mikrotik', port: mtPort, username: '', password: PASS });
+    assert.strictEqual(res.status, 200, 'add with only an IP: ' + JSON.stringify(res.body));
+    assert.ok(res.body.test.ok, 'empty username logs in as admin: ' + res.body.test.error);
+    assert.strictEqual(res.body.device.name, 'TowerNorth', 'the name comes from the device');
+    assert.strictEqual(res.body.device.type, 'mikrotik', 'the type comes from the device');
+    assert.strictEqual(res.body.device.username, 'admin', 'the username really used is stored');
+    const bareId = res.body.device.id;
+    res = await say('GET', '/api/devices');
+    const bare = res.body.find((x) => x.id === bareId);
+    assert.ok(bare && bare.name === 'TowerNorth' && bare.type === 'mikrotik' && bare.username === 'admin', 'the list shows what was learnt: ' + JSON.stringify(bare));
+    // Clearing the username later puts the default back, and a type picked wrongly is corrected again.
+    res = await say('PUT', '/api/devices/' + bareId, { username: '', type: 'cisco' });
+    assert.ok(res.body.test.ok && res.body.device.username === 'admin' && res.body.device.type === 'mikrotik', 'edit keeps the default username and the real type: ' + JSON.stringify(res.body.device));
+    assert.strictEqual((await call('DELETE', '/api/devices/' + bareId)).status, 200);
+    // A device that does not answer keeps the IP as its name and "other" as its type.
+    res = await say('POST', '/api/devices', { ip: host, method: 'mikrotik', port: closedPort, password: PASS });
+    assert.ok(res.status === 200 && res.body.test.ok === false && res.body.device.name === host && res.body.device.type === 'other' && res.body.device.username === 'admin', 'nothing learnt from a failed test: ' + JSON.stringify(res.body.device));
+    assert.strictEqual((await call('DELETE', '/api/devices/' + res.body.device.id)).status, 200);
+
+    // Test before saving: says the device's own name and its real brand.
+    res = await say('POST', '/api/devices/test', { ip: host, type: 'cisco', method: 'mikrotik', port: mtPort, password: PASS });
+    assert.ok(res.body.ok && res.body.deviceName === 'TowerNorth' && res.body.vendor === 'mikrotik', 'test returns the name and brand: ' + JSON.stringify(res.body));
+    res = await say('POST', '/api/devices/test', { ip: host, method: 'mikrotik', port: mtPort, password: 'wrong' });
+    assert.ok(res.body.ok === false && res.body.deviceName === null && res.body.vendor === null, 'a failed test names nothing: ' + JSON.stringify(res.body));
+    res = await say('POST', '/api/devices/test', { ip: host, method: 'snmp', port: snmpPort, community: 'tower-ro' });
+    assert.ok(res.body.ok && res.body.deviceName === 'backhaul-1' && res.body.vendor === 'mimosa', 'snmp test returns the name and brand: ' + JSON.stringify(res.body));
+    res = await say('POST', '/api/devices/detect', { ip: host });
+    assert.ok('name' in res.body && (res.body.name === null || typeof res.body.name === 'string'), 'detect has a name: ' + JSON.stringify(res.body));
+
+    // On a device's card: pick ONE of the saved logins / communities by its id.
+    const savedVault = (await call('GET', '/api/credentials')).body;
+    const goodLogin = savedVault.logins.find((l) => l.label === 'Tower default');
+    const roCommunity = savedVault.communities.find((c) => c.label === 'RO');
+    assert.ok(goodLogin && roCommunity, 'saved login and community to pick from: ' + JSON.stringify(savedVault));
+    const decoy = (await call('POST', '/api/credentials', { kind: 'login', label: 'Decoy', username: USER, password: 'decoy-not-it' })).body.item;
+    res = await say('POST', '/api/devices', { name: 'Pick a login', type: 'mikrotik', ip: host, method: 'mikrotik', port: mtPort, username: USER, password: 'wrong-' + PASS });
+    const pid = res.body.device.id;
+    res = await say('POST', '/api/devices/' + pid + '/connect', { mode: 'login', credentialId: 'cred-nope' });
+    assert.ok(res.body.ok === false && /saved login is no longer there/.test(res.body.error || ''), 'an unknown saved login is refused: ' + JSON.stringify(res.body));
+    res = await say('POST', '/api/devices/' + pid + '/connect', { mode: 'login', credentialId: roCommunity.id });
+    assert.ok(res.body.ok === false && /saved login is no longer there/.test(res.body.error || ''), 'a community id is not a login: ' + JSON.stringify(res.body));
+    res = await say('POST', '/api/devices/' + pid + '/connect', { mode: 'login', credentialId: decoy.id });
+    assert.ok(res.body.ok === false && res.body.needLogin === true && res.body.tried === 1, 'only the picked login is tried: ' + JSON.stringify(res.body));
+    res = await say('POST', '/api/devices/' + pid + '/connect', { mode: 'login', credentialId: goodLogin.id });
+    assert.ok(res.body.ok === true && res.body.matched === 'Tower default' && res.body.device.method === 'mikrotik' && res.body.device.hasPassword, 'the picked saved login connects: ' + JSON.stringify(res.body));
+    assert.strictEqual((await call('DELETE', '/api/devices/' + pid)).status, 200);
+    assert.strictEqual((await call('DELETE', '/api/credentials/' + decoy.id)).status, 200);
+
+    // The same for a saved SNMP community. Saved as "Cisco" with no name: once the community works
+    // the device says it is a Mimosa called backhaul-1.
+    res = await say('POST', '/api/devices', { type: 'cisco', ip: host, method: 'snmp', port: snmpPort, community: 'not-the-community' });
+    const sid = res.body.device.id;
+    assert.ok(res.body.test.ok === false && res.body.device.type === 'cisco' && res.body.device.name === host, 'starts with a community that does not work: ' + JSON.stringify(res.body.device));
+    res = await say('POST', '/api/devices/' + sid + '/connect', { mode: 'snmp', credentialId: 'comm-nope' });
+    assert.ok(res.body.ok === false && /saved community is no longer there/.test(res.body.error || ''), 'an unknown saved community is refused: ' + JSON.stringify(res.body));
+    res = await say('POST', '/api/devices/' + sid + '/connect', { mode: 'snmp', credentialId: roCommunity.id });
+    assert.ok(res.body.ok === true && res.body.matched === 'RO' && res.body.device.method === 'snmp' && res.body.device.hasCommunity, 'the picked saved community connects: ' + JSON.stringify(res.body));
+    assert.ok(res.body.device.type === 'mimosa' && res.body.device.name === 'backhaul-1', 'name and type learnt over SNMP: ' + JSON.stringify(res.body.device));
+    assert.strictEqual((await call('DELETE', '/api/devices/' + sid)).status, 200);
+
+    // None of those answers carries a password or a community.
+    const said = JSON.stringify(seen);
+    assert.ok(!said.includes(PASS) && !said.includes('decoy-not-it'), 'a password leaked into an API response');
+    assert.ok(!said.includes('tower-ro') && !said.includes('not-the-community'), 'a community leaked into an API response');
+    assert.ok(!serverLog.includes(PASS), 'password written to server log');
 
     // TowerDesk no longer writes to routers: the old Enable SNMP route is gone.
     const anyDevice = (await call('GET', '/api/devices')).body[0];

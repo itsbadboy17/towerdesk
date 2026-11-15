@@ -172,7 +172,7 @@ Dependencies: none added. Telegram sending is the only new internet use and is o
 - Messages (src/notify.js, public/messages-model.js): Telegram bot (token encrypted at rest, never returned), status report, "Tell customers" with per-customer WhatsApp links (nothing is auto-sent on WhatsApp).
 - Neighbours (src/neighbors.js): MikroTik neighbour discovery, LLDP, CDP, ARP, MAC table over SNMP or the MikroTik API; suggestions for "gets its internet from"; scheduled scan every 6 h logs changes.
 - Switch ports (snmp.readSwitchPorts, metrics.portList): Cisco Catalyst / MikroTik switches, Ports tab with link state, speed, traffic, devices behind each port, who is plugged in. New device type "switch".
-- Guided Add Device (public/add-wizard.js): the same form one step at a time; remembers the choice.
+- Guided Add Device: replaced by the 3-step "Add a device" flow (see "Add Device redesign" below).
 - Finance (src/finance.js, public/finance-model.js, finance.html): estimates from plan prices x active subscribers, renewals, reminders, costs, daily trend. Admin only.
 - Quick search (Ctrl+K), device notes.
 - Design switcher next to the language selector: Design A (default) and Design B "Blueprint" (public/design-b.css, loaded only when chosen).
@@ -217,6 +217,13 @@ Not done: the phone app (left out on purpose); airOS radios cannot report neighb
 - `neighbors.ownerIndex` was extracted from `analyse` (no behaviour change) and is shared by both; MikroTik neighbour rows now keep `board` and `version`. No new dependency.
 - Tested: test/provision.js (flow), test/macreach.js (candidates, facingPort, look), test/neighbors.js (ownerIndex); by hand on the GNS3 lab: Slave listed a brand-new CHR by itself and the preview reached "Run it" (not run).
 - GNS3 lab: the GNS3 VM has no KVM on this PC, so both MikroTik templates now carry `-machine accel=tcg` (a new MikroTik node starts). See lab/README.md.
+
+## Add Device redesign, device card, auto type/name (features branch)
+- Add Device is one card, 3 steps in order (Find it, Log in, Name it): type and connection method are worked out (hand choice only under "set it yourself"); Log in is skipped when a saved login (or a new MikroTik's factory login on the API) already works; the name comes from the device. Shared step helper `public/stepper.js` (also used by Set up a device); add-wizard.js removed.
+- Server: type follows what a successful login proves (`vendorFromTest`; switch/ONU/OLT never changed; wrong types corrected at start-up); only the IP is required; empty username = admin (ubnt for airOS; telnet only with a password); `/connect` takes `credentialId` for one saved login/community; CPU/RAM stored as whole numbers.
+- Device card: Connection panel (Automatic / login / SNMP community / ping, pick a saved one or type a new one, keeps its state through refreshes); "Planned work / Start maintenance" removed (an existing window can still be ended); new System section with CPU/RAM meters and uptime.
+- Confirmations are a dialog (`TowerDesk.confirm`; `inlineConfirm` kept as the old name).
+- Tested: npm test (devices.js covers the server changes); by hand on the GNS3 lab: added a brand-new CHR with only its IP (found as MikroTik, named MikroTik, API, admin), Slave's card (connection panel, System, no maintenance). Not checked: Arabic for the new texts, RTL, 375 px for the card.
 
 ## Pretend OLT for the lab (features branch)
 - No free OLT image exists for GNS3 (OLT firmware ships only inside vendor hardware). `scripts/mock-olt.js` is a pretend EPON OLT (C-Data/HSGQ style, the NSCRTV MIB TowerDesk already reads): 6 invented ONUs with names, MACs, distance, optical power, temperature; one weak (-27 dBm), one drops off 1 minute in 5; three interfaces with moving traffic. SNMP via net-snmp (already a dependency), community public, port 1161.

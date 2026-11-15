@@ -51,6 +51,13 @@ function push(arr, v) {
   if (arr.length > HISTORY) arr.shift();
 }
 
+// CPU and memory are kept as whole percentages (13, not 13.111). A missing value stays missing.
+function whole(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.round(n) : null;
+}
+
 function applyCounters(s, list, now) {
   const seen = new Set();
   for (const i of list.slice(0, MAX_IFACES)) {
@@ -84,8 +91,8 @@ async function pollMikrotik(device, s, now) {
   const ifaces = await mikrotik.readInterfaces(s.session);
   const sys = await mikrotik.readSystem(s.session);
   applyCounters(s, ifaces.map((i) => ({ ...i, counterBits: 64 })), now);
-  if (sys.cpuLoad !== undefined) push(s.cpu, sys.cpuLoad);
-  s.mem = sys.totalMemory ? Math.round(((sys.totalMemory - sys.freeMemory) / sys.totalMemory) * 100) : null;
+  if (sys.cpuLoad !== undefined) push(s.cpu, whole(sys.cpuLoad));
+  s.mem = sys.totalMemory ? whole(((sys.totalMemory - sys.freeMemory) / sys.totalMemory) * 100) : null;
   s.uptime = sys.uptime || null;
   if (isSwitch(device)) { await pollSwitchMikrotik(device, s, now); return; } // a switch has ports, not stations
   // Wireless registration table (a MikroTik sector). Probed once: a router with no wireless
@@ -157,8 +164,8 @@ async function pollTplink(device, s) {
     });
   }
   const st = await tplink.readStats(s.session);
-  if (st.cpu !== undefined) push(s.cpu, st.cpu);
-  s.mem = st.mem !== undefined ? st.mem : null;
+  if (st.cpu !== undefined) push(s.cpu, whole(st.cpu));
+  s.mem = whole(st.mem);
   s.uptime = st.wanUptime ? formatSecs(st.wanUptime) : null;
   s.kind = 'clients';
   if (st.clients) {
@@ -191,8 +198,8 @@ async function pollAiros(device, s, now) {
   }
   const st = await s.session.readStats();
   applyCounters(s, st.interfaces, now);
-  if (st.cpu !== undefined) push(s.cpu, st.cpu);
-  s.mem = st.memPct !== undefined ? st.memPct : null;
+  if (st.cpu !== undefined) push(s.cpu, whole(st.cpu));
+  s.mem = whole(st.memPct);
   s.uptime = st.uptime ? formatSecs(st.uptime) : null;
   s.signal = st.signal;
   s.ccq = st.ccq;

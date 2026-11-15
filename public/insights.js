@@ -66,7 +66,7 @@
                 var kind = window.TowerDesk.loginProblem ? window.TowerDesk.loginProblem(d.lastTest.error) : 'other';
                 add('warning', d.id, d.name, { auth: 'answers ping, but the saved username/password is wrong', timeout: 'answers ping, but its login page is not responding (timed out)', refused: 'answers ping, but its login port is closed' }[kind] || 'answers ping, but the login did not work', 1);
             }
-            if (mx.cpu && mx.cpu.now >= ATT.cpu) add('warning', d.id, d.name, 'CPU at ' + mx.cpu.now + '%', 4);
+            if (mx.cpu && mx.cpu.now >= ATT.cpu) add('warning', d.id, d.name, 'CPU at ' + Math.round(mx.cpu.now) + '%', 4);
             if (d.role === 'backhaul' && !isFarEnd(d, devices)) {
                 if (r.signal != null && r.signal <= ATT.linkSignal) add('warning', d.id, d.name, 'weak link signal, ' + r.signal + ' dBm', 2);
                 var cap = capacityPct(d);

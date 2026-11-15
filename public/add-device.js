@@ -1,33 +1,17 @@
+// Add Device page. Four parts: "Add a device" (one step at a time: find it, log in, name it), the saved logins,
+// a scan of a whole network, and the list of devices with its bulk actions. TowerDesk works out what a device is
+// and how to read it; the owner types its IP address, a login only when no saved login opens it, and a name only
+// when the device has none of its own. Passwords and communities are sent to the server and never shown again.
 (function () {
     'use strict';
 
     var $ = function (id) { return document.getElementById(id); };
-    var form = $('device-form');
+    var esc = window.TowerDesk.fmt.esc;
     var result = $('device-result');
     var methods = {};
     var selectedIds = {}; // device ids ticked for bulk actions (kept across the 10 s reload)
 
-    var HINTS = {
-        ping: 'Checks the device is up. No login needed. Good for ONUs and anything you only want to watch.',
-        mikrotik: 'RouterOS API (enable it under IP → Services → api). Reads identity, version, CPU and uptime.',
-        'mikrotik-ssl': 'RouterOS API over TLS (IP → Services → api-ssl).',
-        ssh: 'Logs in over SSH and disconnects. No commands are run.',
-        telnet: 'Logs in over Telnet (common on ONUs) and disconnects. No commands are run.',
-        snmp: 'Reads the device name, description and uptime with the SNMP community (read-only).',
-        snmp1: 'Same as SNMP v2c, for older devices that only speak SNMP v1.',
-        tplink: 'Logs in to the TP-Link web page (newer firmware, e.g. Archer AX series) with the router password and reads CPU, RAM and live speed per connected device. Read-only; never kicks you out of the router page.',
-        airos: 'Logs in to the Ubiquiti airOS web page (airMAX radios: NanoStation, PowerBeam, Rocket, LiteBeam) and reads the real name, model, signal, CCQ and traffic. Username is usually "ubnt". Read-only.',
-        mimosa: 'Logs in to the Mimosa (by Airspan) web page with the device password only — no username — and reads the real name, model, signal, SNR, PHY rate, link name, distance, throughput and the remote end. Usually over HTTP. Read-only.',
-        http: 'Opens the web interface to confirm it answers and identify the vendor.',
-        https: 'Opens the HTTPS web interface (self-signed certificates are accepted).'
-    };
-    var TYPE_LABELS = { mikrotik: 'MikroTik', cisco: 'Cisco', ubnt: 'Ubiquiti', mimosa: 'Mimosa', tplink: 'TP-Link', onu: 'ONU', olt: 'OLT', other: 'Other' };
-
-    function esc(v) {
-        return String(v === undefined || v === null ? '' : v).replace(/[&<>"']/g, function (c) {
-            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-        });
-    }
+    var TYPE_LABELS = { mikrotik: 'MikroTik', cisco: 'Cisco', switch: 'Switch', ubnt: 'Ubiquiti', mimosa: 'Mimosa', tplink: 'TP-Link', onu: 'ONU', olt: 'OLT', other: 'Other' };
 
     function api(method, url, body) {
         return fetch(url, {
@@ -42,9 +26,12 @@
         });
     }
 
+    // Messages about the device list (Check, Delete, Fix unconnected, saving a login). They sit above the table and
+    // are hidden while there is nothing to say. The add steps have their own messages and do not use this.
     function show(kind, html) {
-        result.className = 'result-panel ' + (kind || '');
+        result.className = 'result-panel ad-msg ' + (kind || '');
         result.innerHTML = html;
+        result.hidden = !html;
     }
 
     function busy(btn, on, label) {
@@ -69,122 +56,260 @@
         return head + meta + details(t.details) + note;
     }
 
-    // ----- Method-dependent fields -----
-    function syncFields() {
-        var m = methods[$('device-method').value] || {};
-        var key = $('device-method').value;
-        document.querySelector('[data-for="login"]').hidden = !m.needsLogin && !/^https?$/.test(key);
-        // TP-Link logs in with the password only (the username is always "admin").
-        $('device-username').closest('.form-group').hidden = !!m.passwordOnly;
-        document.querySelector('[data-for="community"]').hidden = !m.community;
-        document.querySelector('[data-for="port"]').hidden = key === 'ping';
-        $('device-port').placeholder = m.port ? String(m.port) : 'default';
-        $('method-hint').textContent = HINTS[key] || '';
-    }
+    // ----- Add a device, one step at a time -----
+    // The steps (chips, Back / Next, one step shown at a time) come from /stepper.js. They go in order:
+    //   find  : type the IP address. TowerDesk looks at the device and tries the saved logins.
+    //   login : only when no saved login opened it and the way to connect needs a login or a community.
+    //   name  : the name (taken from the device when it has one) and where it is. Then it is saved.
+    //   done  : what was added, with a way to open it or add another.
+    // The brand, in the owner's words.
+    var BRAND = { mikrotik: 'MikroTik router', cisco: 'Cisco router', switch: 'Switch', ubnt: 'Ubiquiti device', mimosa: 'Mimosa radio', tplink: 'TP-Link router', onu: 'ONU (fiber)', olt: 'OLT (fiber)' };
+    // What each way to connect means for the owner.
+    var HOW = {
+        ping: 'TowerDesk will only watch whether it is up.',
+        mikrotik: 'TowerDesk will read it with the MikroTik API.',
+        'mikrotik-ssl': 'TowerDesk will read it with the secure MikroTik API.',
+        ssh: 'TowerDesk will log in to it over SSH.',
+        telnet: 'TowerDesk will log in to it over Telnet.',
+        snmp: 'TowerDesk will read it with SNMP.',
+        snmp1: 'TowerDesk will read it with SNMP (version 1).',
+        tplink: 'TowerDesk will log in to its web page.',
+        airos: 'TowerDesk will log in to its web page.',
+        mimosa: 'TowerDesk will log in to its web page.',
+        http: 'TowerDesk will only check that its web page answers.',
+        https: 'TowerDesk will only check that its web page answers.'
+    };
 
-    function readForm() {
+    // What is known about the device being added. Started again for every device.
+    //   type / typeByHand : its type, and whether the owner chose it (then TowerDesk never changes it)
+    //   method            : how it will be saved; loginMethod: the way to connect that the Log in step asks a login for
+    //   found             : what the look at the device returned; matched: the saved login that opened it
+    //   ownName           : the name set on the device itself; name: what to suggest in the Name field
+    //   test              : the result of a login typed in the Log in step, once it worked
+    //   sawLogin          : the Log in step was shown, so Back from the name returns to it
+    function freshFlow() {
+        return { ip: '', type: 'other', typeByHand: false, method: 'ping', loginMethod: '', port: undefined, found: null, matched: null, ownName: '', name: '', test: null, sawLogin: false };
+    }
+    var F = freshFlow();
+    var nameTyped = false; // the owner typed a name (or it came with a link), so the device's own name does not replace it
+
+    // What TowerDesk knows about one way to connect. An older server does not send defaultUser: then it is admin
+    // (ubnt on Ubiquiti airOS).
+    function way(key) {
+        var m = methods[key] || {};
         return {
-            name: $('device-name').value.trim(),
-            type: $('device-type').value,
-            ip: $('device-ip').value.trim(),
-            location: $('device-location').value.trim(),
-            method: $('device-method').value,
-            port: $('device-port').value || undefined,
-            username: $('device-username').value.trim() || undefined,
-            password: $('device-password').value || undefined,
-            community: $('device-community').value || undefined
+            label: m.label || key,
+            port: m.port || null,
+            needsLogin: !!m.needsLogin,
+            community: !!m.community,
+            passwordOnly: !!m.passwordOnly,
+            defaultUser: m.defaultUser || (key === 'airos' ? 'ubnt' : 'admin')
         };
     }
 
-    function needIp() {
-        if ($('device-ip').value.trim()) return false;
-        show('bad', '<p class="result-title bad">Enter the device IP address first.</p>');
-        $('device-ip').focus();
-        return true;
+    // An error from the server in its own words; a broken connection to TowerDesk in ours.
+    function plain(e) {
+        var text = (e && e.message) || '';
+        return !text || /failed to fetch|networkerror|load failed/i.test(text) ? 'Could not reach TowerDesk. Check that it is still running.' : text;
     }
 
-    // ----- Auto-detect -----
-    $('detect-btn').addEventListener('click', function () {
-        if (needIp()) return;
-        var btn = this;
-        busy(btn, true, 'Detecting…');
-        show('', '<p class="muted">Scanning ' + esc($('device-ip').value.trim()) + ' (ping, SSH, Telnet, Web, SNMP, MikroTik)…</p>');
-        api('POST', '/api/devices/detect', { ip: $('device-ip').value.trim(), tryVault: true })
-            .then(function (d) {
-                if (!d.ok) {
-                    show('bad', '<p class="result-title bad">❌ Nothing answered at this address.</p><p class="muted">Check the IP, that the device is on, and that your VPN is connected.</p>');
-                    return;
-                }
-                var ports = Object.keys(d.openPorts || {}).map(function (k) { return k + ' (' + d.openPorts[k].port + ')'; });
-                if (d.snmp) ports.push('snmp (161)');
-                if (d.vendor && !$('device-type').value) $('device-type').value = d.vendor;
-                // A saved login that verified wins over the generic suggestion.
-                var chosen = (d.matched && d.matched.method) || d.suggestedMethod;
-                if (chosen) {
-                    $('device-method').value = chosen;
-                    $('device-port').value = '';
-                    syncFields();
-                }
-                if (!$('device-name').value && d.snmp && d.snmp.name) $('device-name').value = d.snmp.name;
-                if (!$('device-name').value && d.web && d.web.model) $('device-name').value = (TYPE_LABELS[d.vendor] ? TYPE_LABELS[d.vendor] + ' ' : '') + d.web.model;
-                show('ok',
-                    '<p class="result-title ok">✅ Device found' + (d.vendor ? ': ' + esc(TYPE_LABELS[d.vendor] || d.vendor) : '') + '</p>' +
-                    (d.matched ? '<p class="result-title ok">🔑 Saved login "' + esc(d.matched.label) + '" works over ' + esc((methods[d.matched.method] || {}).label || d.matched.method) + '</p>' : '') +
-                    details({
-                        ping: d.ping && d.ping.alive ? 'replies' + (d.ping.ms !== null ? ' (' + d.ping.ms + ' ms)' : '') : 'no reply',
-                        'open services': ports.join(', ') || 'none',
-                        model: d.web && d.web.model,
-                        firmware: d.web && d.web.firmware,
-                        'web page': d.web && d.web.title,
-                        'SNMP name': d.snmp && d.snmp.name,
-                        'SNMP description': d.snmp && d.snmp.description,
-                        'suggested method': chosen ? (methods[chosen] || {}).label : 'none'
-                    }) +
-                    (d.matched
-                        ? '<p class="muted">Press <strong>Add Device</strong> — it will use the saved login.</p>'
-                        : '<p class="muted">Fill in the login if needed, then press <strong>Test Connection</strong>.</p>'));
-            })
-            .catch(function (e) { show('bad', '<p class="result-title bad">❌ ' + esc(e.message) + '</p>'); })
-            .then(function () { busy(btn, false); });
+    // Why a login did not work, in plain words: wrong login, no answer in time, or that login service is closed.
+    function loginWhy(err, w) {
+        var kind = window.TowerDesk.loginProblem(err);
+        if (kind === 'auth') return w.community ? 'The device did not accept that community.' : (w.passwordOnly ? 'Wrong password. Check it and try again.' : 'Wrong username or password. Check them and try again.');
+        if (kind === 'timeout') return w.community ? 'No answer. The community may be wrong, or SNMP is switched off on the device.' : 'The device did not answer in time. It may be slow, or the link to it loses packets. Try again.';
+        if (kind === 'refused') return 'That login service is closed on the device: it is switched off, or it uses another port.';
+        return err || 'Could not connect.';
+    }
+
+    // The typed login, added to a request only when the device is saved the way the Log in step asked about.
+    // An empty username is left out: the server then uses the usual one (admin, or ubnt on Ubiquiti).
+    function withLogin(body) {
+        if (!F.loginMethod || F.method !== F.loginMethod) return body;
+        var w = way(F.method);
+        if (w.needsLogin) {
+            if (!w.passwordOnly) body.username = $('device-username').value.trim() || undefined;
+            body.password = $('device-password').value || undefined;
+        }
+        if (w.community) body.community = $('device-community').value || undefined;
+        return body;
+    }
+    function clearLogin() { $('device-username').value = ''; $('device-password').value = ''; $('device-community').value = ''; }
+
+    // The box that says what was found (Log in step) or what will be saved (Name step). Never a password.
+    function summary(withFacts, extra) {
+        var web = (F.found && F.found.web) || {}, snmp = (F.found && F.found.snmp) || {};
+        var h = '<p><strong>' + esc(BRAND[F.type] || 'Device') + '</strong> at <span class="mono">' + esc(F.ip) + (F.port && F.method !== 'ping' ? ':' + esc(F.port) : '') + '</span></p>' +
+            '<p>' + esc(HOW[F.method] || ('TowerDesk will connect with ' + way(F.method).label + '.')) + '</p>';
+        if (extra) h += '<p class="muted">' + esc(extra) + '</p>';
+        if (withFacts) h += details({ Model: web.model, Firmware: web.firmware, Name: F.ownName, Description: web.model ? '' : snmp.description });
+        return h;
+    }
+
+    var A = window.TowerDesk.stepper({
+        root: $('add-flow'),
+        flow: function () { return ['find', 'login', 'name', 'done']; },
+        title: function (step) { return { find: 'Find it', login: 'Log in', name: 'Name it' }[step] || ''; },
+        intro: function (step) {
+            if (step === 'find') return 'Type the IP address of the device. TowerDesk looks at it, works out what it is and tries your saved logins.';
+            if (step === 'login') {
+                var w = way(F.loginMethod);
+                return 'Type ' + (w.community ? 'the SNMP community' : w.passwordOnly ? 'the password' : 'the login') + ' of this device. It is kept encrypted and is never shown again.';
+            }
+            if (step === 'name') return F.name || nameTyped ? 'Check the name, then add the device.' : 'Give it a name you will recognise, then add the device.';
+            return 'The device is now in TowerDesk. Its first readings arrive in about 20 seconds.';
+        },
+        nextLabel: function (step) { return { find: 'Find it', login: 'Connect', name: 'Add device' }[step]; },
+        // No way back once it is added. From the name, Back skips the Log in step when it was never shown.
+        backTo: function (step) { return step === 'done' ? '' : (step === 'name' && !F.sawLogin ? 'find' : null); }
     });
 
-    // ----- Test connection -----
-    $('test-btn').addEventListener('click', function () {
-        if (needIp()) return;
-        var btn = this;
-        busy(btn, true, 'Testing…');
-        show('', '<p class="muted">Connecting…</p>');
-        api('POST', '/api/devices/test', readForm())
-            .then(function (t) { show(t.ok ? 'ok' : 'bad', renderTest(t)); })
-            .catch(function (e) { show('bad', '<p class="result-title bad">❌ ' + esc(e.message) + '</p>'); })
-            .then(function () { busy(btn, false); });
+    // Remember what a look at the device found: its brand (unless the owner chose the type) and a name to suggest.
+    function learn(d) {
+        F.found = d;
+        if (!F.typeByHand) F.type = d.vendor || 'other';
+        var model = d.web && d.web.model;
+        var brand = d.vendor && d.vendor !== 'other' ? TYPE_LABELS[d.vendor] : '';
+        F.ownName = d.name || (d.snmp && d.snmp.name) || '';
+        F.name = F.ownName || (model ? (brand ? brand + ' ' : '') + model : '');
+    }
+    // Leave the first step: to Log in when this way to connect needs a login or a community, else straight to the name.
+    function leaveFind(done) {
+        var w = way(F.method);
+        if (w.needsLogin || w.community) { F.loginMethod = F.method; done(true, 'login'); }
+        else done(true, 'name');
+    }
+
+    A.guard('find', function (done) {
+        var ip = $('device-ip').value.trim();
+        if (!ip) { done(false, 'Type the device\'s IP address first.'); return; }
+        var handType = $('device-type').value, handMethod = $('device-method').value;
+        // Another device than last time: a login or a name typed for the other one must not follow it here.
+        if (F.ip && ip !== F.ip) { clearLogin(); $('device-name').value = ''; nameTyped = false; }
+        F = freshFlow();
+        F.ip = ip;
+        F.typeByHand = !!handType;
+        F.type = handType || 'other';
+
+        // The owner chose how to connect: the device may only answer on its unusual port, so nothing has to be
+        // found first. When the type was left to TowerDesk, one quick look still tries to tell the brand.
+        if (handMethod) {
+            F.method = handMethod;
+            F.port = $('device-port').value || undefined;
+            if (handType) { leaveFind(done); return; }
+            A.say('Looking at ' + ip + '…');
+            api('POST', '/api/devices/detect', { ip: ip, tryVault: false })
+                .then(function (d) { if (d && d.ok) learn(d); }, function () { /* not found: the chosen way is tried anyway */ })
+                .then(function () { leaveFind(done); });
+            return;
+        }
+
+        A.say('Looking at ' + ip + '. This can take a few seconds…');
+        api('POST', '/api/devices/detect', { ip: ip, tryVault: true }).then(function (d) {
+            if (!d.ok) {
+                done(false, /invalid/i.test(d.error || '') ? 'That does not look like an IP address. It should look like 192.168.0.1.' : 'Nothing answered at that address. Check the IP, that the device is switched on, and that your VPN is connected.');
+                return;
+            }
+            learn(d);
+            // One of the saved logins already opens it: nothing to type, go straight to the name.
+            if (d.matched && d.matched.method) {
+                F.matched = d.matched;
+                F.method = d.matched.method;
+                if (d.matched.name) { F.ownName = d.matched.name; F.name = d.matched.name; }
+                done(true, 'name');
+                return;
+            }
+            F.method = d.suggestedMethod || 'ping';
+            leaveFind(done);
+        }).catch(function (e) { done(false, plain(e)); });
     });
 
-    // ----- Save -----
-    form.addEventListener('submit', function (e) {
-        e.preventDefault();
-        var btn = $('save-btn');
-        busy(btn, true, 'Saving…');
-        var payload = readForm();
-        payload.tryVault = true; // the server only uses this when no password/community was typed
-        api('POST', '/api/devices', payload)
-            .then(function (d) {
-                show(d.test.ok ? 'ok' : 'warn',
-                    '<p class="result-title ' + (d.test.ok ? 'ok' : 'warn') + '">💾 Device added: ' + esc(d.device.name) + ' (' + esc(d.device.ip) + ')</p>' +
-                    (d.matched ? '<p class="muted">🔑 Used saved login "' + esc(d.matched) + '".</p>' : '') +
-                    (d.test.ok ? '' : '<p class="muted">Saved, but the connection test failed. You can fix the device and press Check later.</p>') +
-                    renderTest(d.test));
-                form.reset();
-                syncFields();
-                loadDevices();
-            })
-            .catch(function (e2) { show('bad', '<p class="result-title bad">❌ ' + esc(e2.message) + '</p>'); })
-            .then(function () { busy(btn, false); });
+    A.enter('login', function () {
+        F.sawLogin = true;
+        F.method = F.loginMethod; // back here after "Add it without a login": the login is offered again
+        F.test = null;
+        var w = way(F.method);
+        $('ad-user-group').hidden = !w.needsLogin || w.passwordOnly;
+        $('ad-pass-group').hidden = !w.needsLogin;
+        $('ad-comm-group').hidden = !w.community;
+        $('device-username').placeholder = w.defaultUser;
+        $('ad-user-hint').textContent = 'Leave it empty to use ' + w.defaultUser + '.';
+        $('ad-pass-hint').textContent = w.passwordOnly ? 'This device asks for a password only, with no username.' : '';
+        $('ad-found').innerHTML = summary(true);
     });
-    $('cancel-btn').addEventListener('click', function () {
-        setTimeout(syncFields, 0);
-        show('', '<p class="muted">Form cleared.</p>');
+    // Connect: try the typed login now. The device is only saved in the last step.
+    A.guard('login', function (done) {
+        var w = way(F.method);
+        A.say('Connecting…');
+        api('POST', '/api/devices/test', withLogin({ ip: F.ip, type: F.type, method: F.method, port: F.port })).then(function (t) {
+            if (!t.ok) { done(false, loginWhy(t.error, w)); return; }
+            F.test = t;
+            if (t.deviceName) { F.ownName = t.deviceName; F.name = t.deviceName; }
+            if (t.vendor && !F.typeByHand) F.type = t.vendor;
+            done(true);
+        }).catch(function (e) { done(false, plain(e)); });
     });
+    $('ad-skip').addEventListener('click', function () {
+        if (A.busy()) return;
+        F.method = 'ping';
+        F.test = null;
+        A.go('name');
+    });
+
+    A.enter('name', function () {
+        var w = way(F.method), field = $('device-name');
+        if (!nameTyped) field.value = F.name || '';
+        $('ad-name-hint').textContent = nameTyped ? '' : (field.value ? 'TowerDesk took this from the device. You can change it.' : 'Leave it empty to use the device\'s own name, or its IP address when it has none.');
+        $('ad-save-sum').innerHTML = summary(false,
+            F.matched ? (/^factory login/.test(F.matched.label || '') ? 'It still has its factory login (admin, no password). Set a password on it soon.' : F.matched.label ? 'It opens with your saved login "' + F.matched.label + '".' : 'It opens with one of your saved logins.')
+                : F.test && F.test.ok ? (w.community ? 'The SNMP community works.' : 'The login works.')
+                : F.method === 'ping' ? 'You can give it a login later: open the device and press Connect.' : '');
+    });
+    $('device-name').addEventListener('input', function () { nameTyped = !!this.value.trim(); $('ad-name-hint').textContent = ''; });
+    // Add device: save it. The server tests the connection once more and, when no login was typed, tries the saved logins.
+    A.guard('name', function (done) {
+        var body = withLogin({ name: $('device-name').value.trim(), type: F.type, ip: F.ip, location: $('device-location').value.trim(), method: F.method, port: F.method === 'ping' ? undefined : F.port });
+        // A login that was just typed and worked is the one to keep, so the saved logins are not tried over it.
+        body.tryVault = !(F.test && F.test.ok);
+        A.say('Adding it and testing the connection…');
+        api('POST', '/api/devices', body).then(function (r) {
+            showAdded(r);
+            loadDevices();
+            done(true);
+        }).catch(function (e) { done(false, plain(e)); });
+    });
+
+    function showAdded(r) {
+        var dev = r.device || {}, t = r.test || {};
+        var label = r.matched && (r.matched.label || r.matched);
+        var how = (methods[t.method || dev.method] || {}).label || t.method || dev.method || '';
+        clearLogin(); // nothing typed stays in the page once the device is saved
+        $('ad-done').innerHTML = '<p class="nb-ok">Added: ' + esc(dev.name || F.ip) + ' (' + esc(dev.ip || F.ip) + ')</p>' +
+            (t.ok
+                ? '<p>' + esc(t.summary || 'Connected') + (how ? ' <span class="muted">(' + esc(how) + (t.ms !== undefined ? ', ' + esc(t.ms) + ' ms' : '') + ')</span>' : '') + '</p>'
+                : '<p class="result-title warn">It is saved, but the connection test did not work: ' + esc(loginWhy(t.error, way(t.method || dev.method))) + '</p><p class="muted">Open it and press Connect to set the right login.</p>') +
+            (label ? '<p class="muted">' + (/^factory login/.test(label) ? 'It logged in with the factory login (admin, no password). Set a password on it soon.' : 'Your saved login "' + esc(label) + '" was used.') + '</p>' : '');
+        $('ad-open').href = '/monitoring?open=' + encodeURIComponent(dev.id || '');
+    }
+    $('ad-again').addEventListener('click', function () {
+        Array.prototype.forEach.call($('add-flow').querySelectorAll('input, select'), function (el) { el.value = ''; });
+        $('ad-manual').open = false;
+        F = freshFlow();
+        nameTyped = false;
+        syncPort();
+        A.go('find');
+    });
+
+    // "Set it yourself": the port only means something together with a way to connect chosen by hand.
+    function syncPort() {
+        var key = $('device-method').value, port = $('device-port');
+        var off = !key || key === 'ping', usual = way(key).port;
+        port.disabled = off;
+        if (off) port.value = '';
+        port.placeholder = usual && !off ? String(usual) : 'Usual port';
+        $('ad-port-hint').textContent = !key ? 'Choose how to connect first.' : (key === 'ping' ? 'Ping does not use a port.' : 'Leave it empty to use the usual port' + (usual ? ' (' + usual + ')' : '') + '.');
+    }
+    $('device-method').addEventListener('change', function () { $('device-port').value = ''; syncPort(); });
 
     // ----- Saved devices -----
     // `live` is this device's entry from the live monitor (readings, online state); without it a
@@ -275,6 +400,9 @@
         });
     }
 
+    // What the "are you sure" dialog says under its title when devices are removed.
+    var REMOVE_DEVICE = { text: 'Nothing is changed on the device itself. Its history in TowerDesk is removed.', yes: 'Remove', danger: true };
+
     $('device-list').addEventListener('change', function (e) {
         var cb = e.target.closest('.dev-pick');
         if (!cb) return;
@@ -304,7 +432,8 @@
         bulkRun('Checking', function (id) { return api('POST', '/api/devices/' + encodeURIComponent(id) + '/check'); });
     });
     $('bulk-delete').addEventListener('click', function () {
-        window.TowerDesk.inlineConfirm(this, 'Delete ' + selectedCount() + '?').then(function (yes) {
+        var n = selectedCount();
+        window.TowerDesk.inlineConfirm(this, 'Remove ' + n + ' device' + (n === 1 ? '' : 's') + ' from TowerDesk?', REMOVE_DEVICE).then(function (yes) {
             if (!yes) return;
             bulkRun('Deleting', function (id) {
                 return api('DELETE', '/api/devices/' + encodeURIComponent(id)).then(function () { delete selectedIds[id]; });
@@ -312,193 +441,21 @@
         });
     });
 
-    // ----- Device detail + change-monitoring panel -----
-    var detailLiveTimer = null;
-
-    function tile(k, v) { return '<div class="stat-tile"><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) + '</div></div>'; }
-
-    // Orio-style live stat grid built from a device's metrics (signal, CCQ, SNR, rates, …).
-    function liveStatsBlock(mx) {
-        if (!mx) return '';
-        if (mx.error) return '<p class="live-error">⚠️ ' + esc(mx.error) + '</p>';
-        var r = mx.radio || {};
-        var top = (mx.interfaces && mx.interfaces[0]) || null;
-        var t = [];
-        var has = function (v) { return v !== undefined && v !== null && v !== ''; };
-        if (has(r.signal)) t.push(['Signal', r.signal + ' dBm']);
-        if (has(r.snr)) t.push(['SNR', r.snr + ' dB']);
-        if (has(r.ccq)) t.push(['CCQ', r.ccq + '%']); else if (has(mx.ccq)) t.push(['CCQ', mx.ccq + '%']);
-        if (has(r.txRate)) t.push(['TX rate', r.txRate + ' Mbps']);
-        if (has(r.rxRate)) t.push(['RX rate', r.rxRate + ' Mbps']);
-        if (top && (has(top.rxBps) || has(top.txBps))) { t.push(['↓ Down', fmtBps(top.rxBps)]); t.push(['↑ Up', fmtBps(top.txBps)]); }
-        if (has(r.freq)) t.push(['Frequency', r.freq]);
-        if (has(r.chanbw)) t.push(['Channel', r.chanbw + ' MHz']);
-        if (has(r.noise)) t.push(['Noise', r.noise + ' dBm']);
-        if (has(r.txpower)) t.push(['Tx power', r.txpower + ' dBm']);
-        if (has(r.temp)) t.push(['Temp', r.temp + ' °C']);
-        if (has(r.phyRate)) t.push(['PHY rate', r.phyRate + ' Mbps']);
-        if (has(r.throughput)) t.push(['Throughput', r.throughput + ' Mbps']);
-        if (has(r.band)) t.push(['Band', r.band]);
-        if (has(r.linkName)) t.push(['Link', r.linkName]);
-        if (has(r.distance)) t.push(['Distance', r.distance + ' km']);
-        if (has(r.availability)) t.push(['Availability', r.availability + '%']);
-        if (has(r.remoteName)) t.push(['Remote end', r.remoteName]);
-        if (mx.cpu) t.push(['CPU', mx.cpu.now + '%']);
-        if (has(mx.memPct)) t.push(['RAM', mx.memPct + '%']);
-        if (has(r.stations)) t.push(['Stations', r.stations]);
-        if (has(mx.uptime)) t.push(['Uptime', mx.uptime]);
-        if (has(r.essid)) t.push(['SSID', r.essid]);
-        if (has(r.mode)) t.push(['Mode', r.mode]);
-        if (!t.length) return mx.waiting ? '<p class="muted">📈 Collecting live data (' + esc(mx.source || '') + ')…</p>' : '';
-        return '<h4 class="detail-live-h">Live · ' + esc(mx.source || '') + '</h4><div class="stat-grid">' + t.map(function (x) { return tile(x[0], x[1]); }).join('') + '</div>';
-    }
-
-    function stopDetailLive() { if (detailLiveTimer) { clearInterval(detailLiveTimer); detailLiveTimer = null; } }
-
-    // Refresh only the live grid (so the edit form the user may be typing in is left alone).
-    function refreshDetailLive(id) {
-        var box = $('detail-live');
-        if (!box) { stopDetailLive(); return; }
-        api('GET', '/api/monitor').then(function (data) {
-            if (!$('detail-live')) { stopDetailLive(); return; }
-            var live = (data.devices || []).find(function (x) { return x.id === id; });
-            $('detail-live').innerHTML = liveStatsBlock(live && live.metrics);
-        }).catch(function () {});
-    }
-
-    function methodOptions(sel) {
-        return Object.keys(methods).map(function (k) {
-            return '<option value="' + esc(k) + '"' + (k === sel ? ' selected' : '') + '>' + esc(methods[k].label) + '</option>';
-        }).join('');
-    }
-
-    function openDetail(id) {
-        show('', '<p class="muted">Loading device…</p>');
-        Promise.all([
-            api('GET', '/api/devices'),
-            api('GET', '/api/monitor').catch(function () { return { devices: [] }; })
-        ]).then(function (r) {
-            var cfg = r[0].find(function (x) { return x.id === id; });
-            if (!cfg) { show('bad', '<p class="result-title bad">Device not found (it may have been removed).</p>'); return; }
-            var live = (r[1].devices || []).find(function (x) { return x.id === id; }) || {};
-            renderDetail({ cfg: cfg, online: live.online, metrics: live.metrics, lastTest: live.lastTest || cfg.lastTest, others: r[0].filter(function (x) { return x.id !== id; }) });
-        }).catch(function (e) { show('bad', '<p class="result-title bad">❌ ' + esc(e.message) + '</p>'); });
-    }
-
-    function renderDetail(d) {
-        var cfg = d.cfg;
-        var st = window.TowerDesk.connState({ online: d.online, lastTest: d.lastTest, method: cfg.method, metrics: d.metrics });
-        var det = (d.lastTest && d.lastTest.details) || {};
-        var mx = d.metrics;
-        var liveLine = '';
-        if (mx && !mx.error && !mx.waiting && mx.interfaces && mx.interfaces.length) {
-            var top = mx.interfaces[0];
-            liveLine = '↓ ' + fmtBps(top.rxBps) + ' · ↑ ' + fmtBps(top.txBps) + (mx.clientCount !== undefined ? ' · ' + mx.clientCount + ' connected' : '');
-        }
-        var info = details({
-            IP: cfg.ip + (cfg.port ? ':' + cfg.port : ''),
-            Type: TYPE_LABELS[cfg.type] || cfg.type,
-            Provider: cfg.provider,
-            Location: cfg.location,
-            'Monitoring method': (methods[cfg.method] || {}).label || cfg.method,
-            Login: cfg.username ? (cfg.username + (cfg.hasPassword ? ' · 🔒' : '')) : (cfg.hasPassword ? '🔒 saved' : ''),
-            'SNMP community': cfg.hasCommunity ? '🔒 saved' : '',
-            'Last result': d.lastTest ? (d.lastTest.ok ? '✅ ' + (d.lastTest.summary || 'OK') : '❌ ' + (d.lastTest.error || 'failed')) : '',
-            Model: det.model, Firmware: det.firmware, Version: det.version, Uptime: det.uptime,
-            'SNMP name': det.name, 'SNMP description': det.description, 'Web server': det.server
-        });
-        var kind = st.badge === 'healthy' ? 'ok' : (st.badge === 'critical' || st.badge === 'warning' ? 'warn' : '');
-        show(kind,
-            '<p class="result-title ' + (kind === 'ok' ? 'ok' : kind === 'warn' ? 'warn' : '') + '">' + esc(cfg.name) + ' — ' + esc(st.label) + '</p>' +
-            '<p class="muted">' + esc(st.hint) + '</p>' + info +
-            '<div id="detail-live">' + liveStatsBlock(d.metrics) + '</div>' +
-            '<form id="edit-form" class="detail-edit" autocomplete="off">' +
-                '<h4>Tower details</h4>' +
-                '<div class="form-row">' +
-                    '<div class="form-group"><label for="edit-provider">Upstream provider</label><input type="text" id="edit-provider" autocomplete="off" placeholder="e.g. HRINS core" value="' + esc(cfg.provider || '') + '"></div>' +
-                    '<div class="form-group"><label for="edit-location">Location</label><input type="text" id="edit-location" autocomplete="off" placeholder="e.g. Tower roof" value="' + esc(cfg.location || '') + '"></div>' +
-                '</div>' +
-                '<div class="form-row">' +
-                    '<div class="form-group"><label for="edit-peer">Other end of this link (if you manage it too)</label><select id="edit-peer">' +
-                        '<option value="">— Not in TowerDesk (this end only) —</option>' +
-                        (d.others || []).map(function (o) { return '<option value="' + esc(o.id) + '"' + (cfg.peerId === o.id ? ' selected' : '') + '>' + esc(o.name) + ' · ' + esc(o.ip) + '</option>'; }).join('') +
-                    '</select></div>' +
-                '</div>' +
-                '<h4>Change how this is monitored</h4>' +
-                '<div class="form-row">' +
-                    '<div class="form-group"><label for="edit-method">Method</label><select id="edit-method">' + methodOptions(cfg.method) + '</select></div>' +
-                    '<div class="form-group" data-edit="port"><label for="edit-port">Port</label><input type="number" id="edit-port" min="1" max="65535" placeholder="default" value="' + esc(cfg.port || '') + '"></div>' +
-                '</div>' +
-                '<div class="form-row" data-edit="login">' +
-                    '<div class="form-group" data-edit="username"><label for="edit-username">Username</label><input type="text" id="edit-username" autocomplete="off" value="' + esc(cfg.username || '') + '"></div>' +
-                    '<div class="form-group"><label for="edit-password">Password</label><input type="password" id="edit-password" autocomplete="new-password" placeholder="' + (cfg.hasPassword ? 'leave blank to keep' : '') + '"></div>' +
-                '</div>' +
-                '<div class="form-row" data-edit="community"><div class="form-group"><label for="edit-community">SNMP community</label><input type="password" id="edit-community" autocomplete="off" placeholder="' + (cfg.hasCommunity ? 'leave blank to keep' : 'public') + '"></div></div>' +
-                '<label class="scan-vault-toggle"><input type="checkbox" id="edit-vault" checked> Try my <strong>Saved Logins</strong> / communities for the new method</label>' +
-                '<div class="form-actions">' +
-                    '<button type="submit" class="btn-primary" id="edit-save">Save &amp; test</button>' +
-                    '<button type="button" class="btn-secondary" id="edit-close">Close</button>' +
-                '</div>' +
-            '</form>');
-
-        var syncEdit = function () {
-            var mm = methods[$('edit-method').value] || {};
-            var key = $('edit-method').value;
-            document.querySelector('[data-edit="login"]').hidden = !mm.needsLogin && !/^https?$/.test(key);
-            $('edit-username').closest('.form-group').hidden = !!mm.passwordOnly;
-            document.querySelector('[data-edit="community"]').hidden = !mm.community;
-            document.querySelector('[data-edit="port"]').hidden = key === 'ping';
-            $('edit-port').placeholder = mm.port ? String(mm.port) : 'default';
-        };
-        $('edit-method').addEventListener('change', syncEdit);
-        syncEdit();
-        stopDetailLive();
-        detailLiveTimer = setInterval(function () { refreshDetailLive(cfg.id); }, 5000);
-        $('edit-close').addEventListener('click', function () { stopDetailLive(); show('', '<p class="muted">Closed.</p>'); });
-        $('edit-form').addEventListener('submit', function (ev) {
-            ev.preventDefault();
-            var btn = $('edit-save');
-            busy(btn, true, 'Saving…');
-            var mm = methods[$('edit-method').value] || {};
-            var key = $('edit-method').value;
-            var login = mm.needsLogin || /^https?$/.test(key);
-            api('PUT', '/api/devices/' + encodeURIComponent(cfg.id), {
-                provider: $('edit-provider').value.trim(),
-                location: $('edit-location').value.trim(),
-                peerId: $('edit-peer').value,
-                method: key,
-                port: $('edit-port').value || undefined,
-                username: login && !mm.passwordOnly ? ($('edit-username').value.trim() || undefined) : undefined,
-                password: login ? ($('edit-password').value || undefined) : undefined,
-                community: mm.community ? ($('edit-community').value || undefined) : undefined,
-                tryVault: $('edit-vault').checked
-            }).then(function () { loadDevices(); openDetail(cfg.id); })
-              .catch(function (err) { busy(btn, false); show('bad', '<p class="result-title bad">❌ ' + esc(err.message) + '</p>'); });
-        });
-    }
-
-    function fmtBps(v) {
-        if (v === null || v === undefined) return '–';
-        var u = ['bps', 'Kbps', 'Mbps', 'Gbps'], i = 0;
-        while (v >= 1000 && i < u.length - 1) { v /= 1000; i++; }
-        return (v < 10 && i ? v.toFixed(2) : v < 100 && i ? v.toFixed(1) : Math.round(v)) + ' ' + u[i];
-    }
-
     $('device-list').addEventListener('click', function (e) {
         var btn = e.target.closest('button[data-act]');
         if (!btn) return;
         var row = btn.closest('tr');
         var id = row.dataset.id;
-        var nameEl = row.querySelector('.link-btn') || row.querySelector('strong');
+        var nameEl = row.querySelector('.name-btn');
         var name = nameEl ? nameEl.textContent : '';
         if (btn.dataset.act === 'detail') {
             // The device card (connection, ping, advisor) lives on the Monitoring page.
             location.href = '/monitoring?open=' + encodeURIComponent(id);
         } else if (btn.dataset.act === 'delete') {
-            window.TowerDesk.inlineConfirm(btn, 'Remove?').then(function (yes) {
+            window.TowerDesk.inlineConfirm(btn, 'Remove ' + (name || 'this device') + ' from TowerDesk?', REMOVE_DEVICE).then(function (yes) {
                 if (!yes) return;
                 return api('DELETE', '/api/devices/' + encodeURIComponent(id)).then(function () {
-                    show('ok', '<p class="result-title ok">🗑️ Removed "' + esc(name) + '" (nothing was changed on the device).</p>');
+                    show('ok', '<p class="result-title ok">Removed "' + esc(name) + '". Nothing was changed on the device.</p>');
                     return loadDevices();
                 });
             }).catch(function (err) { show('bad', '<p class="result-title bad">❌ ' + esc(err.message) + '</p>'); });
@@ -654,17 +611,18 @@
         });
     });
 
-    // Coming from Topology ("seen on your network, not added"): start with what is already known.
+    // Coming from Topology ("seen on your network, not added") or from "Set up a device": start with what is
+    // already known. The IP goes into the first step, the name waits in the Name step, and a type that came with
+    // the link counts as chosen by hand.
     (function prefill() {
         try {
             var q = new URLSearchParams(location.search);
             var nm = q.get('name'), ip = q.get('ip'), ty = q.get('type');
             if (!nm && !ip && !ty) return;
-            if (nm && $('device-name')) $('device-name').value = nm.slice(0, 80);
-            if (ip && $('device-ip')) $('device-ip').value = ip.slice(0, 45);
-            if (ty && $('device-type') && Array.prototype.some.call($('device-type').options, function (o) { return o.value === ty; })) $('device-type').value = ty;
-            var f = !ip && $('device-ip') ? $('device-ip') : $('device-name');
-            if (f) { f.scrollIntoView({ block: 'center' }); f.focus(); }
+            if (nm) { $('device-name').value = nm.slice(0, 80); nameTyped = true; }
+            if (ip) $('device-ip').value = ip.slice(0, 45);
+            if (ty && Array.prototype.some.call($('device-type').options, function (o) { return o.value === ty; })) $('device-type').value = ty;
+            $('device-ip').focus();
         } catch (e) { /* prefill is only a convenience */ }
     })();
 
@@ -680,10 +638,10 @@
     function renderVault(v) {
         var chips = [];
         (v.logins || []).forEach(function (l) {
-            chips.push('<span class="vault-chip" data-id="' + esc(l.id) + '"><span class="vault-kind">login</span> ' + esc(l.label) + (l.username ? ' <span class="muted">(' + esc(l.username) + ')</span>' : '') + ' <button type="button" aria-label="Remove ' + esc(l.label) + '">✕</button></span>');
+            chips.push('<span class="vault-chip" data-id="' + esc(l.id) + '" data-kind="login" data-label="' + esc(l.label) + '"><span class="vault-kind">login</span> ' + esc(l.label) + (l.username ? ' <span class="muted">(' + esc(l.username) + ')</span>' : '') + ' <button type="button" aria-label="Remove ' + esc(l.label) + '">✕</button></span>');
         });
         (v.communities || []).forEach(function (c) {
-            chips.push('<span class="vault-chip" data-id="' + esc(c.id) + '"><span class="vault-kind">snmp</span> ' + esc(c.label) + ' <button type="button" aria-label="Remove ' + esc(c.label) + '">✕</button></span>');
+            chips.push('<span class="vault-chip" data-id="' + esc(c.id) + '" data-kind="community" data-label="' + esc(c.label) + '"><span class="vault-kind">snmp</span> ' + esc(c.label) + ' <button type="button" aria-label="Remove ' + esc(c.label) + '">✕</button></span>');
         });
         $('vault-list').innerHTML = chips.length ? chips.join('') : '<span class="vault-empty">No saved logins yet. Add the ones you use most.</span>';
     }
@@ -709,14 +667,19 @@
         busy(btn, true, 'Saving…');
         api('POST', '/api/credentials', body)
             .then(function () { $('vault-form').reset(); syncVaultFields(); return loadVault(); })
-            .catch(function (err) { show('bad', '<p class="result-title bad">❌ ' + esc(err.message) + '</p>'); })
+            .catch(function (err) {
+                // The message area is further down the page, next to the device list: bring it into view.
+                show('bad', '<p class="result-title bad">❌ ' + esc(err.message) + '</p>');
+                result.scrollIntoView({ block: 'nearest' });
+            })
             .then(function () { busy(btn, false); });
     });
     $('vault-list').addEventListener('click', function (e) {
         var btn = e.target.closest('button');
         if (!btn) return;
         var chip = btn.closest('.vault-chip');
-        window.TowerDesk.inlineConfirm(btn, 'Remove?').then(function (yes) {
+        var what = chip.dataset.kind === 'community' ? 'saved SNMP community' : 'saved login';
+        window.TowerDesk.inlineConfirm(btn, 'Remove the ' + what + ' "' + (chip.dataset.label || '') + '"?', { text: 'Devices that already use it keep working.', yes: 'Remove', danger: true }).then(function (yes) {
             if (!yes) return;
             return api('DELETE', '/api/credentials/' + encodeURIComponent(chip.dataset.id)).then(loadVault);
         }).catch(function () {});
@@ -744,14 +707,12 @@
             .then(function () { busy(btn, false); });
     });
 
-    $('device-method').addEventListener('change', function () { $('device-port').value = ''; syncFields(); });
-
     api('GET', '/api/devices/methods')
         .then(function (m) { methods = m; })
         .catch(function () { /* keep defaults */ })
-        .then(function () { syncFields(); syncVaultFields(); populateBulkMethods(); loadDevices(); loadVault(); });
+        .then(function () { syncPort(); syncVaultFields(); populateBulkMethods(); loadDevices(); loadVault(); });
     setInterval(function () {
         // Don't redraw while a confirmation is open or a bulk selection is in progress.
-        if (!document.querySelector('.inline-confirm') && selectedCount() === 0) loadDevices();
+        if (!$('td-confirm') && selectedCount() === 0) loadDevices();
     }, 10000);
 })();

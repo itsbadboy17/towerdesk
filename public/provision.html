@@ -64,10 +64,8 @@
         <header class="content-header"><h1>Set up a device</h1></header>
         <p class="muted pv-lead">Choose what you are setting up and follow the steps. TowerDesk shows exactly what would change before anything is written to a device.</p>
 
+        <!-- The step chips, the help line under them and the Back / Next buttons are added here by /stepper.js -->
         <div class="card"><div class="card-body" id="su">
-            <ol class="wz-steps" id="su-steps" aria-label="Steps"></ol>
-            <p class="wz-intro" id="su-intro" aria-live="polite" tabindex="-1"></p>
-
             <section data-step="kind">
                 <div class="pv-cards" id="su-kinds" role="radiogroup" aria-label="What do you want to set up?"></div>
             </section>
@@ -119,13 +117,12 @@
             </section>
             <section data-step="settings" class="wz-off"><div id="pv-fields"></div></section>
             <section data-step="apply" class="wz-off"><div id="pv-out"></div><div id="pv-live" class="pv-live" hidden></div></section>
-
-            <div class="wz-nav" id="su-nav"><button type="button" class="btn-secondary" data-wz="back">Back</button><button type="button" class="btn-primary" data-wz="next">Next</button><span class="muted" id="su-msg" role="status"></span></div>
         </div></div>
     </main>
 
     <script src="/provision-model.js"></script>
     <script src="/macreach-model.js"></script>
+    <script src="/stepper.js"></script>
     <script src="/provision-page.js"></script>
     <script src="/macreach-page.js"></script>
 </body>

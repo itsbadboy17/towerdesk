@@ -17,9 +17,10 @@
     }
 
     // ---------------- the steps ----------------
-    // guards[step](done): checks a step before leaving it; calls done(true) to move on, or done(false, why) to stay.
-    // enter[step](): runs when a step is shown.
-    var W = { kind: '', step: 'kind', busy: false, guards: {}, enter: {} };
+    // The chips, the help line, Back / Next and the one-step-at-a-time rules come from /stepper.js (S below).
+    // S.guard(step, fn): fn(done) checks a step before leaving it; done(true) moves on, done(false, why) stays.
+    // S.enter(step, fn): fn() runs when a step is shown.
+    var kind = ''; // what is being set up (a key of PM.KINDS); '' until something is chosen
     var INTRO = {
         kind: function () { return 'What do you want to set up?'; },
         relay: function () { return 'Plug the new MikroTik into the same switch as a MikroTik you already have, and switch it on. Then choose that MikroTik here: it can see the new one and log in to it, even though the new one has no IP address yet.'; },
@@ -32,57 +33,28 @@
     };
     var NEXT = { relay: 'Next: find the new router', pick: 'Next: its address', address: 'Preview', radio: 'Next: its settings', settings: 'Preview the changes' };
 
-    function say(text, bad) { var el = $('su-msg'); el.textContent = text || ''; el.className = bad ? 'live-error' : 'muted'; }
-    function setBusy(on) { W.busy = on; var nx = $('su-nav').querySelector('[data-wz=next]'); nx.disabled = on; nx.setAttribute('aria-busy', on ? 'true' : 'false'); }
-
-    function render() {
-        var f = PM.flow(W.kind), at = f.indexOf(W.step);
-        Array.prototype.forEach.call(root.querySelectorAll('[data-step]'), function (s) { s.classList.toggle('wz-off', s.dataset.step !== W.step); });
-        // The chips show where you are. They are not buttons: the steps are taken in order.
-        $('su-steps').innerHTML = f.map(function (s, i) {
-            return '<li class="' + (i === at ? 'on' : i < at ? 'done' : '') + '"' + (i === at ? ' aria-current="step"' : '') + '><span class="wz-chip"><span class="wz-n">' + (i + 1) + '</span>' + esc(PM.STEP_TITLES[s]) + '</span></li>';
-        }).join('');
-        $('su-intro').innerHTML = '<strong>Step ' + (at + 1) + (f.length > 1 ? ' of ' + f.length : '') + '.</strong> ' + INTRO[W.step]();
-        var nav = $('su-nav'), nx = nav.querySelector('[data-wz=next]');
-        nav.querySelector('[data-wz=back]').hidden = at === 0;
-        nx.hidden = f.length > 1 && at === f.length - 1;
-        nx.textContent = NEXT[W.step] || 'Next';
-        nx.disabled = W.busy;
-        say('');
-    }
-
-    function go(step) {
-        if (PM.flow(W.kind).indexOf(step) < 0) return;
-        W.step = step;
-        render();
-        if (W.enter[step]) W.enter[step]();
-        var first = root.querySelector('[data-step="' + step + '"] input:not(:disabled), [data-step="' + step + '"] select');
-        if (first && step !== 'run' && step !== 'apply' && first.offsetParent) first.focus();
-        else { $('su-steps').scrollIntoView({ block: 'nearest' }); $('su-intro').focus({ preventScroll: true }); }
-    }
-    function next() {
-        if (W.busy) return;
-        if (!W.kind) { say('Choose what you are setting up first.', true); return; }
-        var f = PM.flow(W.kind), i = f.indexOf(W.step);
-        if (i < 0 || i >= f.length - 1) return;
-        var guard = W.guards[W.step], to = f[i + 1];
-        if (!guard) { go(to); return; }
-        setBusy(true);
-        guard(function (ok, why) { setBusy(false); if (ok) go(to); else say(why || 'Check this step.', true); });
-    }
-    function back() { if (W.busy) return; var f = PM.flow(W.kind), i = f.indexOf(W.step); if (i > 0) go(f[i - 1]); }
+    var S = window.TowerDesk.stepper({
+        root: root,
+        flow: function () { return PM.flow(kind); },
+        title: function (step) { return PM.STEP_TITLES[step]; },
+        intro: function (step) { return INTRO[step](); },
+        nextLabel: function (step) { return NEXT[step]; }
+    });
+    var say = S.say;
+    // The first step cannot be left until something is chosen.
+    S.guard('kind', function (done) { if (kind) done(true); else done(false, 'Choose what you are setting up first.'); });
 
     function renderKinds() {
         $('su-kinds').innerHTML = PM.KINDS.map(function (k) {
             return '<label class="pv-card"><input type="radio" name="su-kind" value="' + k.key + '"><strong>' + esc(k.label) + '</strong><span class="muted">' + esc(k.about) + '</span></label>';
         }).join('');
     }
-    function choose(kind) {
-        if (!PM.KINDS.some(function (k) { return k.key === kind; })) return;
-        W.kind = kind;
-        if (PM.TEMPLATES[kind]) { state.template = kind; renderFields(); $('pv-out').innerHTML = ''; }
-        Array.prototype.forEach.call(document.querySelectorAll('#su-kinds .pv-card'), function (c) { var i = c.querySelector('input'); i.checked = i.value === kind; c.classList.toggle('on', i.checked); });
-        render();
+    function choose(key) {
+        if (!PM.KINDS.some(function (k) { return k.key === key; })) return;
+        kind = key;
+        if (PM.TEMPLATES[key]) { state.template = key; renderFields(); $('pv-out').innerHTML = ''; }
+        Array.prototype.forEach.call(document.querySelectorAll('#su-kinds .pv-card'), function (c) { var i = c.querySelector('input'); i.checked = i.value === key; c.classList.toggle('on', i.checked); });
+        S.render();
     }
 
     // ---------------- a radio that already has an IP address ----------------
@@ -129,27 +101,21 @@
     }
     function sayIn(id, text, bad) { var el = $(id); if (el) { el.textContent = text || ''; el.className = bad ? 'live-error' : 'muted'; } }
 
-    W.guards.radio = function (done) {
+    S.guard('radio', function (done) {
         if (!$('pv-ip').value.trim()) { done(false, 'Type the radio\'s IP address first.'); return; }
         if (state.brand === 'airos' && !$('pv-pass').value) { done(false, 'Type the radio\'s password (the one for its web page and SSH).'); return; }
         done(true);
-    };
+    });
     // Leaving the settings step reads the radio and builds the preview. Nothing is written.
-    W.guards.settings = function (done) {
+    S.guard('settings', function (done) {
         Array.prototype.forEach.call(document.querySelectorAll('#pv-fields .live-error'), function (x) { x.textContent = ''; });
         say('Reading the radio…');
         api('POST', '/api/provision/plan', body()).then(function (p) {
             if (!p.ok) { Object.keys(p.errors || {}).forEach(function (f) { var e = $('pv-e-' + f); if (e) e.textContent = p.errors[f]; }); done(false, p.error || 'Check the highlighted fields.'); return; }
             showPlan(p); done(true);
         }).catch(function () { done(false, 'Could not reach TowerDesk.'); });
-    };
-
-    $('su-nav').addEventListener('click', function (e) { var b = e.target.closest('[data-wz]'); if (b) (b.dataset.wz === 'next' ? next : back)(); });
-    // Enter means Next, so a step is never skipped by accident.
-    root.addEventListener('keydown', function (e) {
-        if (e.key !== 'Enter' || /^(BUTTON|TEXTAREA|SUMMARY|A)$/.test(e.target.tagName)) return;
-        e.preventDefault(); next();
     });
+
     document.addEventListener('click', function (e) {
         var id = e.target.id;
         if (id === 'pv-look') {
@@ -182,9 +148,8 @@
     });
 
     // The other script (a new MikroTik with no IP yet) adds its own steps through this.
-    window.TowerDesk.setup = { guard: function (step, fn) { W.guards[step] = fn; }, enter: function (step, fn) { W.enter[step] = fn; }, choose: choose, go: go, say: say, busy: setBusy };
+    window.TowerDesk.setup = { guard: S.guard, enter: S.enter, choose: choose, go: S.go, say: S.say, busy: S.busy };
 
     renderKinds();
-    render();
     try { var qs = new URLSearchParams(location.search); if (qs.get('ip')) $('pv-ip').value = qs.get('ip'); if (qs.get('brand') === 'mikrotik') { $('pv-brand').value = 'mikrotik'; state.brand = 'mikrotik'; } } catch (e) { /* optional */ }
 })();

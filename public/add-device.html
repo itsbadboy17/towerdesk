@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Add Device - TowerDesk ISP Dashboard</title>
     <link rel="stylesheet" href="/app.css">
+    <link rel="stylesheet" href="/add-device.css">
     <script src="/app.js"></script>
 </head>
 <body>
@@ -75,29 +76,25 @@
             <div class="controls"></div>
         </header>
 
-        <div class="device-layout">
-            <div class="card">
-                <div class="card-header"><h3>Register New Device</h3><span class="card-actions">Read-only connection</span></div>
-                <div class="card-body">
-                    <form id="device-form" autocomplete="off">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="device-ip">IP Address</label>
-                                <div class="input-with-btn">
-                                    <input type="text" id="device-ip" placeholder="192.168.0.1" required>
-                                    <button type="button" class="btn-secondary" id="detect-btn">🔍 Auto-detect</button>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="device-name">Device Name</label>
-                                <input type="text" id="device-name" placeholder="e.g. Tower North Router" required>
-                            </div>
+        <!-- Add a device, one step at a time. The step chips, the help line under them and the Back / Next buttons
+             are added inside #add-flow by /stepper.js; the steps themselves are driven by /add-device.js. -->
+        <div class="card" id="add-card">
+            <div class="card-header"><h3>Add a device</h3><span class="card-actions">TowerDesk only reads from the device</span></div>
+            <div class="card-body" id="add-flow">
+                <section data-step="find">
+                    <div class="pv-grid ad-one">
+                        <div class="form-group">
+                            <label for="device-ip">IP address</label>
+                            <input type="text" id="device-ip" placeholder="192.168.0.1" autocomplete="off" spellcheck="false">
                         </div>
-                        <div class="form-row">
+                    </div>
+                    <details class="ad-manual" id="ad-manual">
+                        <summary>It uses an unusual port, or it is a switch, an ONU or an OLT? Set it yourself</summary>
+                        <div class="pv-grid">
                             <div class="form-group">
-                                <label for="device-type">Device Type</label>
-                                <select id="device-type" required>
-                                    <option value="">Select type</option>
+                                <label for="device-type">Type</label>
+                                <select id="device-type">
+                                    <option value="">Work it out for me</option>
                                     <option value="mikrotik">MikroTik Router</option>
                                     <option value="cisco">Cisco Router</option>
                                     <option value="switch">Switch (Cisco Catalyst, MikroTik CRS, other)</option>
@@ -110,14 +107,9 @@
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label for="device-location">Location</label>
-                                <input type="text" id="device-location" placeholder="e.g. Building A, Roof">
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="device-method">Connect Using</label>
+                                <label for="device-method">Connect using</label>
                                 <select id="device-method">
+                                    <option value="">Work it out for me</option>
                                     <option value="ping">Ping only (no login)</option>
                                     <option value="mikrotik">MikroTik API</option>
                                     <option value="mikrotik-ssl">MikroTik API-SSL</option>
@@ -132,44 +124,60 @@
                                     <option value="https">Web UI (HTTPS)</option>
                                 </select>
                             </div>
-                            <div class="form-group" data-for="port">
+                            <div class="form-group">
                                 <label for="device-port">Port</label>
-                                <input type="number" id="device-port" min="1" max="65535" placeholder="default">
+                                <input type="number" id="device-port" min="1" max="65535" placeholder="Usual port" disabled>
+                                <span class="muted pv-hint" id="ad-port-hint">Choose how to connect first.</span>
                             </div>
                         </div>
-                        <div class="form-row" data-for="login">
-                            <div class="form-group">
-                                <label for="device-username">Username</label>
-                                <input type="text" id="device-username" autocomplete="off" placeholder="admin">
-                            </div>
-                            <div class="form-group">
-                                <label for="device-password">Password</label>
-                                <input type="password" id="device-password" autocomplete="new-password">
-                            </div>
-                        </div>
-                        <div class="form-row" data-for="community">
-                            <div class="form-group">
-                                <label for="device-community">SNMP Community</label>
-                                <input type="password" id="device-community" autocomplete="off" placeholder="public">
-                            </div>
-                        </div>
-                        <p class="form-hint" id="method-hint"></p>
-                        <div class="form-actions">
-                            <button type="button" class="btn-secondary" id="test-btn">🔌 Test Connection</button>
-                            <button type="submit" class="btn-primary" id="save-btn">Add Device</button>
-                            <button type="reset" class="btn-secondary" id="cancel-btn">Cancel</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
+                    </details>
+                </section>
 
-            <div class="card result-card">
-                <div class="card-header"><h3>Connection Result</h3></div>
-                <div class="card-body">
-                    <div id="device-result" class="result-panel" aria-live="polite">
-                        <p class="muted">Enter an IP and press <strong>Auto-detect</strong> to find the vendor and the best way to connect, or pick a method and press <strong>Test Connection</strong>.</p>
+                <section data-step="login" class="wz-off">
+                    <div class="mr-path ad-sum" id="ad-found"></div>
+                    <div class="pv-grid ad-narrow">
+                        <div class="form-group" id="ad-user-group">
+                            <label for="device-username">Username</label>
+                            <input type="text" id="device-username" autocomplete="off" placeholder="admin">
+                            <span class="muted pv-hint" id="ad-user-hint">Leave it empty to use admin.</span>
+                        </div>
+                        <div class="form-group" id="ad-pass-group">
+                            <label for="device-password">Password</label>
+                            <input type="password" id="device-password" autocomplete="new-password">
+                            <span class="muted pv-hint" id="ad-pass-hint"></span>
+                        </div>
+                        <div class="form-group" id="ad-comm-group" hidden>
+                            <label for="device-community">SNMP community</label>
+                            <input type="password" id="device-community" autocomplete="off" placeholder="public">
+                            <span class="muted pv-hint">Leave it empty to use public.</span>
+                        </div>
                     </div>
-                </div>
+                    <p class="ad-skip"><button type="button" class="link-btn ad-quiet" id="ad-skip">Add it without a login (TowerDesk will only watch whether it is up)</button></p>
+                </section>
+
+                <section data-step="name" class="wz-off">
+                    <div class="mr-path ad-sum" id="ad-save-sum"></div>
+                    <div class="pv-grid ad-narrow">
+                        <div class="form-group">
+                            <label for="device-name">Name</label>
+                            <input type="text" id="device-name" maxlength="80" autocomplete="off" placeholder="e.g. Tower North router">
+                            <span class="muted pv-hint" id="ad-name-hint"></span>
+                        </div>
+                        <div class="form-group">
+                            <label for="device-location">Location <span class="muted">(optional)</span></label>
+                            <input type="text" id="device-location" maxlength="80" autocomplete="off" placeholder="e.g. North tower, roof">
+                            <span class="muted pv-hint">It groups the device on a site in Topology.</span>
+                        </div>
+                    </div>
+                </section>
+
+                <section data-step="done" class="wz-off">
+                    <div class="pv-live ad-done" id="ad-done"></div>
+                    <div class="form-actions ad-done-actions">
+                        <a class="btn-primary" id="ad-open" href="/monitoring">Open it</a>
+                        <button type="button" class="btn-secondary" id="ad-again">Add another</button>
+                    </div>
+                </section>
             </div>
         </div>
 
@@ -290,6 +298,8 @@
                     <button type="button" class="btn-secondary btn-sm" id="bulk-delete">Delete</button>
                     <span id="bulk-status" class="muted"></span>
                 </div>
+                <!-- What happened after Check, Delete, Fix unconnected or saving a login. Hidden while there is nothing to say. -->
+                <div id="device-result" class="result-panel ad-msg" role="status" aria-live="polite" hidden></div>
                 <div class="table-wrap">
                     <table>
                         <thead>
@@ -304,7 +314,7 @@
         </div>
     </main>
 
+    <script src="/stepper.js"></script>
     <script src="/add-device.js"></script>
-    <script src="/add-wizard.js"></script>
 </body>
 </html>

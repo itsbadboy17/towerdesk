@@ -299,6 +299,33 @@ function applyAutoName(id, test) {
   const cur = devices.get(id);
   if (cur && isPlaceholderName(cur.name, cur.ip)) devices.edit(id, { name: String(real).slice(0, 80) });
 }
+// The type follows what the device really is: a successful MikroTik API login proves a MikroTik,
+// even when "Cisco" was picked by mistake. Only a brand type is corrected. A role (switch, ONU,
+// OLT) is never changed: a MikroTik CRS saved as a switch stays a switch.
+const BRAND_TYPES = ['mikrotik', 'cisco', 'ubnt', 'mimosa', 'tplink', 'other'];
+function applyAutoType(id, test) {
+  const v = transports.vendorFromTest(test);
+  if (!v || !devices.TYPES.includes(v)) return;
+  const cur = devices.get(id);
+  if (cur && BRAND_TYPES.includes(cur.type) && cur.type !== v) devices.edit(id, { type: v });
+}
+// Everything a test teaches about a saved device: its own name and its real type.
+function learnFromTest(id, test) {
+  applyAutoName(id, test);
+  applyAutoType(id, test);
+}
+// Keep the username really used: a login method with an empty username logs in as its usual one
+// (admin on a MikroTik, ubnt on airOS), so store that and the lists show it.
+function fillDefaultUser(id) {
+  const d = devices.get(id);
+  if (!d || d.username) return;
+  const u = transports.defaultUsername(d.method, !!d.secret);
+  if (u) devices.edit(id, { username: u });
+}
+// Devices saved before this rule existed: correct the type once at start from their last good test.
+try {
+  devices.list().forEach((d) => { if (d.lastTest && d.lastTest.ok) applyAutoType(d.id, d.lastTest); });
+} catch (e) { /* never stop the server from starting */ }
 
 app.get('/api/devices/methods', (req, res) => res.json(transports.METHODS));
 
@@ -307,12 +334,21 @@ app.post('/api/devices/detect', async (req, res) => {
   const ip = String(body.ip || '').trim();
   if (!ip) return res.status(400).json({ error: 'IP address is required' });
   const result = await transports.detect(ip);
+  // The device's own name when it is known (SNMP sysName here; a saved login below knows better).
+  result.name = (result.snmp && result.snmp.name) ? String(result.snmp.name).slice(0, 80) : null;
   // Optionally try the saved logins / communities and report which method they verified on.
   if (body.tryVault && result.ok) {
     const vault = credentials.resolved();
     if (vault.logins.length || vault.communities.length) {
-      const probe = await transports.probeCredentials({ host: ip, method: result.suggestedMethod, vendor: result.vendor, logins: vault.logins, communities: vault.communities });
-      if (probe.ok) result.matched = { method: probe.method, label: probe.label }; // never the secret
+      const probe = await transports.probeCredentials({ host: ip, method: result.suggestedMethod, vendor: result.vendor, logins: vault.logins, communities: vault.communities, factory: true });
+      if (probe.ok) {
+        const real = realNameFrom(probe.test);
+        const name = real ? String(real).slice(0, 80) : null;
+        result.matched = { method: probe.method, label: probe.label, name }; // never the secret
+        if (name) result.name = name;
+        // A login that worked proves the brand better than a guess from open ports.
+        result.vendor = transports.vendorFromTest(probe.test) || result.vendor;
+      }
     }
   }
   res.json(result);
@@ -321,17 +357,23 @@ app.post('/api/devices/detect', async (req, res) => {
 app.post('/api/devices/test', async (req, res) => {
   const input = connectionInput(req.body || {});
   if (!input.host) return res.status(400).json({ error: 'IP address is required' });
-  res.json(await transports.test(input));
+  const test = await transports.test(input);
+  // What the test learnt about the device: its own name and its real brand (null when unknown).
+  const real = test.ok ? realNameFrom(test) : null;
+  res.json(Object.assign({}, test, { deviceName: real ? String(real).slice(0, 80) : null, vendor: transports.vendorFromTest(test) }));
 });
 
 app.get('/api/devices', (req, res) => res.json(devices.list()));
 
 app.post('/api/devices', async (req, res) => {
-  const body = req.body || {};
-  const { name, type, ip } = body;
-  if (!name || !type || !ip) {
+  // Only the IP is required. With no name the IP stands in until the device tells its own name;
+  // with no type it starts as "other" until a successful test shows what it really is.
+  const raw = req.body || {};
+  const ip = String(raw.ip || '').trim();
+  if (!ip) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
+  const body = { ...raw, ip, name: String(raw.name || '').trim() || ip, type: raw.type || 'other' };
   if (body.method && !transports.METHODS[body.method]) {
     return res.status(400).json({ error: 'Unknown connection method' });
   }
@@ -343,7 +385,7 @@ app.post('/api/devices', async (req, res) => {
   if (body.tryVault && !body.password && !body.community) {
     const vault = credentials.resolved();
     if (vault.logins.length || vault.communities.length) {
-      const probe = await transports.probeCredentials({ host: body.ip.trim(), method: body.method, port: body.port, vendor: body.type, logins: vault.logins, communities: vault.communities });
+      const probe = await transports.probeCredentials({ host: ip, method: body.method, port: body.port, vendor: body.type, logins: vault.logins, communities: vault.communities, factory: true });
       if (probe.ok) {
         saveBody = { ...body, method: probe.method, port: probe.port, username: probe.username, password: probe.password, community: probe.community };
         matched = probe.label || null;
@@ -357,7 +399,8 @@ app.post('/api/devices', async (req, res) => {
   const lastTest = await transports.test(connectionInput(saveBody));
   if (lastTest.error === 'Invalid IP address or host name') return res.status(400).json({ error: lastTest.error });
   const added = devices.add(saveBody, lastTest);
-  applyAutoName(added.id, lastTest);
+  fillDefaultUser(added.id);
+  learnFromTest(added.id, lastTest);
   monitor.tick();
   res.json({ success: true, device: devices.publicView(devices.get(added.id)), test: lastTest, matched });
 });
@@ -370,7 +413,7 @@ app.post('/api/devices/:id/check', async (req, res) => {
     lastTest: result,
     status: { online: !!result.ok, checkedAt: new Date().toISOString() }
   });
-  applyAutoName(d.id, result);
+  learnFromTest(d.id, result);
   res.json({ device: devices.publicView(devices.get(d.id)), test: result });
 });
 
@@ -387,9 +430,10 @@ app.post('/api/devices/:id/connect', async (req, res) => {
   const metricsMod = require('./src/metrics');
   const finish = async (patch, extra) => {
     devices.edit(d.id, patch);
+    fillDefaultUser(d.id);
     const test = await transports.test(devices.connectionOptions(devices.get(d.id)));
     devices.update(d.id, { lastTest: test, status: { online: !!test.ok, checkedAt: new Date().toISOString() } });
-    applyAutoName(d.id, test);
+    learnFromTest(d.id, test);
     metricsMod.forget(d.id);
     monitor.tick();
     return Object.assign({ ok: !!test.ok, device: devices.publicView(devices.get(d.id)), test }, extra);
@@ -399,8 +443,16 @@ app.post('/api/devices/:id/connect', async (req, res) => {
     const vault = credentials.resolved();
     const typedLogin = (b.username || b.password) ? [{ username: String(b.username || '').slice(0, 64), password: String(b.password || '').slice(0, 200), label: 'typed here' }] : null;
     const typedCommunity = b.community ? [{ community: String(b.community).slice(0, 100), label: 'typed here' }] : null;
-    const logins = mode === 'snmp' ? [] : (typedLogin || vault.logins);
-    const communities = mode === 'login' ? [] : (typedCommunity || vault.communities);
+    // One of the SAVED logins / communities picked on the card (by its id): only that one is tried.
+    // Something typed here still comes first.
+    let picked = null;
+    if (b.credentialId && ((mode === 'login' && !typedLogin) || (mode === 'snmp' && !typedCommunity))) {
+      const wanted = String(b.credentialId);
+      picked = (mode === 'login' ? vault.logins : vault.communities).find((c) => c.id === wanted) || null;
+      if (!picked) return res.json({ ok: false, error: mode === 'login' ? 'That saved login is no longer there.' : 'That saved community is no longer there.' });
+    }
+    const logins = mode === 'snmp' ? [] : (typedLogin || (picked ? [picked] : vault.logins));
+    const communities = mode === 'login' ? [] : (typedCommunity || (picked ? [picked] : vault.communities));
     if (!logins.length && !communities.length) return res.json({ ok: false, needLogin: true, tried: 0, typed: false, mode });
     // A device typed as "other" has no vendor to guess methods from: look at it first.
     let vendor = d.type, method = d.method === 'ping' ? undefined : d.method;
@@ -408,7 +460,7 @@ app.post('/api/devices/:id/connect', async (req, res) => {
       const det = await transports.detect(d.ip);
       if (det && det.ok) { vendor = det.vendor || vendor; method = method || det.suggestedMethod; }
     }
-    const probe = await transports.probeCredentials({ host: d.ip, method, port: d.port, vendor, logins, communities, perTry: 5000 });
+    const probe = await transports.probeCredentials({ host: d.ip, method, port: d.port, vendor, logins, communities, perTry: 5000, factory: mode === 'auto' });
     if (!probe.ok) return res.json({ ok: false, needLogin: true, tried: logins.length + communities.length, typed: !!(typedLogin || typedCommunity), mode });
     let savedAsDefault = false;
     if (b.saveAsDefault) {
@@ -447,12 +499,13 @@ app.post('/api/devices/autoconnect', async (req, res) => {
   });
   const run = async (d) => {
     try {
-      const probe = await transports.probeCredentials({ host: d.ip, method: d.method, port: d.port, vendor: d.type, logins: vault.logins, communities: vault.communities, perTry: 3500 });
+      const probe = await transports.probeCredentials({ host: d.ip, method: d.method, port: d.port, vendor: d.type, logins: vault.logins, communities: vault.communities, perTry: 3500, factory: true });
       if (!probe.ok) return { id: d.id, name: d.name, connected: false };
       devices.edit(d.id, { method: probe.method, port: probe.port, username: probe.username, password: probe.password, community: probe.community });
+      fillDefaultUser(d.id);
       const test = await transports.test(devices.connectionOptions(devices.get(d.id)));
       devices.update(d.id, { lastTest: test, status: { online: !!test.ok, checkedAt: new Date().toISOString() } });
-      applyAutoName(d.id, test);
+      learnFromTest(d.id, test);
       metrics.forget(d.id);
       return { id: d.id, name: devices.get(d.id).name, connected: !!test.ok, method: probe.method, label: probe.label };
     } catch (e) {
@@ -480,14 +533,15 @@ app.put('/api/devices/:id', async (req, res) => {
   if (body.tryVault && !body.password && !body.community) {
     const vault = credentials.resolved();
     if (vault.logins.length || vault.communities.length) {
-      const probe = await transports.probeCredentials({ host: d.ip, method: body.method || d.method, port: body.port, vendor: body.type || d.type, logins: vault.logins, communities: vault.communities });
+      const probe = await transports.probeCredentials({ host: d.ip, method: body.method || d.method, port: body.port, vendor: body.type || d.type, logins: vault.logins, communities: vault.communities, factory: true });
       if (probe.ok) { body.method = probe.method; body.port = probe.port; body.username = probe.username; body.password = probe.password; body.community = probe.community; }
     }
   }
   if (!devices.edit(d.id, body)) return res.status(404).json({ error: 'Device not found' });
+  if (body.method || body.username !== undefined) fillDefaultUser(d.id);
   const test = await transports.test(devices.connectionOptions(devices.get(d.id)));
   devices.update(d.id, { lastTest: test, status: { online: !!test.ok, checkedAt: new Date().toISOString() } });
-  applyAutoName(d.id, test);
+  learnFromTest(d.id, test);
   try { require('./src/metrics').forget(d.id); } catch (e) { /* ignore */ } // drop any stale session for the old method
   monitor.tick();
   res.json({ success: true, device: devices.publicView(devices.get(d.id)), test });

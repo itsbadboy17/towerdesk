@@ -1,0 +1,47 @@
+/* Add Device page: only what the shared classes in app.css do not already give (the step chips .wz-*, the field grid
+   .pv-grid, the summary box .mr-path, the result box .pv-live, buttons and form fields all come from there).
+   Colours use the theme variables, so the dark theme needs nothing extra. Spacing uses logical properties
+   (inline / block), so the page also reads correctly right-to-left. */
+
+/* The step-by-step card: the same rhythm as the "Set up a device" page */
+#add-flow [data-step] { margin-block-end: 14px; }
+#add-flow .wz-intro:focus { outline: none; } /* focused by the page on a step change so it is read out; it is not a control */
+#add-flow .wz-nav { flex-wrap: wrap; }
+#add-flow .wz-nav [role="status"] { flex: 1 1 220px; min-inline-size: 0; } /* a long message gets its own line on a phone */
+
+/* Fields do not stretch across a wide card */
+.ad-one { max-inline-size: 320px; }
+.ad-narrow { max-inline-size: 660px; }
+#add-flow .form-group input:disabled { background: var(--bg-subtle); color: var(--text-muted); cursor: not-allowed; }
+
+/* "Set it yourself": closed unless the owner needs it */
+.ad-manual { margin-block-start: 14px; }
+.ad-manual summary { cursor: pointer; color: var(--text-muted); font-weight: 600; font-size: 0.85rem; line-height: 1.5; }
+.ad-manual summary:hover { color: var(--text-main); }
+.ad-manual[open] summary { margin-block-end: 12px; }
+
+/* What was found / what will be saved */
+.ad-sum { display: grid; gap: 6px; max-inline-size: 660px; margin-block-end: 14px; line-height: 1.5; }
+.ad-sum p { margin: 0; overflow-wrap: anywhere; }
+.ad-sum .kv { margin: 2px 0 0; }
+.ad-sum .kv dd { margin: 0; }
+
+/* The quiet way out of the Log in step */
+.ad-skip { margin-block-start: 12px; }
+.ad-quiet { font-weight: 500; font-size: 0.85rem; color: var(--text-muted); text-decoration: underline; text-underline-offset: 3px; min-block-size: 36px; }
+[data-theme="dark"] .ad-quiet { color: var(--text-muted); }
+.ad-quiet:hover, .ad-quiet:focus-visible { color: var(--text-main); }
+
+/* Added */
+.ad-done { display: grid; gap: 6px; max-inline-size: 660px; margin-block: 0 14px; line-height: 1.5; }
+.ad-done p { margin: 0; overflow-wrap: anywhere; }
+.ad-done .nb-ok { margin-block-start: 0; font-size: 1.02rem; }
+.ad-done-actions { align-items: center; }
+.ad-done-actions a { text-decoration: none; }
+
+/* Messages about the device list sit above the table, next to what was clicked */
+.ad-msg { margin-block-end: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-subtle); }
+.ad-msg.ok { border-color: color-mix(in srgb, var(--success) 40%, var(--border)); }
+.ad-msg.bad { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
+.ad-msg.warn { border-color: color-mix(in srgb, var(--warning) 40%, var(--border)); }
+.ad-msg .kv dd { margin: 0; }
